@@ -6,7 +6,17 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+if [ -f .env ]; then set -a; . ./.env; set +a; fi
+
 MODE="${1:-daily}"
+
+# --- Retención del filestore ---
+# Política de cada deployment. La cobertura resultante (diarios + semanales*7 +
+# mensuales*30) tiene que caber dentro de BACKUP_RETENTION_DAYS; lo chequea verify-db.
+
+KEEP_DAILY="${RESTIC_KEEP_DAILY:-7}"
+KEEP_WEEKLY="${RESTIC_KEEP_WEEKLY:-4}"
+KEEP_MONTHLY="${RESTIC_KEEP_MONTHLY:-3}"
 
 # --- Lock ---
 # Evita catch-ups solapados (Persistent=true); sobre el directorio, no un archivo, para servir a root y operador.
@@ -72,7 +82,8 @@ case "$MODE" in
 
     registrar_addons
     res backup /data/odoo /data/meta --exclude=/data/odoo/sessions
-    res forget --keep-daily 7 --keep-weekly 4 --keep-monthly 3 --prune
+    res forget --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" \
+               --keep-monthly "$KEEP_MONTHLY" --prune
     marcar_exito daily
     ;;
   monthly)

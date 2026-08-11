@@ -38,6 +38,7 @@ Las reglas que este stack sigue siempre. Cada una nombra un mecanismo concreto y
 ## Operación
 
 - **Obligatorio.** Corré backups en cadencia definida, con la ventana de retención de la base y la del filestore **alineadas**: un restore de una necesita contraparte consistente en la otra.
+- **Obligatorio.** La capa de backups es **exclusiva del entorno productivo**. Un segundo stack levantado desde los mismos archivos escribiría en el mismo repositorio remoto y en los mismos archivos de estado del host, y su corrida apagaría la alerta de backup viejo del entorno real. Un entorno descartable no tiene qué respaldar.
 - **Obligatorio.** Respaldá siempre la base primero y el filestore después. Un snapshot de filestore más nuevo deja archivos huérfanos, que son inofensivos; uno más viejo deja filas apuntando a archivos inexistentes, que es destructivo y silencioso.
 - **Obligatorio.** Hacé las actualizaciones de imágenes y módulos a mano. Sin Watchtower ni equivalente: un cambio de versión exige leer release notes antes de aplicarse.
 - **Obligatorio.** Instalar o actualizar un módulo en la base es un paso **explícito del operador**, nunca atado al arranque del contenedor. Un `-u` de varios minutos disparado en cada boot se repite en el restart automático de un crash, alargando la caída en vez de resolverla.

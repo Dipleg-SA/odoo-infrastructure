@@ -29,6 +29,8 @@ El binario corre **dentro del contenedor de Postgres**, no en uno aparte: el `ar
 
 Lo que fija el número no es una preferencia: **la ventana de la base tiene que cubrir al menos la del filestore**. Un restore de la base a un día puntual necesita un snapshot de filestore de esa misma fecha; si la base cubriera menos, la cola larga del filestore quedaría inútil para una restauración completa. La cadencia es full mensual más diferencial diario —no full semanal— para sostener esa ventana sin acumular varias copias completas.
 
+**La capa es exclusiva de producción.** Los entornos no productivos no la incluyen. No es una simplificación: comparten el repositorio remoto, la stanza y los archivos de estado del host, así que la corrida de un entorno descartable escribiría la marca de éxito que apaga la alerta del entorno real. Y no hay nada que proteger — un stack que se destruye después de usarse no acumula datos.
+
 ### Consistencia entre base y filestore
 
 Los adjuntos viven partidos: la fila en la base, el archivo en el filestore. **Un restore desalineado es la falla silenciosa de este sistema** — la base arranca sana y el problema aparece meses después, cuando alguien abre un documento viejo.

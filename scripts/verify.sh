@@ -302,21 +302,16 @@ v_db() {
   # valores viven en archivos de herramientas distintas y nada más los ata.
 
   local dia sem mes cobertura ret
-  dia=$(sed -n 's/.*--keep-daily \([0-9]*\).*/\1/p'   scripts/backup.sh | head -1)
-  sem=$(sed -n 's/.*--keep-weekly \([0-9]*\).*/\1/p'  scripts/backup.sh | head -1)
-  mes=$(sed -n 's/.*--keep-monthly \([0-9]*\).*/\1/p' scripts/backup.sh | head -1)
-  ret=$(sed -n 's/^repo1-retention-full[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' \
-        config/pgbackrest/pgbackrest.conf | head -1)
-  if [ -z "$dia$sem$mes$ret" ]; then
-    bad "retenciones coherentes" "no se pudieron leer los valores"
+  dia="${RESTIC_KEEP_DAILY:-7}"
+  sem="${RESTIC_KEEP_WEEKLY:-4}"
+  mes="${RESTIC_KEEP_MONTHLY:-3}"
+  ret="${BACKUP_RETENTION_DAYS:-125}"
+  cobertura=$(( dia + sem * 7 + mes * 30 ))
+  if [ "$ret" -ge "$cobertura" ]; then
+    ok "retención de la base ($ret d) cubre la del filestore ($cobertura d)"
   else
-    cobertura=$(( dia + sem * 7 + mes * 30 ))
-    if [ "$ret" -ge "$cobertura" ]; then
-      ok "retención de pgBackRest ($ret d) cubre la de restic ($cobertura d)"
-    else
-      bad "retención de pgBackRest cubre la de restic" \
-          "pgBackRest $ret d < restic $cobertura d — un restore viejo se queda sin filestore"
-    fi
+    bad "retención de la base cubre la del filestore" \
+        "base $ret d < filestore $cobertura d — un restore viejo se queda sin adjuntos"
   fi
 
   # --- process-max contra los cpus del contenedor ---

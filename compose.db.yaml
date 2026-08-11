@@ -20,6 +20,7 @@ services:
       PGBACKREST_STANZA: ${PGBACKREST_STANZA}
       PGBACKREST_REPO1_S3_BUCKET: ${R2_BUCKET}
       PGBACKREST_REPO1_S3_ENDPOINT: ${R2_ENDPOINT}
+      PGBACKREST_REPO1_RETENTION_FULL: ${BACKUP_RETENTION_DAYS:-125}
     secrets:
       - postgres_password
       # Ruta absoluta: conf.d es el include path por defecto de pgBackRest, que

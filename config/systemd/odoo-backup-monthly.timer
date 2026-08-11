@@ -2,7 +2,8 @@
 Description=Dispara el backup full mensual de Odoo
 
 [Timer]
-# Una hora antes que el diario: el día 1 corre primero el full y el diff queda mínimo.
+# Una hora antes que el diario: el día 1 corre primero el full y el diff queda
+# mínimo. Si movés el diario, mové este también para mantener ese orden.
 OnCalendar=*-*-01 01:00:00
 Persistent=true
 

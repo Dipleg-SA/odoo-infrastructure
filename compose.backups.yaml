@@ -1,5 +1,10 @@
 # Capa de backups. pgBackRest no aporta contenedor: vive dentro del de
 # Postgres, porque archive_command lo ejecuta el proceso de la base.
+#
+# EXCLUSIVA DE PRODUCCIÓN. Un segundo stack no la incluye: escribiría en la
+# misma stanza, el mismo repositorio de restic y los mismos archivos de estado
+# del host, y su corrida apagaría la alerta de "backup viejo" de producción.
+# Un entorno descartable no tiene qué respaldar.
 services:
   backup:
     image: restic/restic:0.19.1
@@ -28,7 +33,8 @@ services:
       # a un baile de ownership para algo que se puede reconstruir solo.
       HOME: /tmp
       RESTIC_CACHE_DIR: /tmp/restic-cache
-      # Umbral del healthcheck: 36h = cadencia diaria + 12h de margen.
+      # Umbral del healthcheck: cadencia del timer + margen. Si cambiás OnCalendar
+      # en config/systemd/, ajustá esto o el contenedor queda unhealthy para siempre.
       RESTIC_MAX_AGE: ${RESTIC_MAX_AGE:-129600}
     secrets:
       - restic_password
@@ -76,6 +82,7 @@ services:
       PGBACKREST_STANZA: ${PGBACKREST_STANZA}
       PGBACKREST_REPO1_S3_BUCKET: ${R2_BUCKET}
       PGBACKREST_REPO1_S3_ENDPOINT: ${R2_ENDPOINT}
+      PGBACKREST_REPO1_RETENTION_FULL: ${BACKUP_RETENTION_DAYS:-125}
     secrets:
       - source: pgbackrest_r2_credentials
         target: /etc/pgbackrest/conf.d/r2.conf
