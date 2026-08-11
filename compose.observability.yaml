@@ -45,6 +45,10 @@ services:
     volumes:
       - loki-data:/loki
       - ./config/loki/loki.yaml:/etc/loki/loki.yaml:ro
+    # La expansión la hace Loki desde SU entorno, no Compose sobre el archivo: sin
+    # este environment la variable no existe adentro y siempre gana el default.
+    environment:
+      LOGS_RETENTION: ${LOGS_RETENTION:-3000h}
     # expand-env: sin esta flag, Loki no interpola ${VAR} dentro de su propio archivo.
     command: ["-config.file=/etc/loki/loki.yaml", "-config.expand-env=true"]
     # Sin healthcheck: la imagen es distroless estricta (solo /usr/bin/loki), no hay

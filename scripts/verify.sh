@@ -53,12 +53,19 @@ vacio() {
   else bad "$nombre" "$(printf '%s' "$salida" | head -2 | tr '\n' ' ')"; fi
 }
 
+# --- ¿El servicio está levantado? ---
+# Un chequeo de runtime contra un servicio apagado no puede concluir nada: dar ok
+# seria mentir y dar FALLA seria culpar al chequeo equivocado. Se omite.
+
+corriendo() { [ -n "$(docker compose ps -q "$1" 2>/dev/null)" ]; }
+
 # --- Búsqueda en logs ---
 # Helper propio porque vacio() no puede llevar un pipe: acá el grep es parte del chequeo.
 
 log_limpio() {
   local nombre="$1" patron="$2"; shift 2
   local salida
+  if ! corriendo "$1"; then omitir "$nombre" "$1 no está corriendo"; return; fi
   salida=$(docker compose logs --tail 500 --no-log-prefix "$@" 2>/dev/null | grep -iE "$patron")
   if [ -z "$salida" ]; then ok "$nombre"
   else bad "$nombre" "$(printf '%s' "$salida" | head -1)"; fi
@@ -84,20 +91,34 @@ sano() {
 # --- Binds ---
 # El acceso lo define la IP publicada, no el firewall (PRINCIPLES.md, Seguridad). Un 0.0.0.0 es un hallazgo.
 
+# Un puerto sin publicar NO devuelve vacío: docker compose port imprime "invalid IP:0"
+# y sale con 0. Tomarlo como publicado marca en rojo todos los puertos internos.
+
+publicado_en() {
+  local salida
+  salida=$(docker compose port "$1" "$2" 2>/dev/null | head -1)
+  case "$salida" in
+    ''|invalid*|*:0) return 1 ;;
+    *) printf '%s' "${salida%:*}"; return 0 ;;
+  esac
+}
+
 bind_es() {
   local svc="$1" puerto="$2" esperado="$3" actual
-  actual=$(docker compose port "$svc" "$puerto" 2>/dev/null | head -1)
-  actual="${actual%:*}"
-  if [ -z "$actual" ]; then bad "$svc:$puerto publicado en $esperado" "no está publicado"; return; fi
+  if ! corriendo "$svc"; then omitir "$svc:$puerto publicado en $esperado" "$svc no está corriendo"; return; fi
+  if ! actual=$(publicado_en "$svc" "$puerto"); then
+    bad "$svc:$puerto publicado en $esperado" "no está publicado"; return
+  fi
   if [ "$actual" = "$esperado" ]; then ok "$svc:$puerto publicado en $esperado"
   else bad "$svc:$puerto publicado en $esperado" "está en $actual — viola el criterio de bind"; fi
 }
 
 sin_publicar() {
   local svc="$1" puerto="$2" actual
-  actual=$(docker compose port "$svc" "$puerto" 2>/dev/null | head -1)
-  if [ -z "$actual" ]; then ok "$svc:$puerto sin publicar"
-  else bad "$svc:$puerto sin publicar" "está publicado en $actual"; fi
+  if ! corriendo "$svc"; then omitir "$svc:$puerto sin publicar" "$svc no está corriendo"; return; fi
+  if actual=$(publicado_en "$svc" "$puerto"); then
+    bad "$svc:$puerto sin publicar" "está publicado en $actual"
+  else ok "$svc:$puerto sin publicar"; fi
 }
 
 # =====================================================================
@@ -334,9 +355,12 @@ v_db() {
     docker compose exec -T -u postgres postgres pgbackrest info
 
   local ready
-  ready=$(docker compose exec -T postgres sh -c \
-    'ls /var/lib/postgresql/data/pg_wal/*.ready 2>/dev/null | wc -l' 2>/dev/null | tr -d ' \r')
-  if [ "${ready:-0}" -eq 0 ]; then ok "sin WAL pendiente de archivar"
+  if ! corriendo postgres; then
+    omitir "sin WAL pendiente de archivar" "postgres no está corriendo"
+  elif ! ready=$(docker compose exec -T postgres sh -c \
+       'ls /var/lib/postgresql/data/pg_wal/*.ready 2>/dev/null | wc -l' 2>/dev/null | tr -d ' \r'); then
+    bad "sin WAL pendiente de archivar" "no se pudo consultar el directorio de WAL"
+  elif [ "${ready:-0}" -eq 0 ]; then ok "sin WAL pendiente de archivar"
   else bad "sin WAL pendiente de archivar" "$ready archivos .ready — el archivado está roto y el disco se llena"; fi
 
   # --- Binds ---
@@ -460,7 +484,11 @@ v_odoo() {
   # --- Gestor de bases ---
   # Publicado en internet: tiene que estar deshabilitado por list_db = False.
 
-  if [ -n "$PUBLIC_HOSTNAME" ]; then
+  if [ -z "$PUBLIC_HOSTNAME" ]; then
+    omitir "gestor de bases deshabilitado" "falta PUBLIC_HOSTNAME en .env"
+  elif ! corriendo odoo; then
+    omitir "gestor de bases deshabilitado" "odoo no corre — este chequeo sale al hostname público"
+  else
     expect "gestor de bases deshabilitado" "disabled by the administrator" \
       curl -s -m 10 "https://$PUBLIC_HOSTNAME/web/database/manager"
   fi
@@ -531,12 +559,17 @@ v_observability() {
   # --- Targets ---
   # La topología híbrida exige que el propio Alloy sea un target: si no, su caída no alerta.
 
-  local caidos
-  caidos=$(docker compose exec -T prometheus wget -qO- \
-    'http://127.0.0.1:9090/api/v1/targets?state=any' 2>/dev/null \
-    | grep -o '"health":"down"' | wc -l | tr -d ' ')
-  if [ "${caidos:-1}" -eq 0 ]; then ok "todos los targets de Prometheus up"
-  else bad "todos los targets de Prometheus up" "$caidos caídos — ver /targets en Grafana"; fi
+  local salida caidos
+  if ! corriendo prometheus; then
+    omitir "todos los targets de Prometheus up" "prometheus no está corriendo"
+  elif ! salida=$(docker compose exec -T prometheus wget -qO- \
+       'http://127.0.0.1:9090/api/v1/targets?state=any' 2>/dev/null) || [ -z "$salida" ]; then
+    bad "todos los targets de Prometheus up" "no se pudo consultar la API de targets"
+  else
+    caidos=$(printf '%s' "$salida" | grep -o '"health":"down"' | wc -l | tr -d ' ')
+    if [ "$caidos" -eq 0 ]; then ok "todos los targets de Prometheus up"
+    else bad "todos los targets de Prometheus up" "$caidos caídos — ver /targets en Grafana"; fi
+  fi
 
   # --- Las tres familias que empuja Alloy ---
   # Host, contenedores y base: si falta una, el agente perdió un colector.
