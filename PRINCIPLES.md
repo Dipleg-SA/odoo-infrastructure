@@ -16,11 +16,15 @@ Las reglas que este stack sigue siempre. Cada una nombra un mecanismo concreto y
 
 ## Seguridad
 
-- **Obligatorio.** El acceso a cada servicio lo define su **bind**, nunca el firewall. Docker publica por DNAT e inserta sus reglas antes de las cadenas del firewall, así que un `deny` no alcanza a un puerto publicado por un contenedor. Elegí el nivel por quién necesita llegar, y **nunca `0.0.0.0`**:
+- **Obligatorio.** El acceso a cada servicio **desde el host y desde la red física** lo define su bind de publicación —el `ports:`—, nunca el firewall. Docker publica por DNAT e inserta sus reglas antes de las cadenas del firewall, así que un `deny` no alcanza a un puerto publicado por un contenedor. Elegí el nivel por quién necesita llegar, y **nunca publiques en `0.0.0.0`**:
   1. **Sin `ports:`** — solo por nombre dentro de su red de Docker. Es el default.
   2. **`127.0.0.1:P:P`** — UIs administrativas y todo endpoint sin autenticación propia; se llega por túnel SSH.
   3. **`${LOCAL_IP}:P:P`** — servicios que atienden clientes de la red local.
   4. **`network_mode: host`** — solo cuando el servicio necesita el stack de red del host; es el único nivel donde el firewall gobierna.
+
+  **Ese criterio no habla de los binds internos del contenedor.** Un proceso que escucha en `0.0.0.0` *dentro* de su contenedor, sin `ports:`, no expone nada al host: solo lo alcanza quien esté en su misma red de Docker, y a veces es necesario —un exporter de métricas tiene que ser scrapeable desde otra red—. Cambiarlo a loopback por aplicar la regla al pie de la letra rompe el scrape sin que nada avise.
+
+- **Obligatorio.** Gobierná el **segundo eje** con la segmentación en redes, no con el bind. Dentro de una red de Docker todo servicio alcanza a todo otro servicio de esa red, sin autenticación de por medio si el servicio no la tiene. Un endpoint sin auth publicado en loopback sigue siendo alcanzable por cualquier contenedor que comparta su red: si eso importa, la respuesta es en qué redes está, no a qué IP publica.
 - **Obligatorio.** Hacé pasar todo el tráfico público entrante exclusivamente por el túnel de ingreso hacia el reverse proxy, sin puertos abiertos en el router.
 - **Obligatorio.** No le des hostname público a ninguna UI administrativa. Se llega por la red privada de administración, no por internet.
 - **Obligatorio.** Gestioná los secretos con `secrets:` nativo de Compose —archivos montados, permisos `640`, grupo del GID del proceso que los lee— y nunca como variables de entorno. Las env vars quedan visibles en `docker inspect` y en `docker exec … env`. El `600` no sirve: Compose fuera de Swarm ignora `uid`/`gid`/`mode` para secrets de archivo, así que un `600` root-owned deja sin lectura a cualquier contenedor no-root.

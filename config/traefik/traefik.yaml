@@ -42,7 +42,9 @@ certificatesResolvers:
       # caServer: "https://acme-staging-v02.api.letsencrypt.org/directory"
       dnsChallenge:
         provider: cloudflare
-        # DNS públicos: evita SERVFAIL del resolver del host (Tailscale MagicDNS).
+        # Resolvers explícitos: el del host puede no resolver el desafío — una VPN con
+        # DNS propio devuelve SERVFAIL para la zona pública. Punto de edición: Traefik
+        # trata archivo, flags y env como excluyentes, así que esto no sale por .env.
         resolvers:
           - "1.1.1.1:53"
           - "8.8.8.8:53"

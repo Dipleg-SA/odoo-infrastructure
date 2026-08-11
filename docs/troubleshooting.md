@@ -72,7 +72,7 @@ docker compose logs --tail=20 cloudflared | grep -o 'error="[^"]*"' | sort -u
 Para aislar en qué eslabón está el problema, un contenedor descartable en la red `edge` (`cloudflared` es distroless, no tiene shell propia):
 
 ```bash
-docker run --rm --network infrastructure-odoo_edge curlimages/curl -sk -o /dev/null -w "%{http_code}\n" https://traefik:443 -H "Host: $PUBLIC_HOSTNAME"
+docker run --rm --network "$(docker compose config | awk '/^name:/{print $2}')_edge" curlimages/curl -sk -o /dev/null -w "%{http_code}\n" https://traefik:443 -H "Host: $PUBLIC_HOSTNAME"
 ```
 
 Si eso da `303`/`200`, Traefik y Odoo están bien y el problema es exclusivamente TLS entre `cloudflared` y Traefik — o sea, una de las dos causas de arriba.

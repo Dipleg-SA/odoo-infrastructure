@@ -11,7 +11,8 @@ groups:
     interval: 1m
     rules:
       # Regla única multi-serie: up cubre los targets que Prometheus scrapea directo
-      # (por eso la caída de Alloy dispara), pg_up la base, y container_last_seen Odoo,
+      # (por eso la caída de Alloy dispara), pg_up la base, y container_last_seen Odoo (regex: el nombre
+      # del contenedor lleva el prefijo del proyecto),
       # que no expone healthcheck de Traefik sin tocar su propio módulo de compose.
       - uid: svc-caido
         title: Servicio caído
@@ -33,7 +34,7 @@ groups:
               # Invertida a "1 = no disponible": un `== 0` devuelve vector vacío cuando
               # todo está sano, y Grafana lo trata como NoData — o sea ruido constante
               # y ninguna alerta real. Así siempre hay valor y el umbral decide.
-              expr: (1 - min by (job) (up)) or label_replace(1 - max(pg_up), "job", "postgres", "", "") or label_replace(absent(container_last_seen{name="odoo"}), "job", "odoo", "", "")
+              expr: (1 - min by (job) (up)) or label_replace(1 - max(pg_up), "job", "postgres", "", "") or label_replace(absent(container_last_seen{name=~".*odoo"}), "job", "odoo", "", "")
           - refId: alerta
             datasourceUid: __expr__
             model:

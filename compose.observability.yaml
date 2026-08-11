@@ -8,9 +8,9 @@ volumes:
 services:
   prometheus:
     image: prom/prometheus:v3.13.2
-    # container_name fijo en vez del <proyecto>-<servicio>-<n> por default: un solo
-    # stack por host, así que no hay colisión y todo comando directo se acorta.
-    container_name: prometheus
+    # Nombre derivado del proyecto: predecible y sin el sufijo -1 del autonaming,
+    # pero sin colisionar si se levanta un segundo stack con otro nombre de proyecto.
+    container_name: ${COMPOSE_PROJECT_NAME}-prometheus
     # Red edge además de observability: scrapea Traefik y cloudflared por nombre.
     networks:
       - observability
@@ -39,7 +39,7 @@ services:
 
   loki:
     image: grafana/loki:3.7.6
-    container_name: loki
+    container_name: ${COMPOSE_PROJECT_NAME}-loki
     networks:
       - observability
     volumes:
@@ -58,7 +58,7 @@ services:
 
   grafana:
     image: grafana/grafana:13.1.2
-    container_name: grafana
+    container_name: ${COMPOSE_PROJECT_NAME}-grafana
     networks:
       - observability
     ports:
@@ -95,7 +95,7 @@ services:
 
   alloy:
     image: grafana/alloy:v1.18.1
-    container_name: alloy
+    container_name: ${COMPOSE_PROJECT_NAME}-alloy
     # Red app además de observability: alcanza a Postgres por nombre.
     networks:
       - observability

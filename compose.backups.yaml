@@ -6,9 +6,9 @@ services:
     # Hostname fijo: restic agrupa la retención por (host, paths) y sin esto Docker
     # usa el ID del contenedor, así que cada recreación deja un grupo sin purgar.
     hostname: odoo-prod
-    # container_name fijo en vez del <proyecto>-<servicio>-<n> por default: un solo
-    # stack por host, así que no hay colisión y todo comando directo se acorta.
-    container_name: backup
+    # Nombre derivado del proyecto: predecible y sin el sufijo -1 del autonaming,
+    # pero sin colisionar si se levanta un segundo stack con otro nombre de proyecto.
+    container_name: ${COMPOSE_PROJECT_NAME}-backup
     # user 100:101 son los uid/gid de Odoo: /var/lib/odoo es 750, así que ni
     # siquiera un no-root cualquiera puede leerlo — tiene que ser exactamente ese.
     user: "100:101"
@@ -61,8 +61,8 @@ services:
     # Mismo build e imagen que el servicio postgres: sin el build: aquí, un
     # restore-up antes del primer build intentaría bajar el tag de Docker Hub.
     build: ./docker/postgres
-    image: infrastructure-odoo-postgres:local
-    container_name: restore-db
+    image: local/postgres:local
+    container_name: ${COMPOSE_PROJECT_NAME}-restore-db
     profiles: [restore]
     # Como postgres: pgbackrest tiene que escribir pgdata con el owner correcto.
     user: "999:999"
@@ -87,7 +87,7 @@ services:
 
   restore-files:
     image: restic/restic:0.19.1
-    container_name: restore-files
+    container_name: ${COMPOSE_PROJECT_NAME}-restore-files
     profiles: [restore]
     # Mismo uid/gid que Odoo: restaurar como root dejaría archivos que la
     # aplicación no puede leer ni pasar por el GC.

@@ -476,8 +476,14 @@ v_observability() {
   # --- Rotación de logs del daemon ---
   # Solo aplica a contenedores creados después del restart de dockerd.
 
-  expect "rotación de logs aplicada" "max-size" \
-    docker inspect odoo --format '{{json .HostConfig.LogConfig}}'
+  local cid
+  cid=$(docker compose ps -q odoo 2>/dev/null)
+  if [ -z "$cid" ]; then
+    bad "rotación de logs aplicada" "odoo no está corriendo, no se puede comprobar"
+  else
+    expect "rotación de logs aplicada" "max-size" \
+      docker inspect "$cid" --format '{{json .HostConfig.LogConfig}}'
+  fi
 
   # --- Binds ---
   # Solo Grafana publica, y en loopback: se entra por túnel SSH.

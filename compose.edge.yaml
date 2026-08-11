@@ -1,9 +1,9 @@
 services:
   traefik:
     image: traefik:v3.7.8
-    # container_name fijo en vez del <proyecto>-<servicio>-<n> por default: un solo
-    # stack por host, así que no hay colisión y todo comando directo se acorta.
-    container_name: traefik
+    # Nombre derivado del proyecto: predecible y sin el sufijo -1 del autonaming,
+    # pero sin colisionar si se levanta un segundo stack con otro nombre de proyecto.
+    container_name: ${COMPOSE_PROJECT_NAME}-traefik
     networks:
       - edge
       - app
@@ -33,7 +33,7 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:2026.7.2
     command: tunnel --metrics 0.0.0.0:2000 run
-    container_name: cloudflared
+    container_name: ${COMPOSE_PROJECT_NAME}-cloudflared
     networks:
       - edge
     secrets:
@@ -48,15 +48,20 @@ services:
 
   dnsmasq:
     build: ./docker/dnsmasq
-    # Nombre explícito: sin esto Compose autogenera <proyecto>-dnsmasq:latest.
-    image: infrastructure-odoo-dnsmasq:local
-    container_name: dnsmasq
+    # Namespace local/ y no el nombre del proyecto: sin image: explícito Compose
+    # autogenera <proyecto>-dnsmasq:latest, que ata la imagen al proyecto y flota.
+    image: local/dnsmasq:local
+    container_name: ${COMPOSE_PROJECT_NAME}-dnsmasq
     # network_mode: host — bindea directo en ${LOCAL_IP}:53 para evitar el
     # conflicto con systemd-resolved y el NAT/ufw del publish de Docker.
     network_mode: host
-    command: ["--keep-in-foreground", "--no-resolv", "--bind-interfaces", "--listen-address=${LOCAL_IP}", "--address=/${PUBLIC_HOSTNAME}/${LOCAL_IP}"]
-    cap_add:
-      - NET_BIND_SERVICE
+    # --- Forwarders y caché ---
+    # Sin --server, --no-resolv deja SERVFAIL todo lo que no sea el hostname. Los
+    # forwarders son política del deployment: se cambian por .env. Caché 1000 (default 150).
+
+    command: ["--keep-in-foreground", "--no-resolv", "--bind-interfaces", "--listen-address=${LOCAL_IP}", "--address=/${PUBLIC_HOSTNAME}/${LOCAL_IP}", "--server=${DNS_FORWARDER_1:-1.1.1.1}", "--server=${DNS_FORWARDER_2:-8.8.8.8}", "--cache-size=1000"]
+    # Corre como root porque el 53 es puerto privilegiado y usa el stack de red
+    # del host; dnsmasq baja de privilegios por su cuenta después de bindear.
     healthcheck:
       test: ["CMD-SHELL", "nslookup ${PUBLIC_HOSTNAME} ${LOCAL_IP} | grep -q ${LOCAL_IP}"]
     restart: unless-stopped

@@ -7,10 +7,10 @@ services:
     # ejecuta el proceso de la base, así que el binario tiene que vivir acá.
     build: ./docker/postgres
     # Nombre explícito para que restore-db reuse exactamente esta imagen.
-    image: infrastructure-odoo-postgres:local
-    # container_name fijo en vez del <proyecto>-<servicio>-<n> por default: un solo
-    # stack por host, así que no hay colisión y todo comando directo se acorta.
-    container_name: postgres
+    image: local/postgres:local
+    # Nombre derivado del proyecto: predecible y sin el sufijo -1 del autonaming,
+    # pero sin colisionar si se levanta un segundo stack con otro nombre de proyecto.
+    container_name: ${COMPOSE_PROJECT_NAME}-postgres
     networks:
       - app
     environment:
@@ -41,7 +41,7 @@ services:
 
   pgbouncer:
     image: edoburu/pgbouncer:v1.25.2-p0
-    container_name: pgbouncer
+    container_name: ${COMPOSE_PROJECT_NAME}-pgbouncer
     networks:
       - app
     depends_on:
