@@ -3,9 +3,11 @@
 services:
   backup:
     image: restic/restic:0.19.1
-    # Hostname fijo: restic agrupa la retención por (host, paths) y sin esto Docker
-    # usa el ID del contenedor, así que cada recreación deja un grupo sin purgar.
-    hostname: odoo-prod
+    # restic agrupa la retención por (host, paths). Sin hostname explícito Docker usa
+    # el ID del contenedor y cada recreación deja un grupo sin purgar; con uno fijo,
+    # dos stacks distintos caen en el MISMO grupo y el forget --prune de uno alcanza
+    # los snapshots del otro. Derivarlo del proyecto resuelve las dos cosas.
+    hostname: ${COMPOSE_PROJECT_NAME}
     # Nombre derivado del proyecto: predecible y sin el sufijo -1 del autonaming,
     # pero sin colisionar si se levanta un segundo stack con otro nombre de proyecto.
     container_name: ${COMPOSE_PROJECT_NAME}-backup
