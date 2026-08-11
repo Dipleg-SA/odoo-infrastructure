@@ -382,6 +382,38 @@ v_odoo() {
     ok "worktrees de producción presentes y limpios"
   fi
 
+  # --- Módulos server-wide presentes en el árbol ---
+  # Odoo NO falla si uno no existe: loguea el error y sigue. El síntoma aparece
+  # lejos de la causa — el bus deja de actualizar en tiempo real, por ejemplo.
+
+  local swm mod hallado
+  swm=$(sed -n 's/^server_wide_modules[[:space:]]*=[[:space:]]*\(.*\)/\1/p' config/odoo/odoo.conf | tr -d ' ' | tr ',' '\n')
+  while read -r mod; do
+    [ -n "$mod" ] || continue
+    case "$mod" in base|web) continue ;; esac
+    hallado=$(find addons/production -mindepth 3 -maxdepth 3 -type d -name "$mod" 2>/dev/null | head -1)
+    if [ -n "$hallado" ]; then
+      ok "módulo server-wide '$mod' presente en el árbol"
+    else
+      bad "módulo server-wide '$mod' presente en el árbol" \
+          "no está en addons/production — Odoo arranca igual y falla en silencio"
+    fi
+  done <<< "$swm"
+
+  # --- Rama de addons contra la versión de la imagen ---
+  # Clonar ramas de una versión y montarlas en un Odoo de otra rompe de formas raras.
+
+  local ver_img
+  ver_img=$(sed -n 's/^FROM odoo:\([0-9.]*\).*/\1/p' docker/odoo/Dockerfile | head -1)
+  if [ -z "$ver_img" ]; then
+    aviso "ODOO_BRANCH coincide con la imagen" "no se pudo leer el tag del Dockerfile"
+  elif [ "$ver_img" = "${ODOO_BRANCH:-19.0}" ]; then
+    ok "ODOO_BRANCH (${ODOO_BRANCH:-19.0}) coincide con la imagen ($ver_img)"
+  else
+    bad "ODOO_BRANCH coincide con la imagen" \
+        "ODOO_BRANCH=${ODOO_BRANCH:-19.0} contra imagen $ver_img"
+  fi
+
   # --- Categorías de addons ---
   # La lista vive en dos archivos: addons.sh valida contra ella y el entrypoint
   # arma el addons_path recorriéndola. Si divergen, los módulos de la categoría

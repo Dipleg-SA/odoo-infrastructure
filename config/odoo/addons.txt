@@ -12,6 +12,13 @@
 # Los módulos de OCA se forkean primero a tu organización —públicos, por AGPL-3—
 # con `upstream` apuntando al original: así se pueden parchear sin salir del modelo.
 
+# OBLIGATORIO: el stack necesita un módulo que le dé al bus de notificaciones su
+# propia conexión directa a Postgres. El pooler corre en modo transacción, eso
+# rompe LISTEN/NOTIFY, y sin ese módulo el chat en tiempo real deja de andar —
+# sin error visible. Está nombrado en server_wide_modules de config/odoo/odoo.conf
+# y 'make verify-odoo' comprueba que exista en el árbol. Declará acá el repositorio
+# que lo provee, forkeado a tu organización.
+
 # Ejemplos, descomentá y reemplazá por los tuyos:
 #https://github.com/<tu-organizacion>/<modulo-propio>.git    custom-addons
 #https://github.com/<tu-organizacion>/server-tools.git       oca

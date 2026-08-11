@@ -75,6 +75,7 @@ services:
     # GF_* pisan grafana.ini; ALERT_EMAIL_TO lo interpola Grafana al leer el provisioning de alerting.
 
     environment:
+      GF_SMTP_HOST: ${SMTP_HOST:-}:${SMTP_PORT:-587}
       GF_SMTP_USER: ${SMTP_USER:-}
       GF_SMTP_FROM_ADDRESS: ${ALERT_EMAIL_FROM:-}
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}

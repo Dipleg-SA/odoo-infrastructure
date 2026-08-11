@@ -15,6 +15,7 @@ set -a; . ./.env; set +a
 : "${ALERT_EMAIL_FROM:?falta en .env — sin remitente no hay aviso de backup fallido}"
 : "${ALERT_EMAIL_TO:?falta en .env — sin destinatario no hay aviso de backup fallido}"
 : "${SMTP_USER:?falta en .env — sin usuario SMTP no hay aviso de backup fallido}"
+: "${SMTP_HOST:?falta en .env — sin host SMTP no hay aviso de backup fallido}"
 SMTP_PASS="$(cat secrets/zeptomail_smtp_password)"
 
 # --- Envío ---
@@ -23,7 +24,7 @@ SMTP_PASS="$(cat secrets/zeptomail_smtp_password)"
 printf 'From: %s\nTo: %s\nSubject: [odoo-backup] fallo en %s\n\nLa unit %s termino con error en %s a las %s.\nRevisar con: journalctl -u %s -n 50\n' \
   "$ALERT_EMAIL_FROM" "$ALERT_EMAIL_TO" "$UNIT" "$UNIT" "$(hostname)" "$(date -Is)" "$UNIT" \
 | curl -sS --ssl-reqd \
-    --url "smtp://smtp.zeptomail.com:587" \
+    --url "smtp://${SMTP_HOST}:${SMTP_PORT:-587}" \
     --user "$SMTP_USER:$SMTP_PASS" \
     --mail-from "$ALERT_EMAIL_FROM" \
     --mail-rcpt "$ALERT_EMAIL_TO" \

@@ -28,6 +28,10 @@ cp /etc/odoo/odoo.conf "$RUNTIME_CONF"
 {
   echo "addons_path = ${ADDONS_PATH}"
   echo "admin_passwd = $(cat /run/secrets/odoo_admin_password)"
+  if [ -n "${SMTP_HOST:-}" ]; then
+    echo "smtp_server = ${SMTP_HOST}"
+    echo "smtp_port = ${SMTP_PORT:-587}"
+  fi
   if [ -n "${SMTP_USER:-}" ]; then
     echo "smtp_user = ${SMTP_USER}"
   fi

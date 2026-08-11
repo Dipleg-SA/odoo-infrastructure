@@ -23,7 +23,9 @@ services:
       PORT: 6432
       USER: odoo
       PASSWORD_FILE: /run/secrets/postgres_password
-      # El entrypoint lo appendea como smtp_user al conf runtime; vacío = Odoo sin SMTP saliente.
+      # El entrypoint los appendea al conf de runtime; sin SMTP_HOST, Odoo queda sin correo saliente.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
     secrets:
       - postgres_password
@@ -56,8 +58,10 @@ services:
       traefik.http.routers.odoo-login.tls.certresolver: "cloudflare"
       traefik.http.routers.odoo-login.service: "odoo-http"
       traefik.http.routers.odoo-login.middlewares: "odoo-login-ratelimit"
-      traefik.http.middlewares.odoo-login-ratelimit.ratelimit.average: "2"
-      traefik.http.middlewares.odoo-login-ratelimit.ratelimit.burst: "10"
+      # Punto de partida moderado: se ajusta por .env si genera falsos positivos
+      # detrás de NAT o de una red compartida.
+      traefik.http.middlewares.odoo-login-ratelimit.ratelimit.average: "${LOGIN_RATE_AVERAGE:-2}"
+      traefik.http.middlewares.odoo-login-ratelimit.ratelimit.burst: "${LOGIN_RATE_BURST:-10}"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8069/web/health?db_server_status=1"]
       start_period: 90s
