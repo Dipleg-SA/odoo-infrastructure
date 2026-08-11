@@ -1,0 +1,58 @@
+volumes:
+  pgdata:
+
+services:
+  postgres:
+    # Imagen propia = postgres:17.10 + pgbackrest: archive_command lo
+    # ejecuta el proceso de la base, así que el binario tiene que vivir acá.
+    build: ./docker/postgres
+    # Nombre explícito para que restore-db reuse exactamente esta imagen.
+    image: infrastructure-odoo-postgres:local
+    # container_name fijo en vez del <proyecto>-<servicio>-<n> por default: un solo
+    # stack por host, así que no hay colisión y todo comando directo se acorta.
+    container_name: postgres
+    networks:
+      - app
+    environment:
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      # Valores por deployment; el entorno pisa al archivo opción por opción.
+      PGBACKREST_STANZA: ${PGBACKREST_STANZA}
+      PGBACKREST_REPO1_S3_BUCKET: ${R2_BUCKET}
+      PGBACKREST_REPO1_S3_ENDPOINT: ${R2_ENDPOINT}
+    secrets:
+      - postgres_password
+      # Ruta absoluta: conf.d es el include path por defecto de pgBackRest, que
+      # fusiona este archivo con pgbackrest.conf sin necesidad de flags.
+      - source: pgbackrest_r2_credentials
+        target: /etc/pgbackrest/conf.d/r2.conf
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./config/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./config/pgbackrest/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "odoo"]
+    restart: unless-stopped
+    # --- Presupuesto de memoria ---
+    # El default es un punto de partida; se ajusta por .env sin tocar este archivo.
+    mem_limit: ${POSTGRES_MEM_LIMIT:-2g}
+    cpus: "2.0"
+
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.25.2-p0
+    container_name: pgbouncer
+    networks:
+      - app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    secrets:
+      - pgbouncer_credentials
+    volumes:
+      - ./config/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-p", "6432"]
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: "0.25"

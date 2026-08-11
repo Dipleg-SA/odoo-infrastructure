@@ -1,0 +1,68 @@
+volumes:
+  odoo-data:
+
+services:
+  odoo:
+    build:
+      context: ./docker/odoo
+    # Nombre explícito: sin esto Compose autogenera <proyecto>-odoo:latest, que
+    # depende del nombre del proyecto y reintroduce un tag flotante.
+    image: infrastructure-odoo-odoo:local
+    # container_name fijo en vez del <proyecto>-<servicio>-<n> por default: un solo
+    # stack por host, así que no hay colisión y todo comando directo se acorta.
+    container_name: odoo
+    networks:
+      - app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+    environment:
+      HOST: pgbouncer
+      PORT: 6432
+      USER: odoo
+      PASSWORD_FILE: /run/secrets/postgres_password
+      # El entrypoint lo appendea como smtp_user al conf runtime; vacío = Odoo sin SMTP saliente.
+      SMTP_USER: ${SMTP_USER:-}
+    secrets:
+      - postgres_password
+      - odoo_admin_password
+      - zeptomail_smtp_password
+    volumes:
+      - odoo-data:/var/lib/odoo
+      - ./config/odoo/odoo.conf:/etc/odoo/odoo.conf:ro
+      - ./addons/production:/mnt/extra-addons:ro
+    labels:
+      traefik.enable: "true"
+      # router principal -> :8069 (HTTP)
+      traefik.http.routers.odoo.rule: "Host(`${PUBLIC_HOSTNAME}`)"
+      traefik.http.routers.odoo.entrypoints: "websecure"
+      traefik.http.routers.odoo.tls: "true"
+      traefik.http.routers.odoo.tls.certresolver: "cloudflare"
+      traefik.http.routers.odoo.service: "odoo-http"
+      traefik.http.services.odoo-http.loadbalancer.server.port: "8069"
+      # router websocket -> :8072 (gevent/longpolling), sin StripPrefix
+      traefik.http.routers.odoo-ws.rule: "Host(`${PUBLIC_HOSTNAME}`) && PathPrefix(`/websocket`)"
+      traefik.http.routers.odoo-ws.entrypoints: "websecure"
+      traefik.http.routers.odoo-ws.tls: "true"
+      traefik.http.routers.odoo-ws.tls.certresolver: "cloudflare"
+      traefik.http.routers.odoo-ws.service: "odoo-ws"
+      traefik.http.services.odoo-ws.loadbalancer.server.port: "8072"
+      # router rate-limit de login -> :8069, solo POST /web/login
+      traefik.http.routers.odoo-login.rule: "Host(`${PUBLIC_HOSTNAME}`) && Path(`/web/login`) && Method(`POST`)"
+      traefik.http.routers.odoo-login.entrypoints: "websecure"
+      traefik.http.routers.odoo-login.tls: "true"
+      traefik.http.routers.odoo-login.tls.certresolver: "cloudflare"
+      traefik.http.routers.odoo-login.service: "odoo-http"
+      traefik.http.routers.odoo-login.middlewares: "odoo-login-ratelimit"
+      traefik.http.middlewares.odoo-login-ratelimit.ratelimit.average: "2"
+      traefik.http.middlewares.odoo-login-ratelimit.ratelimit.burst: "10"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8069/web/health?db_server_status=1"]
+      start_period: 90s
+    restart: unless-stopped
+    # --- Presupuesto de memoria ---
+    # El default es un punto de partida; se ajusta por .env sin tocar este archivo.
+    mem_limit: ${ODOO_MEM_LIMIT:-5g}
+    cpus: "4.0"

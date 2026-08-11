@@ -1,0 +1,15 @@
+# --- Contact point de email ---
+# Reusa el SMTP configurado en grafana.ini (ZeptoMail). Grafana interpola $VAR
+# al leer el provisioning, así que el destinatario sale de .env como el resto.
+
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: email-operador
+    receivers:
+      - uid: email-operador
+        type: email
+        settings:
+          addresses: $ALERT_EMAIL_TO
+          singleEmail: false

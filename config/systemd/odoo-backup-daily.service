@@ -1,0 +1,13 @@
+# Reemplazar CAMBIAR-en-deploy por la ruta absoluta del repo en el servidor.
+# Corre como root: necesita acceso al socket de Docker.
+
+[Unit]
+Description=Backup diario Odoo (pgBackRest check + diff, restic + prune)
+OnFailure=odoo-backup-notify@%n.service
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=CAMBIAR-en-deploy
+ExecStart=CAMBIAR-en-deploy/scripts/backup.sh daily

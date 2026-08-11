@@ -1,0 +1,48 @@
+# --- Entrypoints ---
+
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+  traefik:
+    address: ":8080"
+
+# --- API / dashboard ---
+
+api:
+  dashboard: true
+  # Sin auth propia: el aislamiento lo da el bind a loopback del :8080 (compose.edge.yaml).
+  insecure: true
+
+ping: {}
+
+# --- Métricas ---
+# Spec 006: única fuente de la capa de aplicación de Odoo (latencia y códigos por router/servicio).
+
+metrics:
+  prometheus:
+    addRoutersLabels: true
+    entryPoint: traefik
+
+# --- Descubrimiento de servicios ---
+
+providers:
+  docker:
+    exposedByDefault: false
+
+# --- TLS / ACME (Let's Encrypt vía Cloudflare DNS-01) ---
+# Sin email: ACME lo declara opcional y LE dejó de avisar vencimientos en 2025; lo cubre la alerta de certificado por vencer.
+
+certificatesResolvers:
+  cloudflare:
+    acme:
+      storage: /acme.json
+      # Sin caServer = CA de producción (default). No usar staging: rompe cloudflared con 502.
+      # caServer: "https://acme-staging-v02.api.letsencrypt.org/directory"
+      dnsChallenge:
+        provider: cloudflare
+        # DNS públicos: evita SERVFAIL del resolver del host (Tailscale MagicDNS).
+        resolvers:
+          - "1.1.1.1:53"
+          - "8.8.8.8:53"

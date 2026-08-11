@@ -1,0 +1,125 @@
+// --- Métricas de host ---
+// node_exporter embebido. rootfs_path apunta al host montado, no al contenedor.
+// El colector textfile es lo que hace visible la marca de éxito de backup.sh.
+
+prometheus.exporter.unix "host" {
+  rootfs_path = "/rootfs"
+  procfs_path = "/rootfs/proc"
+  sysfs_path  = "/rootfs/sys"
+
+  textfile {
+    directory = "/textfile"
+  }
+}
+
+// --- Métricas por contenedor ---
+// cAdvisor embebido. docker_only descarta la jerarquía de cgroups del host,
+// que duplica lo que ya reporta el colector de host.
+
+prometheus.exporter.cadvisor "containers" {
+  docker_only = true
+}
+
+// --- Credencial del rol de monitoreo ---
+// Rol propio de solo lectura, no el de la aplicación. Se lee del archivo del secret.
+
+local.file "pg_password" {
+  filename  = "/run/secrets/postgres_exporter_password"
+  is_secret = true
+}
+
+// --- Métricas de Postgres ---
+// Vía PgBouncer no: el exporter necesita las vistas de estadísticas del servidor real.
+// El DSN va como URI porque el componente rechaza el formato clave-valor.
+
+prometheus.exporter.postgres "db" {
+  data_source_names = [
+    "postgresql://monitoring:" + local.file.pg_password.content + "@postgres:5432/postgres?sslmode=disable",
+  ]
+}
+
+// --- Scrape local de los tres exporters ---
+// job explícito por exporter: sin esto los tres caen bajo el mismo nombre y las alertas no distinguen.
+
+prometheus.scrape "host" {
+  targets    = prometheus.exporter.unix.host.targets
+  job_name   = "node"
+  forward_to = [prometheus.relabel.normalizar.receiver]
+}
+
+prometheus.scrape "containers" {
+  targets    = prometheus.exporter.cadvisor.containers.targets
+  job_name   = "cadvisor"
+  forward_to = [prometheus.relabel.normalizar.receiver]
+}
+
+prometheus.scrape "db" {
+  targets    = prometheus.exporter.postgres.db.targets
+  job_name   = "postgres"
+  forward_to = [prometheus.relabel.normalizar.receiver]
+}
+
+// --- Normalización ---
+// instance fijo: por default es el ID del contenedor de Alloy, así que cada recreación
+// dejaría series muertas y ensuciaría el selector de los dashboards.
+// No se descarta ninguna familia de cAdvisor: se midió que las 3 candidatas (network,
+// blkio, fs) cuestan 1760 series y que el dashboard de contenedores las usa en 94 lugares.
+
+prometheus.relabel "normalizar" {
+  forward_to = [prometheus.remote_write.central.receiver]
+
+  rule {
+    target_label = "instance"
+    replacement  = "odoo-prod"
+    action       = "replace"
+  }
+}
+
+// --- Push hacia Prometheus ---
+// Solo lo que ningún pull alcanza. Traefik/cloudflared/Loki/Grafana los scrapea Prometheus directo.
+
+prometheus.remote_write "central" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+  }
+}
+
+// --- Descubrimiento de contenedores para logs ---
+// Sin lista blanca: todos los del host. El techo lo pone la retención, no un filtro.
+
+discovery.docker "todos" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// --- Etiquetas ---
+// container y service, no el ID: un ID cambia en cada recreación y rompe toda consulta guardada.
+
+discovery.relabel "etiquetas" {
+  targets = discovery.docker.todos.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+}
+
+// --- Lectura de logs ---
+// Por la API de Docker, no por driver de logging: `docker logs` sigue funcionando.
+
+loki.source.docker "todos" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.etiquetas.output
+  forward_to = [loki.write.central.receiver]
+}
+
+loki.write "central" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

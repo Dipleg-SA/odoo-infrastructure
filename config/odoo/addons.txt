@@ -1,0 +1,20 @@
+# --- Manifiesto de addons ---
+# Una línea por repositorio: URL + categoría. `make addons-sync` rearma el árbol
+# entero desde acá, así que es el único artefacto versionado de addons/.
+
+# Categorías válidas, en orden de precedencia del addons_path:
+#   enterprise > custom-addons > oca > third-party
+# El entrypoint arma el addons_path recorriéndolas en ese orden.
+
+# Cada repo necesita la rama de producción (ODOO_BRANCH, default 19.0). La de
+# staging (<rama>-stag) se bootstrapea sola si todavía no existe en el remoto.
+
+# Los módulos de OCA se forkean primero a tu organización —públicos, por AGPL-3—
+# con `upstream` apuntando al original: así se pueden parchear sin salir del modelo.
+
+# Ejemplos, descomentá y reemplazá por los tuyos:
+#https://github.com/<tu-organizacion>/<modulo-propio>.git    custom-addons
+#https://github.com/<tu-organizacion>/server-tools.git       oca
+
+# Vacío a propósito: sin al menos un repo, el entrypoint de Odoo aborta al
+# arrancar. Declarar los addons es el primer paso propio de cada deployment.

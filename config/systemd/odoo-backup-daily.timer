@@ -1,0 +1,11 @@
+[Unit]
+Description=Dispara el backup diario de Odoo
+
+[Timer]
+# Persistent: si el servidor estuvo apagado a las 02:00, la corrida se ejecuta al
+# arrancar en vez de saltearse en silencio.
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

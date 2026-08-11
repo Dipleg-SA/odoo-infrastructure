@@ -1,0 +1,218 @@
+# --- Las siete reglas ---
+# Todas accionables: "algo está roto ahora, andá a mirar". Lo que solo informa vive
+# en dashboards. Sumar una octava exige justificar por qué no es ruido.
+
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: infra
+    folder: Alertas
+    interval: 1m
+    rules:
+      # Regla única multi-serie: up cubre los targets que Prometheus scrapea directo
+      # (por eso la caída de Alloy dispara), pg_up la base, y container_last_seen Odoo,
+      # que no expone healthcheck de Traefik sin tocar su propio módulo de compose.
+      - uid: svc-caido
+        title: Servicio caído
+        condition: alerta
+        for: 2m
+        annotations:
+          summary: "Un servicio del stack no responde"
+        labels:
+          severidad: critica
+        noDataState: OK
+        execErrState: Alerting
+        data:
+          - refId: consulta
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: consulta
+              instant: true
+              # Invertida a "1 = no disponible": un `== 0` devuelve vector vacío cuando
+              # todo está sano, y Grafana lo trata como NoData — o sea ruido constante
+              # y ninguna alerta real. Así siempre hay valor y el umbral decide.
+              expr: (1 - min by (job) (up)) or label_replace(1 - max(pg_up), "job", "postgres", "", "") or label_replace(absent(container_last_seen{name="odoo"}), "job", "odoo", "", "")
+          - refId: alerta
+            datasourceUid: __expr__
+            model:
+              refId: alerta
+              type: threshold
+              expression: consulta
+              conditions:
+                - evaluator: { type: gt, params: [0.5] }
+
+      - uid: disco-host
+        title: Disco del host por encima del 85%
+        condition: alerta
+        for: 10m
+        annotations:
+          summary: "Menos del 15% libre en / — la base y los backups comparten este SSD"
+        labels:
+          severidad: critica
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: consulta
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: consulta
+              instant: true
+              # Por fstype y no por mountpoint: en el servidor el filesystem de los volúmenes
+              # es "/", en Docker Desktop es "/var/lib/docker" y no existe "/". Filtrar por
+              # mountpoint daba 0 series, o sea una regla que nunca podía disparar.
+              expr: min(node_filesystem_avail_bytes{fstype=~"ext4|xfs|btrfs"} / node_filesystem_size_bytes{fstype=~"ext4|xfs|btrfs"})
+          - refId: alerta
+            datasourceUid: __expr__
+            model:
+              refId: alerta
+              type: threshold
+              expression: consulta
+              conditions:
+                - evaluator: { type: lt, params: [0.15] }
+
+      - uid: ram-host
+        title: RAM del host por debajo del 10% disponible
+        condition: alerta
+        for: 10m
+        annotations:
+          summary: "Menos del 10% de RAM disponible en el host"
+        labels:
+          severidad: alta
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: consulta
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: consulta
+              instant: true
+              expr: min(node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
+          - refId: alerta
+            datasourceUid: __expr__
+            model:
+              refId: alerta
+              type: threshold
+              expression: consulta
+              conditions:
+                - evaluator: { type: lt, params: [0.10] }
+
+      - uid: restart-loop
+        title: Contenedor reiniciando en loop
+        condition: alerta
+        for: 0s
+        annotations:
+          summary: "Un contenedor arrancó 3+ veces en 15 minutos"
+        labels:
+          severidad: alta
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: consulta
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: consulta
+              instant: true
+              # resets del contador de CPU, no changes(container_start_time_seconds):
+              # cAdvisor expone ahí la fecha de CREACIÓN del contenedor, que un restart
+              # no cambia (medido). El contador de CPU sí se reinicia con el cgroup.
+              expr: max by (name) (resets(container_cpu_usage_seconds_total{name!=""}[15m]))
+          - refId: alerta
+            datasourceUid: __expr__
+            model:
+              refId: alerta
+              type: threshold
+              expression: consulta
+              conditions:
+                - evaluator: { type: gt, params: [2] }
+
+      - uid: odoo-5xx
+        title: Odoo devolviendo errores 5xx
+        condition: alerta
+        for: 5m
+        annotations:
+          summary: "Más del 5% de las respuestas de Odoo son 5xx"
+        labels:
+          severidad: critica
+        noDataState: OK
+        execErrState: Alerting
+        data:
+          - refId: consulta
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: consulta
+              instant: true
+              expr: sum(rate(traefik_service_requests_total{service=~"odoo.*",code=~"5.."}[5m])) / clamp_min(sum(rate(traefik_service_requests_total{service=~"odoo.*"}[5m])), 0.001)
+          - refId: alerta
+            datasourceUid: __expr__
+            model:
+              refId: alerta
+              type: threshold
+              expression: consulta
+              conditions:
+                - evaluator: { type: gt, params: [0.05] }
+
+      # Cubre "falló" y "nunca corrió" con una sola condición: si el archivo no existe,
+      # la métrica está ausente y absent() dispara igual que una marca vieja.
+      - uid: backup-viejo
+        title: Backup fallado o ausente
+        condition: alerta
+        for: 0s
+        annotations:
+          summary: "El backup diario no termina bien hace más de 30h"
+        labels:
+          severidad: critica
+        noDataState: Alerting
+        execErrState: Alerting
+        data:
+          - refId: consulta
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: consulta
+              instant: true
+              expr: (time() - max(odoo_backup_last_success_timestamp_seconds{modo="daily"})) or (absent(odoo_backup_last_success_timestamp_seconds{modo="daily"}) * 999999)
+          - refId: alerta
+            datasourceUid: __expr__
+            model:
+              refId: alerta
+              type: threshold
+              expression: consulta
+              conditions:
+                - evaluator: { type: gt, params: [108000] }
+
+      # Única señal sobre el certificado: sin email de ACME, Let's Encrypt no avisa nada.
+      # Traefik renueva 30 días antes, así que 21 restantes = la renovación falla hace ~9.
+      - uid: cert-por-vencer
+        title: Certificado TLS por vencer
+        condition: alerta
+        for: 10m
+        annotations:
+          summary: "El certificado vence en menos de 21 días — la renovación automática no está corriendo"
+        labels:
+          severidad: critica
+        noDataState: Alerting
+        execErrState: Alerting
+        data:
+          - refId: consulta
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: consulta
+              instant: true
+              # min() = el que vence primero. El absent() a -1 cubre acme.json vacío o
+              # convertido en directorio; el for: 10m evita que dispare al reiniciar Traefik.
+              expr: ((min(traefik_tls_certs_not_after) - time()) / 86400) or (absent(traefik_tls_certs_not_after) * -1)
+          - refId: alerta
+            datasourceUid: __expr__
+            model:
+              refId: alerta
+              type: threshold
+              expression: consulta
+              conditions:
+                - evaluator: { type: lt, params: [21] }

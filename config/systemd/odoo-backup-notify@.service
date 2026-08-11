@@ -1,0 +1,11 @@
+# Reemplazar CAMBIAR-en-deploy por la ruta absoluta del repo en el servidor.
+# Unit plantilla: el OnFailure= de cada backup la instancia con su propio nombre
+# (%n), que llega acá como %i — así el mail dice cuál corrida falló.
+
+[Unit]
+Description=Aviso de backup fallido (%i)
+
+[Service]
+Type=oneshot
+WorkingDirectory=CAMBIAR-en-deploy
+ExecStart=CAMBIAR-en-deploy/scripts/failure-notify.sh %i

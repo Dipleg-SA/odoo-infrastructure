@@ -1,0 +1,31 @@
+# --- Artefactos de macOS ---
+
+.DS_Store
+
+# --- Secrets y estado runtime ---
+# Credenciales y estado que Docker genera/lee en runtime, nunca versionado.
+
+secrets/
+acme.json
+.env
+
+# --- Estado runtime ---
+# Métricas y registro de addons que backup.sh deja; los directorios sí se versionan.
+
+state/*
+!state/textfile/
+state/textfile/*
+!state/textfile/.gitkeep
+!state/meta/
+state/meta/*
+!state/meta/.gitkeep
+
+# --- Clones locales ---
+# Repos externos clonados a mano para pruebas, no versionados.
+
+repos/
+
+# --- Addons ---
+# Bind-mount desde el host; el manifiesto versionado es config/odoo/addons.txt.
+
+addons/

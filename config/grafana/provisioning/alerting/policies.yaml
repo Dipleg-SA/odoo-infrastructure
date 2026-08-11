@@ -1,0 +1,15 @@
+# --- Política de notificación ---
+# Una sola ruta: todo va al operador. Sin agrupación por equipo — hay un solo operador.
+
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    receiver: email-operador
+    # Por servicio y no solo por alertname: agrupando solo por nombre de alerta, un
+    # segundo servicio que cae espera group_interval (5m) y se pierde el techo de 5
+    # minutos de detección. Medido: 181s con grupo nuevo vs 9m37s reusando grupo.
+    group_by: [alertname, job, name]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
