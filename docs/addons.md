@@ -1,98 +1,124 @@
 # Gestión de addons
 
-Cómo llega un módulo de Odoo a producción, y qué comando corre dónde. El diseño de fondo (por qué bind-mount, por qué dos ramas, por qué el servidor nunca escribe) está en `docs/architecture.md`; acá está el procedimiento.
+Cómo llega un módulo a producción, y qué comando corre dónde. El diseño de fondo —por qué bind-mount, por qué dos ramas fijas, por qué el servidor nunca escribe— está en [`architecture.md`](architecture.md); acá está el procedimiento.
+
+En lo que sigue, `<rama>` es la rama de producción de cada repositorio de módulo: sale de `ODOO_BRANCH` en `.env` y acompaña a la versión de Odoo de la imagen. Staging usa siempre `<rama>-stag`.
+
+## Los tres entornos
+
+| Entorno | Dónde vive | Rama | Quién lo actualiza |
+|---|---|---|---|
+| `development` | Solo tu máquina | detached; de ahí salen las `feat/*` | Vos. `addons-sync` **nunca** lo toca |
+| `staging` | Servidor, bajo demanda | `<rama>-stag` | `addons-sync`, con `reset --hard` |
+| `production` | Servidor | `<rama>` | `addons-sync`, con `merge --ff-only` |
+
+El de desarrollo es **opt-in**: se crea solo si ponés `ADDONS_WITH_DEV=1` en tu `.env`. En el servidor no debe existir, porque ahí nada escribe en un repositorio de módulos.
+
+Que `addons-sync` no lo toque es deliberado: es el único árbol con trabajo sin commitear, y un `reset` o un `merge` lo destruiría. Nace *detached* porque git no permite tener la misma rama checkouteada en dos worktrees a la vez.
 
 ## El ciclo
 
 ```
-feat/*  →  19.0-stag  →  validar en staging  →  19.0  →  make addons-sync en el servidor
+feat/*  →  <rama>-stag  →  validar en staging  →  <rama>  →  addons-sync en el servidor
 ```
 
-1. **Desarrollo.** El código nace en el [repositorio de desarrollo](#repositorio-de-desarrollo), en una rama `feat/*`, propia por cambio.
-2. **Integración.** En tu Mac, dentro del clon del módulo:
+**1. Desarrollo.** En tu máquina, dentro del worktree de desarrollo del módulo:
 
-   ```bash
-   git checkout 19.0-stag
-   git reset --hard 19.0          # staging arranca siendo un clon de producción
-   git merge feat/nombre-del-cambio
-   git push --force origin 19.0-stag
-   ```
+```bash
+cd addons/development/<categoría>/<repo>
+git checkout -b feat/nombre-del-cambio
+```
 
-   El `reset --hard` no es opcional: `19.0-stag` es **descartable en todo momento** — nunca contiene nada que no exista además en una `feat/*` o en `19.0`. Es lo que permite serializar features sin cherry-picks: si mergeaste dos cosas y solo una está lista, reseteás, mergeás solo esa, y la otra sigue esperando en su rama.
+**2. Integración.** Cuando el cambio está listo, subilo a la rama de staging:
 
-3. **Traer el cambio al servidor.**
+```bash
+git checkout <rama>-stag
+git reset --hard <rama>          # staging arranca siendo un clon de producción
+git merge feat/nombre-del-cambio
+git push --force origin <rama>-stag
+```
 
-   ```bash
-   make addons-sync
-   docker compose -p odoo-stag up -d --force-recreate odoo   # cuando exista el stack de staging
-   ```
+El `reset --hard` no es opcional: la rama de staging es **descartable en todo momento** — nunca contiene nada que no exista además en una `feat/*` o en producción. Es lo que permite serializar features sin cherry-picks: si mergeaste dos cosas y solo una está lista, reseteás, mergeás solo esa, y la otra sigue esperando en su rama.
 
-   El servidor **nunca** mergea ni pushea — solo `fetch` + `reset --hard origin/19.0-stag`. Todo lo que hay en ese árbol existe también en GitHub.
+**3. Traer el cambio al servidor** y validarlo en staging:
 
-4. **Validar** en staging.
-5. **Promover.** De vuelta en tu Mac:
+```bash
+make addons-sync
+```
 
-   ```bash
-   git checkout 19.0
-   git merge feat/nombre-del-cambio
-   git push origin 19.0
-   ```
+El servidor **nunca** mergea ni pushea: solo trae. Todo lo que hay en ese árbol existe también en el remoto.
 
-   Esto sube **exactamente** lo que validaste — no lo que haya acumulado `19.0-stag`, que puede tener otras features de paso.
+**4. Promover.** De vuelta en tu máquina:
 
-6. **Aplicar en producción:**
+```bash
+git checkout <rama>
+git merge feat/nombre-del-cambio
+git push origin <rama>
+```
 
-   ```bash
-   make addons-sync
-   make odoo-update MODULES=nombre_del_modulo
-   ```
+Sube **exactamente** lo que validaste, no lo que haya acumulado la rama de staging.
 
-## Qué corre en tu Mac, qué corre en el servidor
+**5. Aplicar en producción:**
 
-| | Tu Mac | Servidor |
+```bash
+make addons-sync
+make odoo-update MODULES=nombre_del_modulo
+```
+
+## Qué corre en cada lado
+
+| | Tu máquina | Servidor |
 |---|---|---|
-| `commit` / `merge` / `push` | Sí — todos | Nunca |
-| `fetch` / `reset --hard` / `pull` | — | Sí — `make addons-sync` |
+| `commit` · `merge` · `push` | Sí — todos | Nunca |
+| `fetch` · `reset --hard` · `merge --ff-only` | — | Sí, vía `make addons-sync` |
 | `-i` / `-u` sobre la base | — | Sí — `make odoo-install` / `make odoo-update` |
 
-Es deliberado: si el servidor nunca escribe en un repo de addons, nada de lo que hay en su disco es irrecuperable. Perder `addons/` completo se arregla con `make addons-sync`.
+Es deliberado: si el servidor nunca escribe en un repositorio de módulos, nada de lo que hay en su disco es irrecuperable. Perder `addons/` entero se arregla con un `make addons-sync`.
 
 ## Comandos
 
 | Comando | Qué hace |
 |---|---|
-| `make addons-sync` | Clona lo que falte y actualiza los dos árboles (`addons/production/`, `addons/staging/`) desde `config/odoo/addons.txt`. Idempotente, puro host, sin contenedores |
-| `make addons` | Tabla de estado: entorno, categoría, repo, rama, commit corto, sucio/limpio. También funciona con el stack abajo |
-| `make odoo-install MODULES=x` | Instala el módulo `x` (`-i x --stop-after-init`) y deja el servicio arriba |
-| `make odoo-update MODULES=x` | Actualiza el módulo `x` (`-u x --stop-after-init`) y deja el servicio arriba — un solo camino para cualquier tipo de cambio (código, vistas, datos), sin que haya que clasificar qué se tocó |
-| `make odoo-modules` | Lista los módulos instalados y su versión, leída de `ir_module_module` — es la fuente de verdad, no hay una lista paralela versionada |
+| `make addons-sync` | Clona lo que falte y actualiza los árboles desde el manifiesto. Idempotente, puro host, sin contenedores. Falla si el manifiesto está vacío |
+| `make addons` | Tabla de estado: entorno, categoría, repositorio, rama, commit corto, limpio o sucio. Funciona con el stack abajo |
+| `make odoo-install MODULES=x` | Instala el módulo `x` en la base y deja el servicio arriba |
+| `make odoo-update MODULES=x` | Actualiza el módulo `x` — un solo camino para cualquier tipo de cambio: código, vistas o datos |
+| `make odoo-modules` | Lista los módulos instalados y su versión, leídos de la base, que es la fuente de verdad |
 
-Instalar/actualizar detiene el servicio mientras corre (`stop` → `run --rm --name odoo-oneoff` → `up -d`): es un paso explícito del operador, nunca algo que dispare el arranque normal del contenedor. Un `-u` de varios minutos repitiéndose en cada restart tras un crash sería peor que la caída misma.
+Instalar y actualizar **detienen el servicio** mientras corren: es un paso explícito del operador, nunca algo que dispare el arranque del contenedor. Si el paso falla, el servicio se levanta igual y el comando reporta el error — no te deja producción abajo.
 
-## Sumar un módulo nuevo
+## Sumar un módulo
 
-1. Agregar una línea a `config/odoo/addons.txt`: URL del repo (en tu organización) + categoría (`custom-addons`, `oca`, `third-party`, `enterprise`).
-2. `make addons-sync` — crea el clon bare y los dos worktrees.
-3. Si trae `external_dependencies` de Python (ej. `fs_attachment_s3` necesita `s3fs`/`boto3`), sumarlas a `docker/odoo/requirements.txt` y `docker compose build odoo`.
+1. Agregá una línea al manifiesto `config/odoo/addons.txt`: URL del repositorio y categoría (`custom-addons`, `oca`, `third-party` o `enterprise`).
+2. `make addons-sync` — crea el clon bare y los worktrees.
+3. Si el módulo declara dependencias de Python, sumalas a `docker/odoo/requirements.txt` y reconstruí la imagen. Es lo único, junto al entrypoint, que dispara un rebuild.
 4. `make odoo-install MODULES=<módulo>` cuando corresponda instalarlo.
 
-Los módulos de OCA se forkean primero a tu organización (públicos, por la licencia AGPL-3) con `upstream` apuntando al repo original — no se agrega `OCA/<repo>` directo al manifiesto.
+Los módulos de terceros se forkean primero a tu propia organización, con el original como segundo remote. No se agrega el repositorio ajeno directo al manifiesto: sin fork no se puede parchear un módulo sin salirse del modelo.
 
-## Actualizar un módulo de OCA (`upstream`)
+## Actualizar un módulo de terceros
 
-El clon bare de un fork de OCA lleva un segundo remote:
+El clon bare de un fork lleva un segundo remote:
 
 ```bash
-git -C addons/.repos/<repo>.git remote add upstream https://github.com/OCA/<repo>.git
+git -C addons/.repos/<repo>.git remote add upstream <url-del-original>
 git -C addons/.repos/<repo>.git fetch upstream
 ```
 
-Para traer una versión nueva, el bump se integra igual que cualquier otro cambio: en `19.0-stag` primero (`git merge upstream/19.0`), se valida en staging, y recién entonces se mergea a `19.0`. `upstream` nunca se toca en el servidor — el `fetch upstream` corre en tu Mac, junto con el resto de la integración.
+Traer una versión nueva se integra como cualquier otro cambio: primero a la rama de staging (`git merge upstream/<rama>`), se valida, y recién entonces se mergea a producción. `upstream` **nunca se toca en el servidor** — ese `fetch` corre en tu máquina, junto con el resto de la integración.
 
-## Enterprise (mayo 2027)
+## Precedencia entre categorías
 
-Es la única excepción a este modelo: la licencia OEEL prohíbe redistribuir, así que `odoo/enterprise` **no se forkea** y no tiene `19.0-stag`. Detalle completo en el backlog.
+Si dos módulos comparten nombre técnico, gana el de la categoría que va primero:
 
-## Repositorio de desarrollo
+```
+enterprise  >  custom-addons  >  oca  >  third-party  >  core de Odoo
+```
 
-El desarrollo de módulos (donde nacen las ramas `feat/*`) vive en un repositorio separado de este — más simple, sin la infraestructura de Docker. Este repo no versiona su código ni su configuración; solo consume lo que ese repositorio publica en tu organización.
+El entrypoint arma el `addons_path` recorriendo las categorías en ese orden. La lista vive en dos lugares —el validador del manifiesto y el glob del entrypoint— y `make verify-odoo` comprueba que coincidan: si divergen, los módulos de la categoría que falte se clonarían sin llegar a cargarse nunca.
+
+**Advertencia:** Odoo no documenta la precedencia del `addons_path`. Este orden se apoya en la convención de los despliegues con módulos propietarios, no en una fuente normativa.
+
+## Módulos con licencia que prohíbe redistribuir
+
+Son la excepción al modelo. Su licencia no permite forkearlos a una organización propia, así que no tienen fork ni rama de staging: se consumen desde su origen y su categoría se puebla por otro camino.

@@ -52,8 +52,11 @@ addons:
 	scripts/addons.sh status
 
 # --- Instalar/actualizar módulos ---
-# El one-off del entrypoint corre -i/-u directo contra postgres:5432, no PgBouncer.
-# --name evita chocar con el container_name fijo del servicio odoo mientras está detenido.
+# El one-off corre -i/-u directo contra postgres:5432, no PgBouncer. El up -d va
+# siempre, aunque el one-off falle: si no, un -i con error deja produccion abajo.
+# --name: el servicio declara container_name, y sin un nombre propio el one-off
+# chocaria contra el del servicio detenido. Dos stacks no pueden correr un
+# one-off a la vez en el mismo host; falla ruidoso.
 
 # MODULES es obligatorio: sin él, odoo consume --stop-after-init como nombre de módulo
 # y deja producción detenida con el contenedor efímero sirviendo indefinidamente.
@@ -63,14 +66,20 @@ require-modules:
 odoo-install: TARGET=odoo-install
 odoo-install: require-modules
 	docker compose stop odoo
-	docker compose run --rm --name odoo-oneoff odoo -i $(MODULES) --stop-after-init
-	docker compose up -d odoo
+	@docker compose run --rm --name odoo-oneoff odoo -i $(MODULES) --stop-after-init; \
+	  estado=$$?; \
+	  docker compose up -d odoo; \
+	  [ "$$estado" -eq 0 ] || echo "odoo-install: el -i falló (exit $$estado) — el servicio se levantó igual" >&2; \
+	  exit "$$estado"
 
 odoo-update: TARGET=odoo-update
 odoo-update: require-modules
 	docker compose stop odoo
-	docker compose run --rm --name odoo-oneoff odoo -u $(MODULES) --stop-after-init
-	docker compose up -d odoo
+	@docker compose run --rm --name odoo-oneoff odoo -u $(MODULES) --stop-after-init; \
+	  estado=$$?; \
+	  docker compose up -d odoo; \
+	  [ "$$estado" -eq 0 ] || echo "odoo-update: el -u falló (exit $$estado) — el servicio se levantó igual" >&2; \
+	  exit "$$estado"
 
 odoo-modules:
 	docker compose exec -T postgres psql -U odoo -d odoo -c "SELECT name, latest_version FROM ir_module_module WHERE state='installed' ORDER BY name"

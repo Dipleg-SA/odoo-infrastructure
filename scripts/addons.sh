@@ -6,6 +6,12 @@ shopt -s nullglob
 
 cd "$(dirname "$0")/.."
 
+# --- Entorno ---
+# El source va primero: si viniera después, una variable homónima en .env pisaría
+# las constantes de abajo y el script buscaría el manifiesto en otro lado.
+
+if [ -f .env ]; then . ./.env; fi
+
 MANIFEST="config/odoo/addons.txt"
 BARE_DIR="addons/.repos"
 
@@ -13,9 +19,14 @@ BARE_DIR="addons/.repos"
 # La versión de Odoo es un parámetro, no una constante: sale de .env y acompaña
 # al tag de la imagen. Staging deriva de producción, nunca se declara aparte.
 
-if [ -f .env ]; then . ./.env; fi
 RAMA_PROD="${ODOO_BRANCH:-19.0}"
 RAMA_STAG="${RAMA_PROD}-stag"
+
+# --- Worktree de desarrollo ---
+# Opt-in: solo existe en la máquina del operador. El servidor es réplica de solo
+# lectura, así que un árbol donde se escribe no tiene nada que hacer ahí.
+
+CON_DEV="${ADDONS_WITH_DEV:-0}"
 
 FAILED=0
 
@@ -121,21 +132,62 @@ update_worktrees() {
   return 0
 }
 
+# --- Worktree de desarrollo ---
+# Se crea una vez y NUNCA se actualiza: es donde nacen las ramas feat/*, así que
+# tiene trabajo sin commitear y un reset o un merge lo destruiría. Nace detached
+# en origin/<rama de producción> porque git no deja tener la misma rama
+# checkouteada en dos worktrees, y desde ahí se hace checkout -b feat/loquesea.
+
+ensure_dev_worktree() {
+  local bare="$1" dev="$2" name="$3" err
+  [ "$CON_DEV" = "0" ] && return 0
+  [ -d "$dev" ] && return 0
+  if ! err=$(git -C "$bare" worktree add --detach "$dev" "origin/$RAMA_PROD" 2>&1); then
+    fail "$name: worktree de desarrollo falló — $err"
+    return 1
+  fi
+  return 0
+}
+
 sync_repo() {
-  local url="$1" category="$2" name bare prod stag
+  local url="$1" category="$2" name bare prod stag dev
   name=$(module_name "$url")
   bare="$BARE_DIR/$name.git"
   prod="$ROOT/addons/production/$category/$name"
   stag="$ROOT/addons/staging/$category/$name"
+  dev="$ROOT/addons/development/$category/$name"
 
   ensure_bare "$url" "$bare" || return
   ensure_worktrees "$bare" "$prod" "$stag" "$name" || return
+  ensure_dev_worktree "$bare" "$dev" "$name" || true
   update_worktrees "$bare" "$prod" "$stag" "$name"
+}
+
+# --- Entornos a listar ---
+# development solo aparece si está habilitado o si ya existe en disco: en el
+# servidor no existe, y una fila "(sin worktree)" por repo sería ruido.
+
+entornos() {
+  printf 'production\nstaging\n'
+  if [ "$CON_DEV" != "0" ] || [ -d addons/development ]; then
+    printf 'development\n'
+  fi
 }
 
 cmd_sync() {
   local url category invalid=0
   require_manifest
+
+  # --- Manifiesto sin entradas ---
+  # Es el estado por defecto de un repo recién clonado. Sin al menos un repo no
+  # hay addons_path y el entrypoint de Odoo aborta una fase despues, asi que
+  # terminar en silencio con exit 0 seria mentir sobre lo que paso.
+
+  if [ -z "$(manifest_entries)" ]; then
+    echo "addons.sh: $MANIFEST no declara ningún repositorio — el árbol queda vacío" >&2
+    echo "addons.sh: agregá al menos una línea 'URL categoría' antes de levantar Odoo" >&2
+    exit 1
+  fi
 
   # --- Validación previa: categoría inválida aborta antes de clonar nada ---
 
@@ -186,7 +238,7 @@ list_orphans() {
     known="$known $(module_name "$url") "
   done < <(manifest_entries)
 
-  for env in production staging; do
+  while read -r env; do
     for cat_dir in "addons/$env"/*/; do
       [ -d "$cat_dir" ] || continue
       for repo_dir in "$cat_dir"*/; do
@@ -196,7 +248,7 @@ list_orphans() {
         echo "huérfano: $env/$(basename "$cat_dir")/$n (no está en $MANIFEST)"
       done
     done
-  done
+  done < <(entornos)
 }
 
 cmd_status() {
@@ -205,9 +257,9 @@ cmd_status() {
 
   while read -r url category; do
     name=$(module_name "$url")
-    for env in production staging; do
+    while read -r env; do
       print_row "$env" "$category" "$name" "addons/$env/$category/$name"
-    done
+    done < <(entornos)
   done < <(manifest_entries)
 
   list_orphans

@@ -382,6 +382,23 @@ v_odoo() {
     ok "worktrees de producción presentes y limpios"
   fi
 
+  # --- Categorías de addons ---
+  # La lista vive en dos archivos: addons.sh valida contra ella y el entrypoint
+  # arma el addons_path recorriéndola. Si divergen, los módulos de la categoría
+  # que falta se clonan y nunca se cargan — sin error, solo no aparecen.
+
+  local cats_sync cats_path
+  cats_sync=$(sed -n 's/^[[:space:]]*\([a-z|-]*\)) return 0 ;;/\1/p' scripts/addons.sh | tr '|' '\n' | sort | tr '\n' ' ')
+  cats_path=$(sed -n 's/^for category in \(.*\); do/\1/p' docker/odoo/entrypoint.sh | tr ' ' '\n' | sort | tr '\n' ' ')
+  if [ -z "$cats_sync" ] || [ -z "$cats_path" ]; then
+    aviso "categorías coherentes entre sync y addons_path" "no se pudieron leer las listas"
+  elif [ "$cats_sync" = "$cats_path" ]; then
+    ok "categorías coherentes entre sync y addons_path"
+  else
+    bad "categorías coherentes entre sync y addons_path" \
+        "addons.sh: [$cats_sync] · entrypoint: [$cats_path]"
+  fi
+
   # --- Routers ---
   # Los tres: raíz, websocket al worker gevent, y el de rate-limit del login.
 
