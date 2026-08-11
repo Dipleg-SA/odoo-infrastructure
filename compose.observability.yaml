@@ -25,8 +25,8 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yaml
       - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=125d
-      - --storage.tsdb.retention.size=20GB
+      - --storage.tsdb.retention.time=${METRICS_RETENTION:-125d}
+      - --storage.tsdb.retention.size=${METRICS_MAX_SIZE:-20GB}
       - --web.enable-remote-write-receiver
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090/-/healthy"]
@@ -45,7 +45,8 @@ services:
     volumes:
       - loki-data:/loki
       - ./config/loki/loki.yaml:/etc/loki/loki.yaml:ro
-    command: ["-config.file=/etc/loki/loki.yaml"]
+    # expand-env: sin esta flag, Loki no interpola ${VAR} dentro de su propio archivo.
+    command: ["-config.file=/etc/loki/loki.yaml", "-config.expand-env=true"]
     # Sin healthcheck: la imagen es distroless estricta (solo /usr/bin/loki), no hay
     # binario para ejecutar uno. El caso "vivo pero no sirve" lo cubre up == 0 en
     # Prometheus, que lo scrapea directo, y de ahí sale la alerta de servicio caído.
@@ -96,6 +97,9 @@ services:
 
   alloy:
     image: grafana/alloy:v1.18.1
+    # El hostname es de dónde sale la etiqueta instance de todas las métricas que
+    # empuja: derivarlo del proyecto evita que dos stacks emitan series idénticas.
+    hostname: ${COMPOSE_PROJECT_NAME}
     container_name: ${COMPOSE_PROJECT_NAME}-alloy
     # Red app además de observability: alcanza a Postgres por nombre.
     networks:

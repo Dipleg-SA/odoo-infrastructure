@@ -60,8 +60,9 @@ prometheus.scrape "db" {
 }
 
 // --- Normalización ---
-// instance fijo: por default es el ID del contenedor de Alloy, así que cada recreación
-// dejaría series muertas y ensuciaría el selector de los dashboards.
+// instance derivado del hostname del contenedor, que compose fija al nombre del
+// proyecto: por default sería el ID del contenedor y cada recreación dejaría series
+// muertas. Fijarlo a un literal seria peor: dos stacks emitirían series idénticas.
 // No se descarta ninguna familia de cAdvisor: se midió que las 3 candidatas (network,
 // blkio, fs) cuestan 1760 series y que el dashboard de contenedores las usa en 94 lugares.
 
@@ -70,7 +71,7 @@ prometheus.relabel "normalizar" {
 
   rule {
     target_label = "instance"
-    replacement  = "odoo-prod"
+    replacement  = constants.hostname
     action       = "replace"
   }
 }

@@ -556,6 +556,23 @@ v_observability() {
   expect "Loki recibe logs por contenedor" "odoo" docker compose exec -T prometheus \
     wget -qO- 'http://loki:3100/loki/api/v1/label/container/values'
 
+  # --- Los dos umbrales de frescura del backup ---
+  # La alerta tiene que avisar ANTES de que el healthcheck marque unhealthy. Los dos
+  # derivan de la cadencia del timer y viven en archivos de herramientas distintas.
+
+  local alerta maxage
+  alerta=$(sed -n 's/.*params: \[\([0-9]\{4,\}\)\].*/\1/p' \
+           config/grafana/provisioning/alerting/rules.yaml | head -1)
+  maxage="${RESTIC_MAX_AGE:-129600}"
+  if [ -z "$alerta" ]; then
+    aviso "la alerta de backup avisa antes que el healthcheck" "no se pudo leer el umbral"
+  elif [ "$alerta" -le "$maxage" ]; then
+    ok "la alerta de backup ($((alerta/3600)) h) avisa antes que el healthcheck ($((maxage/3600)) h)"
+  else
+    bad "la alerta de backup avisa antes que el healthcheck" \
+        "alerta $((alerta/3600)) h > healthcheck $((maxage/3600)) h — el contenedor se pone rojo primero"
+  fi
+
   # --- Rotación de logs del daemon ---
   # Solo aplica a contenedores creados después del restart de dockerd.
 

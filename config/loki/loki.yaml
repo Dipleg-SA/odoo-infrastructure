@@ -32,10 +32,12 @@ schema_config:
         period: 24h
 
 # --- Retención ---
-# 3000h = 125 días, alineado con la ventana de backups por consistencia, no por necesidad.
+# Llega por .env (requiere -config.expand-env en el command). Alineada con la
+# ventana de métricas por consistencia, no por necesidad técnica: esto es una
+# herramienta de diagnóstico, no de restauración, y nada se rompe si difieren.
 
 limits_config:
-  retention_period: 3000h
+  retention_period: ${LOGS_RETENTION:-3000h}
 
 # --- Quien aplica la retención ---
 # Sin el compactor con retention_enabled, retention_period es un número decorativo.

@@ -1,6 +1,4 @@
 {
-  "_comment_1": "Rotacion de logs por default del daemon. Cubre todo contenedor presente y futuro sin repetir el bloque logging: en cada modulo de compose.",
-  "_comment_2": "30 MB por contenedor (10m x 3). El techo se elige por la ventana de recuperacion ante un Loki caido: Alloy relee de estos archivos, no por ahorrar disco.",
   "log-driver": "json-file",
   "log-opts": {
     "max-size": "10m",
