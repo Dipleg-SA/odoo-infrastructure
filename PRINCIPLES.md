@@ -74,4 +74,5 @@ Las reglas que este stack sigue siempre. Cada una nombra un mecanismo concreto y
 - Extensiones: la que nombra cada herramienta. Donde hay elección entre `.yml` y `.yaml`, se usa `.yaml`.
 - Dockerfiles propios y sus contextos: un directorio por servicio bajo `docker/`.
 - Árbol de addons: `addons/.repos/<repo>.git` para el clon bare y `addons/<entorno>/<categoría>/<repo>` para cada worktree. Todo `addons/` va gitignoreado; el único artefacto versionado es el manifiesto.
+- Rol y base de datos de la aplicación: **`odoo`**, fijo. Aparece en los archivos de Compose, en la config de Postgres, de pgBackRest y de la propia aplicación, y en los scripts. Tres de esos formatos no interpolan variables, así que parametrizarlo dejaría la mitad configurable y la otra mitad no — peor que un valor fijo y consistente. El único que sí puede desincronizarse, el nombre de la stanza de backup, lo verifica `make verify-db`.
 - Los archivos de Compose y `.env` viven en la **raíz**: Compose los auto-descubre, y moverlos forzaría flags en cada invocación.

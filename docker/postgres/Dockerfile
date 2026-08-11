@@ -5,7 +5,10 @@
 FROM postgres:17.10
 
 # --- pgBackRest ---
-# Versión pineada por PGDG; ca-certificates sin pinear a propósito (rompe TLS con R2 si se congela).
+# Versión pineada por PGDG. El sufijo pgdgNN codifica la release de Debian de la
+# imagen base: si un bump de postgres cambia de release, este pin deja de existir
+# y el build falla — ruidoso, pero hay que saberlo. ca-certificates sin pinear a
+# propósito: congelarlo rompe TLS contra el storage de backups.
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \

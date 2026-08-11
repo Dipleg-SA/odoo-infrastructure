@@ -82,6 +82,8 @@ De ahí los cuatro niveles —sin `ports:`, loopback, IP de la LAN, `network_mod
 
 El setup es de **dos puertos**: los workers HTTP y los de cron conectan al pooler en **modo transacción**, que es donde está el multiplexado real; el worker gevent conecta **directo a Postgres**, porque el modo transacción rompe `LISTEN/NOTIFY` y con eso el chat en tiempo real. Alternativas descartadas: modo sesión sin el módulo (no rompe el bus, pero cede el multiplexado que es la razón de sumar el pooler) y modo transacción sin el módulo (regresión funcional real).
 
+**Autenticación del pooler: contraseña en el archivo, no consultada a la base.** PgBouncer lee las credenciales de un archivo propio, así que la contraseña de la aplicación queda en texto plano dentro de él. Se acepta porque ese archivo es un secret con permisos `640` y grupo del proceso que lo lee, y porque el pooler no publica puerto: alcanzarlo exige ya estar en su red de Docker. La alternativa es que el pooler consulte la contraseña a la base en cada conexión, lo que elimina la copia y simplifica la rotación, a cambio de un rol adicional con permiso de lectura sobre el catálogo de autenticación. Se revisita si la rotación de esa credencial pasa a ser frecuente.
+
 **El tamaño del pool se calcula, no se elige.** Con Odoo procesando una request a la vez por worker, el pico teórico de transacciones simultáneas es la suma de workers HTTP más threads de cron. El pool se dimensiona sobre ese pico con margen, y el límite de clientes se deja generoso para no tener que retocar también el de Odoo.
 
 **Versión de Postgres:** la estable más reciente compatible, no la mínima. Al no tratarse de una migración desde una versión vieja, maximiza el tiempo antes de quedar desactualizada.

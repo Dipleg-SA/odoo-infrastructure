@@ -296,6 +296,45 @@ v_db() {
         "no existe la sección [$stanza] — pgBackRest se queda sin pg1-path"
   fi
 
+  # --- Coherencia de las dos retenciones ---
+  # El techo de pgBackRest no es un número elegido: tiene que cubrir la ventana de
+  # restic, o un restore de la base se queda sin filestore de esa fecha. Los dos
+  # valores viven en archivos de herramientas distintas y nada más los ata.
+
+  local dia sem mes cobertura ret
+  dia=$(sed -n 's/.*--keep-daily \([0-9]*\).*/\1/p'   scripts/backup.sh | head -1)
+  sem=$(sed -n 's/.*--keep-weekly \([0-9]*\).*/\1/p'  scripts/backup.sh | head -1)
+  mes=$(sed -n 's/.*--keep-monthly \([0-9]*\).*/\1/p' scripts/backup.sh | head -1)
+  ret=$(sed -n 's/^repo1-retention-full[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' \
+        config/pgbackrest/pgbackrest.conf | head -1)
+  if [ -z "$dia$sem$mes$ret" ]; then
+    bad "retenciones coherentes" "no se pudieron leer los valores"
+  else
+    cobertura=$(( dia + sem * 7 + mes * 30 ))
+    if [ "$ret" -ge "$cobertura" ]; then
+      ok "retención de pgBackRest ($ret d) cubre la de restic ($cobertura d)"
+    else
+      bad "retención de pgBackRest cubre la de restic" \
+          "pgBackRest $ret d < restic $cobertura d — un restore viejo se queda sin filestore"
+    fi
+  fi
+
+  # --- process-max contra los cpus del contenedor ---
+  # Si supera el cap, pgBackRest compite con la base durante el backup.
+
+  local pmax pcpus
+  pmax=$(sed -n 's/^process-max[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' \
+         config/pgbackrest/pgbackrest.conf | head -1)
+  pcpus=$(sed -n '/^  postgres:/,/^  [a-z]/p' compose.db.yaml | sed -n 's/.*cpus: "\([0-9.]*\)".*/\1/p' | head -1)
+  if [ -z "$pmax" ] || [ -z "$pcpus" ]; then
+    aviso "process-max dentro de los cpus de postgres" "no se pudieron leer los valores"
+  elif awk -v a="$pmax" -v b="$pcpus" 'BEGIN{exit !(a<=b)}'; then
+    ok "process-max ($pmax) dentro de los cpus de postgres ($pcpus)"
+  else
+    bad "process-max dentro de los cpus de postgres" \
+        "process-max $pmax > cpus $pcpus — pgBackRest compite con la base"
+  fi
+
   expect "stanza cifrada en R2" "aes-256-cbc" \
     docker compose exec -T -u postgres postgres pgbackrest info
 

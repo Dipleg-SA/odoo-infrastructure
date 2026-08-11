@@ -6,7 +6,8 @@ ADDONS_BASE=/mnt/extra-addons
 RUNTIME_CONF=/tmp/odoo-runtime.conf
 
 # --- addons_path por glob de categorías ---
-# ponytail: evita listar cada repo a mano; enterprise primero para que sombree a custom-addons/oca/third-party.
+# Glob por categoría: evita listar cada repo a mano. enterprise va primero para
+# que sombree a custom-addons, oca y third-party si un nombre técnico se repite.
 
 paths=()
 for category in enterprise custom-addons oca third-party; do
