@@ -6,11 +6,20 @@ El principio de ordenamiento es uno solo: **producción está corriendo y no se 
 
 ## Dos decisiones ya tomadas
 
-**Producción y staging declaran su nombre; development no.** `compose.yaml` dice `name: production` y `compose.staging.yaml` dice `name: staging`: son uno por servidor, con identidad fija, que no debe depender de dónde se clonó. `compose.dev.yaml` **no declara `name:`**, así que Compose lo deriva del directorio — `~/odoo-development-sale` da el proyecto `odoo-development-sale`.
+**El nombre del stack se declara en `.env`, al lado de `COMPOSE_FILE`. Sin excepciones.** Ningún `compose.*.yaml` declara `name:`: la identidad de un stack sale del mismo archivo que dice qué capas incluye, en los tres entornos y con un solo mecanismo que aprender.
 
-La asimetría es deliberada y está medida. Con `name: development` declarado, dos checkouts de development resuelven al **mismo** volumen `development_pgdata`: no colisionan al arrancar, porque corre uno a la vez, se pisan los datos en silencio. Derivar del directorio da `odoo-development-sale_pgdata` y `odoo-development-accountant_pgdata`, sin configurar nada y sin nada que recordar.
+```
+/srv/odoo-production            COMPOSE_PROJECT_NAME=production
+/srv/odoo-staging               COMPOSE_PROJECT_NAME=staging
+~/odoo-development-sale         COMPOSE_PROJECT_NAME=development-sale
+~/odoo-development-accountant   COMPOSE_PROJECT_NAME=development-accountant
+```
 
-Renombrar el proyecto de producción **de `infrastructure-odoo` a `production` renombra sus volúmenes**, y Docker no sabe renombrar un volumen: hay que crear el nuevo y copiar, con el stack abajo. Si la adopción de esta rama en el servidor pasa por un redeploy con restore —que es lo esperable, porque cambia el borde entero—, los volúmenes nacen con el nombre nuevo y no hay migración. Si se quiere renombrar antes, sobre el stack actual, se copian `pgdata` y `odoo-data`; `prometheus-data`, `loki-data` y `grafana-data` se dejan nacer vacíos, porque son datos de diagnóstico y no de restauración.
+El modo de falla está medido y es benigno: si la variable falta o queda vacía, Compose cae al **nombre del directorio**, que ya es único por checkout. Olvidarla no produce un volumen compartido, produce un nombre más feo. El único caso peligroso es copiar un `.env` de un checkout a otro, y contra eso no hay mecanismo que ayude.
+
+Se descartó declarar `name:` en cada entrypoint. Con un literal compartido entre dos checkouts de development, los dos resuelven al **mismo** volumen `development_pgdata`: no colisionan al arrancar, porque corre uno a la vez, se pisan los datos en silencio.
+
+Renombrar el proyecto de producción **renombra sus volúmenes**, y Docker no sabe renombrar un volumen: hay que crear el nuevo y copiar, con el stack abajo. Si la adopción de esta rama en el servidor pasa por un redeploy con restore —que es lo esperable, porque cambia el borde entero—, los volúmenes nacen con el nombre nuevo y no hay migración. Si se quiere renombrar antes, sobre el stack actual, se copian `pgdata` y `odoo-data`; `prometheus-data`, `loki-data` y `grafana-data` se dejan nacer vacíos, porque son datos de diagnóstico y no de restauración.
 
 **La alerta de vencimiento de certificado pasa a `state/textfile/`.** Hoy sale de `traefik_tls_certs_not_after` y con certbot se queda sin fuente. `cert-renew.sh` escribe la métrica por el mismo mecanismo que ya usa `backup.sh`, sin sumar componentes. La salvedad: mide lo que certbot cree, no lo que nginx sirve — el caso «se renovó pero nginx no recargó» queda fuera y necesitaría un chequeo sobre el puerto.
 
@@ -51,8 +60,10 @@ Si no cambió la config resuelta, producción no puede haber cambiado.
 
 ## Etapa 2 — Nombre de proyecto e imágenes
 
-- `compose.yaml` pasa de `name: infrastructure-odoo` a `name: production`.
+- `name: infrastructure-odoo` **sale de `compose.yaml`** y no se reemplaza: el nombre pasa a vivir en `.env`, como en los otros dos entornos.
+- `.env.example` gana `COMPOSE_PROJECT_NAME` y `COMPOSE_FILE`, juntos y arriba: son los dos valores que definen qué stack es este checkout.
 - Tags `local/<servicio>:${COMPOSE_PROJECT_NAME}` en `compose.db.yaml`, `compose.odoo.yaml`, `compose.dns.yaml` y en `restore-db`.
+- `verify.sh` chequea que `COMPOSE_PROJECT_NAME` esté declarado en `.env`. No es fatal que falte —Compose cae al nombre del directorio— pero un stack cuyo nombre depende de dónde se clonó es un stack que no sabés cómo se llama hasta correrlo.
 
 **Verificación.** `docker compose config` muestra los tags nuevos y el proyecto nuevo.
 
@@ -188,22 +199,24 @@ No versionado, y propio de cada checkout: `.env`, `secrets/`, `addons/<categorí
 
 ## Layout de deployment
 
+Las dos primeras líneas del `.env` de cada checkout son las que definen el stack.
+
 ```
 SERVIDOR
-  /srv/odoo-production/           COMPOSE_FILE=compose.yaml
-                                  proyecto: production   (lo declara el archivo)
+  /srv/odoo-production/           COMPOSE_PROJECT_NAME=production
+                                  COMPOSE_FILE=compose.yaml
                                   11 secrets · systemd: backups + cert-renew
 
-  /srv/odoo-staging/              COMPOSE_FILE=compose.staging.yaml
-                                  proyecto: staging      (lo declara el archivo)
+  /srv/odoo-staging/              COMPOSE_PROJECT_NAME=staging
+                                  COMPOSE_FILE=compose.staging.yaml
                                   8 secrets · systemd: cert-renew
 
 MÁQUINA DEL OPERADOR
-  ~/odoo-development-sale/        COMPOSE_FILE=compose.dev.yaml
-                                  proyecto: odoo-development-sale
-  ~/odoo-development-accountant/  COMPOSE_FILE=compose.dev.yaml
-                                  proyecto: odoo-development-accountant
-                                  ↑ lo deriva Compose del directorio: nada que declarar,
-                                    nada que recordar, imposible que dos compartan volumen
+  ~/odoo-development-sale/        COMPOSE_PROJECT_NAME=development-sale
+                                  COMPOSE_FILE=compose.dev.yaml
+
+  ~/odoo-development-accountant/  COMPOSE_PROJECT_NAME=development-accountant
+                                  COMPOSE_FILE=compose.dev.yaml
+
                                   3 secrets, todos generados · sin systemd
 ```

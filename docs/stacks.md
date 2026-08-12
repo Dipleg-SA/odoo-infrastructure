@@ -10,7 +10,7 @@ El repositorio implementa hoy **uno solo**: producción, con Traefik en el borde
 |--------------------|-------------------------|-------------------------|-------------------------|
 | Dónde corre        | Servidor                | Servidor                | Máquina del operador    |
 | Checkout           | propio                  | propio                  | uno por feature         |
-| Nombre de proyecto | `production`            | `staging`               | el del directorio       |
+| Nombre de proyecto | `production`            | `staging`               | `development-<feature>` |
 | Entrypoint         | `compose.yaml`          | `compose.staging.yaml`  | `compose.dev.yaml`      |
 | Rama de addons     | default del Dockerfile  | `<versión>-stag`        | `feat/*`                |
 | Borde              | nginx con TLS           | nginx con TLS           | nginx sin TLS           |
@@ -133,9 +133,18 @@ Tres tipos de checkout en directorios separados: **producción** y **staging** e
 
 El aislamiento por directorio se eligió sobre un checkout compartido porque toda la tabla del nivel 2 deja de ser un riesgo: un error en staging no puede alcanzar las credenciales, el `acme.json` ni el `state/` de producción, y no depende de que nadie se equivoque de terminal.
 
-**Producción y staging declaran su nombre de proyecto en el archivo; development no.** `compose.yaml` dice `name: production` y `compose.staging.yaml` dice `name: staging`: son uno por servidor, con identidad fija que no debe depender de dónde se clonó. `compose.dev.yaml` **no declara `name:`**, así que Compose lo deriva del directorio.
+**El nombre del stack se declara en `.env`, al lado de `COMPOSE_FILE`. Sin excepciones.** Ningún `compose.*.yaml` declara `name:`: la identidad de un stack sale del mismo archivo que dice qué capas incluye, en los tres entornos y con un solo mecanismo que aprender.
 
-La asimetría es deliberada y está medida. Con un `name: development` compartido, dos checkouts resuelven al **mismo** volumen `development_pgdata`: no colisionan al arrancar, porque corre uno a la vez, se pisan los datos en silencio — precisamente lo que un entorno por feature viene a evitar. Derivando del directorio, `~/odoo-development-sale` y `~/odoo-development-accountant` dan `odoo-development-sale_pgdata` y `odoo-development-accountant_pgdata`, sin declarar nada.
+```
+/srv/odoo-production            COMPOSE_PROJECT_NAME=production
+/srv/odoo-staging               COMPOSE_PROJECT_NAME=staging
+~/odoo-development-sale         COMPOSE_PROJECT_NAME=development-sale
+~/odoo-development-accountant   COMPOSE_PROJECT_NAME=development-accountant
+```
+
+El modo de falla está medido y es benigno: si la variable falta o queda vacía, Compose cae al **nombre del directorio**, que ya es único por checkout. Olvidarla no produce un volumen compartido, produce un nombre más feo. El único caso peligroso es copiar un `.env` de un checkout a otro, y contra eso no hay mecanismo que ayude.
+
+Se descartó declarar `name:` en cada entrypoint. Con un literal compartido entre dos checkouts de development, los dos resuelven al **mismo** volumen `development_pgdata`: no colisionan al arrancar, porque corre uno a la vez, se pisan los datos en silencio — precisamente lo que un entorno por feature viene a evitar.
 
 Renombrar el proyecto de producción renombra sus volúmenes, y Docker no sabe renombrar un volumen. Si la adopción de esta estructura pasa por un redeploy con restore, nacen con el nombre nuevo y no hay migración; si se renombra sobre un stack ya corriendo, se copian `pgdata` y `odoo-data` con el stack abajo, y los tres de observabilidad se dejan nacer vacíos.
 
