@@ -15,6 +15,7 @@ Lo que este documento **da por hecho**. Nada de esto es responsabilidad del repo
 | **Rotación de logs del daemon, configurada antes del primer contenedor** | Solo aplica a contenedores **creados después** de reiniciar el daemon. Hacerlo más tarde obliga a recrear los once | `config/docker/daemon.json` |
 | Un camino de acceso administrativo que **no sea internet** | Las UIs administrativas se publican en loopback y se llegan por túnel SSH; ninguna recibe hostname público | Tailscale, WireGuard, o la VPN que uses |
 | El firewall del host permitiendo `53/udp` desde la LAN | Solo si vas a usar el acceso por red local. `dnsmasq` corre en `network_mode: host`, así que es el único puerto del stack que el firewall gobierna | `ufw`, `nftables`, … |
+| **El DHCP de la red repartiendo la IP del servidor como DNS** | Solo si vas a usar el acceso por red local, y **es el paso que lo hace funcionar**: `dnsmasq` resuelve el hostname para quien le pregunte, y quién le pregunta lo decide el router, no el stack | El router, o el servidor DHCP de la red |
 
 > **El firewall del host no protege a los contenedores.** Docker publica por DNAT e inserta sus reglas antes de las cadenas del firewall: un `deny` no alcanza a un puerto publicado por un contenedor. El aislamiento de cada servicio es **la IP a la que se publica**, y eso ya está resuelto en los `compose.*.yaml`.
 
@@ -245,10 +246,13 @@ Si `dnsmasq` queda `unhealthy`, las dos causas típicas en un servidor nuevo son
 Tres chequeos **no se pueden correr en el servidor**: cada bloque va en la máquina que dice, y ahí no tenés `.env`, así que los valores vuelven a la línea de asignación.
 
 ```bash
-echo "# 3 → Desde otro equipo de la LAN: tiene que devolver la IP local del servidor"
+echo "# 3 → Desde otro equipo de la LAN: las dos líneas tienen que dar la IP local del servidor"
 HOST_PUB='el-hostname-publico'; SRV_LAN='ip-lan-del-servidor'
-dig +short "$HOST_PUB" @"$SRV_LAN"
+echo "3a — dnsmasq responde:"; dig +short "$HOST_PUB" @"$SRV_LAN"
+echo "3b — la LAN le pregunta:"; dig +short "$HOST_PUB"
 ```
+
+**El que importa es el 3b.** El `@` del 3a le pregunta a `dnsmasq` directamente, así que prueba que responde bien — no que ningún equipo lo esté usando. Quién resuelve para la LAN lo decide el DHCP del router (ver Prerrequisitos), no este repositorio. Si el 3a da la IP local y el 3b devuelve una IP de Cloudflare, `dnsmasq` está sano y **no lo usa nadie**: la LAN sale a internet para llegar a un servidor que tiene al lado, y se queda sin acceso si internet se cae.
 
 ```bash
 echo "# 4 → Desde fuera de la LAN (datos móviles): tiene que fallar"

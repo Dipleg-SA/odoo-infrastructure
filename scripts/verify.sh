@@ -217,6 +217,12 @@ v_edge() {
 
   sano traefik; sano cloudflared; sano dnsmasq
 
+  # --- Resolver de la LAN ---
+  # El healthcheck de dnsmasq le pregunta a él: prueba que responde, no que se lo consulte.
+
+  omitir "la LAN usa dnsmasq como resolver" \
+    "no verificable desde el servidor — correr el chequeo 3b de INSTALL.md en un equipo de la LAN"
+
   # --- Config estática de Traefik ---
   # Un caServer de staging emite un cert que cloudflared rechaza: el sitio entero queda en 502.
 
