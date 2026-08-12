@@ -162,6 +162,18 @@ v_host() {
   elif [ -n "$vacias" ]; then bad ".env sin claves vacías" "vacías: $vacias"
   else ok ".env sin claves vacías"; fi
 
+  # --- Destinatario de las alertas ---
+  # Grafana lo interpola al leer el contact point y sin dirección el provisioning
+  # aborta: no arranca, sale con 1 y el restart lo reintenta para siempre. Se
+  # chequea acá, antes de levantar capa alguna, porque el de arriba solo ve la
+  # clave presente y vacía, y la que rompe igual es la que no está.
+
+  if [ -n "${ALERT_EMAIL_TO:-}" ]; then
+    ok "ALERT_EMAIL_TO declarado ($ALERT_EMAIL_TO)"
+  else
+    bad "ALERT_EMAIL_TO declarado" "falta o está vacío en .env — Grafana no arranca: el provisioning de alerting aborta"
+  fi
+
   # --- Identidad del stack ---
   # Sin COMPOSE_PROJECT_NAME el proyecto sale del nombre del directorio. No rompe
   # nada, pero el stack —y sus volúmenes— pasan a llamarse según dónde se clonó.
@@ -643,6 +655,41 @@ v_observability() {
 
   expect "Loki recibe logs por contenedor" "odoo" docker compose exec -T prometheus \
     wget -qO- 'http://loki:3100/loki/api/v1/label/container/values'
+
+  # --- Reglas de alerting realmente cargadas ---
+  # Se cuentan contra el archivo, no se asume que cargó. Un fallo de provisioning
+  # completo NO es silencioso —Grafana sale con código 1 y entra en loop, y eso lo
+  # atrapa `sano grafana`—, pero una regla que no provisiona sí lo es: el resto
+  # carga, el stack se ve sano, y esa alerta no dispara nunca.
+
+  local esperadas cargadas codigo pass_gf
+  esperadas=$(grep -c '^      - uid:' config/grafana/provisioning/alerting/rules.yaml)
+  if [ "${esperadas:-0}" -eq 0 ]; then
+    bad "reglas de alerting cargadas" \
+        "no se pudo contar ninguna en rules.yaml — el chequeo no verifica nada hasta arreglar el conteo"
+  elif ! corriendo grafana; then
+    omitir "las $esperadas reglas de alerting cargadas" "grafana no está corriendo"
+  # El secret es 640 root:472 y el operador no está en ese grupo: desde el host es
+  # ilegible siempre. Adentro sí, que corre 472:0 con el 472 como suplementario.
+  elif ! pass_gf=$(docker compose exec -T grafana cat /run/secrets/grafana_admin_password 2>/dev/null | tr -d '\r\n') || [ -z "$pass_gf" ]; then
+    omitir "las $esperadas reglas de alerting cargadas" "no se pudo leer el secret desde el contenedor"
+  else
+    codigo=$(curl -s -o /dev/null -w '%{http_code}' -m 10 -u "admin:$pass_gf" \
+      http://127.0.0.1:3000/api/v1/provisioning/alert-rules 2>/dev/null)
+    if [ "$codigo" != "200" ]; then
+      omitir "las $esperadas reglas de alerting cargadas" "la API respondió $codigo, no 200"
+    else
+      cargadas=$(curl -s -m 10 -u "admin:$pass_gf" \
+        http://127.0.0.1:3000/api/v1/provisioning/alert-rules 2>/dev/null \
+        | grep -o '"uid":' | wc -l | tr -d ' ')
+      if [ "${cargadas:-0}" -ge "$esperadas" ]; then
+        ok "las $esperadas reglas de alerting cargadas"
+      else
+        bad "las $esperadas reglas de alerting cargadas" \
+            "solo ${cargadas:-0} — hay reglas que no provisionaron y no van a disparar nunca"
+      fi
+    fi
+  fi
 
   # --- Los dos umbrales de frescura del backup ---
   # La alerta tiene que avisar ANTES de que el healthcheck marque unhealthy. Los dos
