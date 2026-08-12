@@ -60,13 +60,13 @@ Todo lo que está en git es el mismo archivo para todo stack que salga de ese co
 | `scripts/addons.sh`                         | sí             | sí                          | sí                          |
 | `scripts/backup.sh`                         | sí             | no                          | no                          |
 | `scripts/failure-notify.sh`                 | sí             | no                          | no                          |
-| `scripts/integrity-check.sh`                | sí             | hoy no puede                | hoy no puede                |
+| `scripts/integrity-check.sh`                | sí             | sí                          | sí                          |
 | `Makefile`                                  | sí             | sí                          | sí                          |
 
 Cuatro consecuencias que importan:
 
 - **`scripts/failure-notify.sh` no lo llama nadie fuera de producción.** Su único invocador es el `OnFailure=` de las units de backup, que no se instalan en los otros stacks. Va donde va la capa de backups.
-- **`scripts/integrity-check.sh` es deseable en staging y hoy no corre ahí.** Hace `docker compose exec -T backup` para recorrer el filestore, y el servicio `backup` es exclusivo de producción. Es justo el chequeo que quiere un simulacro de restore, así que o se le da otro contenedor con el volumen montado, o staging se queda sin verificar sus adjuntos.
+- **`scripts/integrity-check.sh` recorre el filestore por el contenedor de `odoo`.** Antes lo hacía por el de `backup`, que es exclusivo de producción, y eso lo dejaba fuera de staging — justo el entorno donde el simulacro de restore lo necesita. `odoo` monta el mismo volumen y lo lleva cualquier stack.
 - **`config/odoo/odoo.conf` es único para los tres.** `workers`, `limit_memory_*` y `dbfilter` son los mismos en la máquina del operador que en el servidor. Un stack de desarrollo que quiera menos workers necesita otro mecanismo, no otra copia del archivo — los principios prohíben archivos `.example` paralelos.
 - **`dbfilter = ^odoo$` y el rol `odoo` son fijos.** No es un problema mientras cada stack tenga su propio volumen `pgdata`, que es lo que pasa: el nombre de la base se repite, la base no.
 

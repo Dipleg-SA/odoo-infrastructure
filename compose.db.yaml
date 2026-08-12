@@ -32,7 +32,10 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./config/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
       - ./config/pgbackrest/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
-    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    # --- Archivado de WAL ---
+    # Acá y no en postgresql.conf, que es el mismo para los tres: un stack sin backups lo pone en off.
+
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf -c archive_mode=${PG_ARCHIVE_MODE:-on}
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "odoo"]
     restart: unless-stopped

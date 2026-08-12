@@ -10,16 +10,19 @@ DB="${1:-odoo}"
 
 # --- Adjuntos que la base referencia ---
 # store_fname es NULL para los que Odoo guarda dentro de la propia base.
+#
+# El recorrido va por el contenedor de odoo, no por el de backup: ese es exclusivo
+# de producción, y este chequeo es justo el que quiere un simulacro en staging.
 
 docker compose exec -T -u postgres postgres \
   psql -U odoo -d "$DB" -tAc \
   "select store_fname from ir_attachment where store_fname is not null and store_fname <> '';" \
-| docker compose exec -T backup sh -c '
+| docker compose exec -T odoo sh -c '
   db="$1"; total=0; faltan=0
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     total=$((total+1))
-    [ -f "/data/odoo/filestore/$db/$f" ] || { echo "FALTA: $f"; faltan=$((faltan+1)); }
+    [ -f "/var/lib/odoo/filestore/$db/$f" ] || { echo "FALTA: $f"; faltan=$((faltan+1)); }
   done
   echo "referenciados: $total | faltantes: $faltan"
   [ "$faltan" -eq 0 ]

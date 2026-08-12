@@ -1,6 +1,10 @@
 # Reemplazar CAMBIAR-en-deploy por la ruta absoluta del repo en el servidor.
 # Corre como root: necesita acceso al socket de Docker.
 
+# --- Un par de units por checkout ---
+# El nombre apunta a un checkout, no a un stack: staging instala su propia copia
+# de .service y .timer con otro nombre, o pisa la de producción en el mismo host.
+
 [Unit]
 Description=Renovacion del certificado (certbot DNS-01 + reload de nginx)
 OnFailure=odoo-notify@%n.service

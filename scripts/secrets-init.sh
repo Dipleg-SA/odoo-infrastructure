@@ -14,10 +14,28 @@ mkdir -p secrets
 MARK="CAMBIAR"
 creados=()
 
+# --- Qué secrets lleva ESTE stack ---
+# Se lo pregunta a la composición, como las guardas del Makefile: cada entrypoint
+# ya declara los suyos —11 producción, 8 staging, 3 development— y una segunda
+# lista acá divergiría. Sin esto, un stack chico nace con archivos inertes que
+# secrets-check después exige completar.
+
+DECLARADOS=$(docker compose --profile cert --profile restore config 2>/dev/null \
+  | sed -n 's|^ *file: .*/secrets/\([a-z0-9_]*\)$|\1|p')
+
+if [ -z "$DECLARADOS" ]; then
+  echo "secrets-init: no se pudo leer los secrets de la composición — revisar COMPOSE_FILE en .env" >&2
+  exit 1
+fi
+
 # --- Helper ---
-# Escribe solo si el archivo no existe; stdin trae el contenido.
+# Escribe solo si el archivo no existe y este stack lo declara; stdin trae el contenido.
 
 nuevo() {
+  if ! printf '%s\n' "$DECLARADOS" | grep -qx "$1"; then
+    echo "omitido (este stack no lo declara): secrets/$1"
+    return 1
+  fi
   if [ -e "secrets/$1" ]; then
     echo "skip (ya existe): secrets/$1"
     return 1

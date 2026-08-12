@@ -36,7 +36,7 @@ Para scripts, `bash -n scripts/<x>.sh` y después correrlos de verdad. **Correr 
 
 ## Arquitectura
 
-`compose.yaml` es solo redes, secrets y un `include:` por capa. El nombre del stack no se declara ahí: sale de `COMPOSE_PROJECT_NAME` en `.env`, y de él derivan `container_name`, volúmenes, redes y **tags de imagen**. Nunca un archivo monolítico, nunca `compose.override.yaml` — ese nombre dispara el autoload implícito de Compose.
+**Un entrypoint por entorno**, cada uno solo redes, secrets y un `include:` por capa: `compose.yaml` (producción, 11 secrets) y `compose.staging.yaml` (staging, 8 — sin backups, sin observabilidad, sin dnsmasq). Cuál se usa lo dice `COMPOSE_FILE` en `.env`. El nombre del stack no se declara ahí: sale de `COMPOSE_PROJECT_NAME` en `.env`, y de él derivan `container_name`, volúmenes, redes y **tags de imagen**. Nunca un archivo monolítico, nunca `compose.override.yaml` — ese nombre dispara el autoload implícito de Compose.
 
 | Capa | Servicios | Módulo |
 |---|---|---|
@@ -52,6 +52,7 @@ Para scripts, `bash -n scripts/<x>.sh` y después correrlos de verdad. **Correr 
 Cosas que no se deducen leyendo un archivo solo:
 
 - **pgBackRest no tiene contenedor propio**: vive dentro de la imagen de Postgres, porque `archive_command` lo ejecuta el proceso de la base.
+- **`archive_mode` lo fija el `-c` de `compose.db.yaml`, no `postgresql.conf`** —ese archivo es el mismo para los tres entornos—. Un stack sin la capa de backups apunta a la stanza de producción para restaurar: con el archivado prendido le empuja su propio WAL y contamina el repositorio real. `PG_ARCHIVE_MODE=off` en su `.env`, y `verify-db` espera el valor según las capas del stack.
 - **`docker/odoo/entrypoint.sh` genera config en runtime**. El `addons_path` sale de un glob sobre cuatro categorías en orden de precedencia (`enterprise > custom-addons > oca > third-party`), y `admin_passwd`, SMTP y credenciales se appendean al conf. `config/odoo/odoo.conf` es solo la base.
 - **PgBouncer corre en modo transacción**, lo que rompe `LISTEN/NOTIFY`. Por eso `server_wide_modules` incluye `bus_alt_connection`, que le da al bus su propia conexión directa. Sin ese módulo Odoo arranca igual y el chat en vivo deja de actualizarse.
 - **Instalar o actualizar módulos nunca va atado al arranque.** Es un one-off explícito del operador contra `postgres:5432`, no contra PgBouncer.

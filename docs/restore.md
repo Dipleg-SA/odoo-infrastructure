@@ -177,7 +177,7 @@ Verificar las tres cosas de "Verificación post-restore", y **anotar el RTO medi
 **Dos límites conocidos antes del primer simulacro:**
 
 - **El clon compite por memoria con producción.** Levantar el segundo stack con los mismos `mem_limit` duplica el presupuesto de las dos capas pesadas. Antes del ejercicio hay que decidir una de tres: correr el clon con `ODOO_MEM_LIMIT` y `POSTGRES_MEM_LIMIT` reducidos, detener producción mientras dura, o verificar sin levantar Odoo.
-- **`scripts/integrity-check.sh` no sirve tal cual para el simulacro.** Invoca `docker compose exec` sin `-p`, así que apunta al proyecto por defecto — es decir, a **producción**, no al clon: correrlo durante un simulacro verifica el stack equivocado y devuelve un OK falso. Esa mitad se arregla anteponiendo `COMPOSE_PROJECT_NAME=<clon>`. La otra no: el script necesita `postgres` y `backup` corriendo, y el perfil `restore` levanta dos contenedores que solo duermen, ninguno de los cuales sirve un `psql`. Qué servicios levanta el clon es la misma decisión del punto anterior.
+- **`scripts/integrity-check.sh` apunta al proyecto por defecto.** Invoca `docker compose exec` sin `-p`, así que durante un simulacro verifica **producción** y no el clon, y devuelve un OK falso. Se corrige anteponiendo `COMPOSE_PROJECT_NAME=<clon>`. Lo que sigue en pie es que necesita `postgres` y `odoo` levantados: el perfil `restore` solo trae dos contenedores que duermen, ninguno de los cuales sirve un `psql`. Qué servicios levanta el clon es la misma decisión del punto anterior.
 
 ---
 

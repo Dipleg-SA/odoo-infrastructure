@@ -53,11 +53,33 @@ vacio() {
   else bad "$nombre" "$(printf '%s' "$salida" | head -2 | tr '\n' ' ')"; fi
 }
 
+# --- ¿El servicio está en este stack? ---
+# Le pregunta a la composición, como las guardas del Makefile: qué capas trae cada
+# entorno ya lo dice su entrypoint. Una capa que este stack no lleva no es un fallo.
+
+SERVICIOS=$(docker compose --profile cert --profile restore config --services 2>/dev/null)
+
+# Sin composición no se aborta: es el estado que la capa host existe para
+# diagnosticar. Se responde que sí a todo y cada chequeo reporta su propio fallo.
+
+declarado() {
+  [ -z "$SERVICIOS" ] && return 0
+  printf '%s\n' "$SERVICIOS" | grep -qx "$1"
+}
+
 # --- ¿El servicio está levantado? ---
 # Un chequeo de runtime contra un servicio apagado no puede concluir nada: dar ok
 # seria mentir y dar FALLA seria culpar al chequeo equivocado. Se omite.
 
 corriendo() { [ -n "$(docker compose ps -q "$1" 2>/dev/null)" ]; }
+
+# --- Por qué se omite ---
+# Distingue las dos causas: una capa ausente es una decisión del entorno, un
+# servicio caído es un problema. Confundirlas manda a buscar al lugar equivocado.
+
+motivo() {
+  if declarado "$1"; then echo "$1 no está corriendo"; else echo "$1 no está en este stack"; fi
+}
 
 # --- Búsqueda en logs ---
 # Helper propio porque vacio() no puede llevar un pipe: acá el grep es parte del chequeo.
@@ -65,7 +87,7 @@ corriendo() { [ -n "$(docker compose ps -q "$1" 2>/dev/null)" ]; }
 log_limpio() {
   local nombre="$1" patron="$2"; shift 2
   local salida
-  if ! corriendo "$1"; then omitir "$nombre" "$1 no está corriendo"; return; fi
+  if ! corriendo "$1"; then omitir "$nombre" "$(motivo "$1")"; return; fi
   salida=$(docker compose logs --tail 500 --no-log-prefix "$@" 2>/dev/null | grep -iE "$patron")
   if [ -z "$salida" ]; then ok "$nombre"
   else bad "$nombre" "$(printf '%s' "$salida" | head -1)"; fi
@@ -76,6 +98,7 @@ log_limpio() {
 
 sano() {
   local svc="$1" estado
+  if ! declarado "$svc"; then omitir "$svc levantado" "no está en este stack"; return 1; fi
   estado=$(docker compose ps "$svc" --format '{{.Status}}' 2>/dev/null | head -1)
   if [ -z "$estado" ]; then bad "$svc levantado" "no está corriendo"; return 1; fi
   case "$estado" in
@@ -103,9 +126,17 @@ publicado_en() {
   esac
 }
 
+# --- ¿El servicio declara puertos? ---
+# Staging borra el bloque entero con `ports: !reset []` y entra solo por el túnel.
+# Sin distinguirlo, "no está publicado" saldría en rojo justo donde es lo correcto.
+
+declara_puertos() {
+  docker compose config 2>/dev/null | sed -n "/^  $1:$/,/^  [a-z_-]*:$/p" | grep -q 'published:'
+}
+
 bind_es() {
   local svc="$1" puerto="$2" esperado="$3" actual
-  if ! corriendo "$svc"; then omitir "$svc:$puerto publicado en $esperado" "$svc no está corriendo"; return; fi
+  if ! corriendo "$svc"; then omitir "$svc:$puerto publicado en $esperado" "$(motivo "$svc")"; return; fi
   if ! actual=$(publicado_en "$svc" "$puerto"); then
     bad "$svc:$puerto publicado en $esperado" "no está publicado"; return
   fi
@@ -115,7 +146,7 @@ bind_es() {
 
 sin_publicar() {
   local svc="$1" puerto="$2" actual
-  if ! corriendo "$svc"; then omitir "$svc:$puerto sin publicar" "$svc no está corriendo"; return; fi
+  if ! corriendo "$svc"; then omitir "$svc:$puerto sin publicar" "$(motivo "$svc")"; return; fi
   if actual=$(publicado_en "$svc" "$puerto"); then
     bad "$svc:$puerto sin publicar" "está publicado en $actual"
   else ok "$svc:$puerto sin publicar"; fi
@@ -168,7 +199,9 @@ v_host() {
   # chequea acá, antes de levantar capa alguna, porque el de arriba solo ve la
   # clave presente y vacía, y la que rompe igual es la que no está.
 
-  if [ -n "${ALERT_EMAIL_TO:-}" ]; then
+  if ! declarado grafana; then
+    omitir "ALERT_EMAIL_TO declarado" "sin Grafana en este stack"
+  elif [ -n "${ALERT_EMAIL_TO:-}" ]; then
     ok "ALERT_EMAIL_TO declarado ($ALERT_EMAIL_TO)"
   else
     bad "ALERT_EMAIL_TO declarado" "falta o está vacío en .env — Grafana no arranca: el provisioning de alerting aborta"
@@ -199,7 +232,9 @@ v_host() {
   # --- ufw ---
   # Solo gobierna puertos de procesos del host; acá el 53/udp de dnsmasq.
 
-  if command -v ufw >/dev/null 2>&1; then
+  if ! declarado dnsmasq; then
+    omitir "ufw permite 53/udp desde la LAN" "sin dnsmasq en este stack"
+  elif command -v ufw >/dev/null 2>&1; then
     if sudo -n ufw status 2>/dev/null | grep -q '53/udp'; then
       ok "ufw permite 53/udp desde la LAN"
     else
@@ -234,8 +269,10 @@ v_edge() {
   # --- Resolver de la LAN ---
   # El healthcheck de dnsmasq le pregunta a él: prueba que responde, no que se lo consulte.
 
-  omitir "la LAN usa dnsmasq como resolver" \
-    "no verificable desde el servidor — correr el chequeo 3b de INSTALL.md en un equipo de la LAN"
+  if declarado dnsmasq; then
+    omitir "la LAN usa dnsmasq como resolver" \
+      "no verificable desde el servidor — correr el chequeo 3b de INSTALL.md en un equipo de la LAN"
+  fi
 
   # --- Config renderizada ---
   # envsubst corre al arrancar: si el filtro o la variable fallan, nginx levanta
@@ -244,15 +281,17 @@ v_edge() {
   if corriendo nginx; then
     vacio "sin variables sin sustituir en la config" \
       docker compose exec -T nginx grep -rl '\${' /etc/nginx/conf.d/
-    if [ -n "$PUBLIC_HOSTNAME" ]; then
+    if [ "${NGINX_MODE:-tls}" = "plain" ]; then
+      omitir "server_name es el hostname público" "modo plain: el server_name es el catch-all, no hay hostname que servir"
+    elif [ -n "$PUBLIC_HOSTNAME" ]; then
       expect "server_name es el hostname público" "$PUBLIC_HOSTNAME" \
         docker compose exec -T nginx grep -h server_name /etc/nginx/conf.d/default.conf
     else
       omitir "server_name es el hostname público" "falta PUBLIC_HOSTNAME en .env"
     fi
   else
-    omitir "sin variables sin sustituir en la config" "nginx no está corriendo"
-    omitir "server_name es el hostname público" "nginx no está corriendo"
+    omitir "sin variables sin sustituir en la config" "$(motivo nginx)"
+    omitir "server_name es el hostname público" "$(motivo nginx)"
   fi
 
   # --- Resolver dinámico ---
@@ -269,37 +308,52 @@ v_edge() {
   # antes de que el timer sea el que descubra el problema.
 
   local venc epoch ahora dias
-  venc=$(docker compose --profile cert run --rm -T certbot certificates 2>/dev/null \
-    | sed -n 's/.*Expiry Date: \([^ ]* [^ ]*\).*/\1/p' | head -1)
-  if [ -z "$venc" ]; then
-    bad "certificado emitido" "certbot no reporta ninguno — correr make cert-issue"
+  if ! declarado certbot; then
+    omitir "certificado emitido" "sin certbot en este stack — nginx sirve en texto plano"
   else
-    epoch=$(date -u -d "$venc" +%s 2>/dev/null || date -u -j -f '%Y-%m-%d %H:%M:%S' "$venc" +%s 2>/dev/null || echo 0)
-    ahora=$(date -u +%s); dias=$(( (epoch - ahora) / 86400 ))
-    if [ "$epoch" -eq 0 ]; then aviso "certificado emitido" "no se pudo interpretar la fecha: $venc"
-    elif [ "$dias" -lt 15 ]; then bad "certificado vigente" "vence en $dias días — la renovación no está corriendo"
-    else ok "certificado vigente ($dias días)"; fi
+    venc=$(docker compose --profile cert run --rm -T certbot certificates 2>/dev/null \
+      | sed -n 's/.*Expiry Date: \([^ ]* [^ ]*\).*/\1/p' | head -1)
+    if [ -z "$venc" ]; then
+      bad "certificado emitido" "certbot no reporta ninguno — correr make cert-issue"
+    else
+      epoch=$(date -u -d "$venc" +%s 2>/dev/null || date -u -j -f '%Y-%m-%d %H:%M:%S' "$venc" +%s 2>/dev/null || echo 0)
+      ahora=$(date -u +%s); dias=$(( (epoch - ahora) / 86400 ))
+      if [ "$epoch" -eq 0 ]; then aviso "certificado emitido" "no se pudo interpretar la fecha: $venc"
+      elif [ "$dias" -lt 15 ]; then bad "certificado vigente" "vence en $dias días — la renovación no está corriendo"
+      else ok "certificado vigente ($dias días)"; fi
+    fi
   fi
 
   # --- Túnel ---
   # Cuatro conexiones registradas es lo normal; una sola funciona pero está degradado.
 
   local conns
-  conns=$(docker compose logs cloudflared 2>/dev/null | grep -c "Registered tunnel connection")
-  if [ "${conns:-0}" -ge 2 ]; then ok "cloudflared con $conns conexiones registradas"
-  elif [ "${conns:-0}" -eq 1 ]; then aviso "cloudflared con >=2 conexiones" "solo 1 — degradado"
-  else bad "cloudflared con >=2 conexiones" "0 — el Tunnel no conecta"; fi
+  if ! declarado cloudflared; then
+    omitir "cloudflared con >=2 conexiones" "sin túnel en este stack"
+  else
+    conns=$(docker compose logs cloudflared 2>/dev/null | grep -c "Registered tunnel connection")
+    if [ "${conns:-0}" -ge 2 ]; then ok "cloudflared con $conns conexiones registradas"
+    elif [ "${conns:-0}" -eq 1 ]; then aviso "cloudflared con >=2 conexiones" "solo 1 — degradado"
+    else bad "cloudflared con >=2 conexiones" "0 — el Tunnel no conecta"; fi
+  fi
 
   log_limpio "nginx sin errores en el log" '\[error\]|\[emerg\]' nginx
 
   # --- Binds ---
-  # Nivel 3 (LAN): el acceso local esquiva el túnel y necesita llegar al proxy.
+  # Nivel 3 (LAN): el acceso local esquiva el túnel y necesita llegar al proxy. La
+  # dirección esperada es la misma que arma el ports: de compose.proxy.yaml.
 
-  if [ -n "$LOCAL_IP" ]; then
-    bind_es nginx 80 "$LOCAL_IP"
-    bind_es nginx 443 "$LOCAL_IP"
+  # Cada puerto tiene su propia variable y su propio default, así que cada uno se
+  # guarda por separado: una sola guarda deja al otro comparando contra vacío.
+
+  local http_esperado="${HTTP_BIND:-$LOCAL_IP}" https_esperado="${HTTPS_BIND:-$LOCAL_IP}"
+  if ! declara_puertos nginx; then
+    omitir "binds de nginx" "este stack no publica puertos — el ingreso entra solo por el túnel"
   else
-    omitir "binds de nginx" "falta LOCAL_IP en .env"
+    if [ -n "$http_esperado" ]; then bind_es nginx 80 "$http_esperado"
+    else omitir "nginx:80 publicado" "faltan HTTP_BIND y LOCAL_IP en .env"; fi
+    if [ -n "$https_esperado" ]; then bind_es nginx 443 "$https_esperado"
+    else omitir "nginx:443 publicado" "faltan HTTPS_BIND y LOCAL_IP en .env"; fi
   fi
 
   # --- Token de Cloudflare ---
@@ -307,7 +361,9 @@ v_edge() {
   # el desafío DNS-01: un token inválido no se nota hasta que el cert no renueva.
 
   local token resp
-  if token=$(cat secrets/cloudflare_api_token 2>/dev/null) && [ -n "$token" ]; then
+  if ! declarado certbot; then
+    omitir "token de Cloudflare activo" "sin certbot en este stack — no hay desafío DNS-01 que firmar"
+  elif token=$(cat secrets/cloudflare_api_token 2>/dev/null) && [ -n "$token" ]; then
     resp=$(printf 'header = "Authorization: Bearer %s"\nurl = "https://api.cloudflare.com/client/v4/user/tokens/verify"\n' \
       "$token" | curl -s -m 10 --config - 2>/dev/null)
     case "$resp" in
@@ -344,11 +400,20 @@ v_db() {
 
   # --- Archivado de WAL ---
   # archive_mode es parámetro de postmaster: cambiarlo exige reinicio, no reload.
+  #
+  # Lo que se espera depende del stack, y en el que no respalda es lo más caro de
+  # descubrir tarde: apunta a la stanza de producción para restaurar, así que con
+  # el archivado prendido le empuja su propio WAL al repo del entorno real.
 
-  expect "archive_mode activo" "on" docker compose exec -T postgres \
-    psql -U odoo -tAc "SHOW archive_mode"
-  expect "archive_command hacia pgBackRest" "pgbackrest archive-push" \
-    docker compose exec -T postgres psql -U odoo -tAc "SHOW archive_command"
+  if declarado backup; then
+    expect "archive_mode activo" "on" docker compose exec -T postgres \
+      psql -U odoo -tAc "SHOW archive_mode"
+    expect "archive_command hacia pgBackRest" "pgbackrest archive-push" \
+      docker compose exec -T postgres psql -U odoo -tAc "SHOW archive_command"
+  else
+    expect "archive_mode APAGADO (stack sin backups)" "off" docker compose exec -T postgres \
+      psql -U odoo -tAc "SHOW archive_mode"
+  fi
 
   # --- Stanza ---
   # cipher confirma que el repo está cifrado; el rango de wal archive, que el
@@ -375,16 +440,20 @@ v_db() {
   # valores viven en archivos de herramientas distintas y nada más los ata.
 
   local dia sem mes cobertura ret
-  dia="${RESTIC_KEEP_DAILY:-7}"
-  sem="${RESTIC_KEEP_WEEKLY:-4}"
-  mes="${RESTIC_KEEP_MONTHLY:-3}"
-  ret="${BACKUP_RETENTION_DAYS:-125}"
-  cobertura=$(( dia + sem * 7 + mes * 30 ))
-  if [ "$ret" -ge "$cobertura" ]; then
-    ok "retención de la base ($ret d) cubre la del filestore ($cobertura d)"
+  if ! declarado backup; then
+    omitir "retención de la base cubre la del filestore" "este stack no escribe backups"
   else
-    bad "retención de la base cubre la del filestore" \
-        "base $ret d < filestore $cobertura d — un restore viejo se queda sin adjuntos"
+    dia="${RESTIC_KEEP_DAILY:-7}"
+    sem="${RESTIC_KEEP_WEEKLY:-4}"
+    mes="${RESTIC_KEEP_MONTHLY:-3}"
+    ret="${BACKUP_RETENTION_DAYS:-125}"
+    cobertura=$(( dia + sem * 7 + mes * 30 ))
+    if [ "$ret" -ge "$cobertura" ]; then
+      ok "retención de la base ($ret d) cubre la del filestore ($cobertura d)"
+    else
+      bad "retención de la base cubre la del filestore" \
+          "base $ret d < filestore $cobertura d — un restore viejo se queda sin adjuntos"
+    fi
   fi
 
   # --- process-max contra los cpus del contenedor ---
@@ -403,8 +472,27 @@ v_db() {
         "process-max $pmax > cpus $pcpus — pgBackRest compite con la base"
   fi
 
-  expect "stanza cifrada en R2" "aes-256-cbc" \
-    docker compose exec -T -u postgres postgres pgbackrest info
+  # El cipher solo no alcanza: pgbackrest lo imprime desde la config local aunque
+  # el repositorio sea inalcanzable, así que un `ok` ahí tapaba una stanza en error.
+  #
+  # Solo lo corre el stack que respalda: los otros apuntan a la stanza de
+  # producción, así que acá darían verde por un repositorio que no es suyo.
+
+  local info
+  if ! declarado backup; then
+    omitir "repositorio de pgBackRest alcanzable y cifrado" \
+      "este stack no escribe backups — el repo es el de producción y lo verifica producción"
+  else
+    info=$(docker compose exec -T -u postgres postgres pgbackrest info 2>&1)
+    case "$info" in
+      *"status: error"*)
+        bad "repositorio de pgBackRest alcanzable y cifrado" \
+            "$(printf '%s' "$info" | grep -o '\[[A-Za-z]*Error\].*' | head -1)" ;;
+      *aes-256-cbc*) ok "repositorio de pgBackRest alcanzable y cifrado (aes-256-cbc)" ;;
+      *) bad "repositorio de pgBackRest alcanzable y cifrado" \
+             "pgbackrest info no reporta cipher: $(printf '%s' "$info" | head -1)" ;;
+    esac
+  fi
 
   local ready
   if ! corriendo postgres; then
@@ -444,13 +532,13 @@ v_odoo() {
   sucios=$(printf '%s\n' "$estado" | awk '$NF=="sucio" {print $2}' | tr '\n' ' ')
   faltan=$(printf '%s\n' "$estado" | grep 'sin worktree' | awk '{print $2}' | tr '\n' ' ')
   if [ -z "$estado" ]; then
-    bad "worktrees de producción presentes" "árbol vacío — correr make addons-sync"
+    bad "worktrees del checkout presentes" "árbol vacío — correr make addons-sync"
   elif [ -n "$faltan" ]; then
-    bad "worktrees de producción presentes" "sin clonar: $faltan — correr make addons-sync"
+    bad "worktrees del checkout presentes" "sin clonar: $faltan — correr make addons-sync"
   elif [ -n "$sucios" ]; then
-    bad "worktrees de producción limpios" "sucios: $sucios — addons.sh no actualiza un worktree con cambios"
+    bad "worktrees del checkout limpios" "sucios: $sucios — addons.sh no actualiza un worktree con cambios"
   else
-    ok "worktrees de producción presentes y limpios"
+    ok "worktrees del checkout presentes y limpios"
   fi
 
   # --- Módulos server-wide presentes en el árbol ---
@@ -527,8 +615,13 @@ v_odoo() {
   # "certbot renovó y nadie recargó nginx", que la métrica de textfile no cubre.
   # La dirección es la publicada, no loopback: el proxy bindea en LOCAL_IP.
 
-  local destino="${LOCAL_IP:-127.0.0.1}"
-  if [ -z "$PUBLIC_HOSTNAME" ]; then
+  local destino="${HTTPS_BIND:-${LOCAL_IP:-127.0.0.1}}"
+  if [ "${NGINX_MODE:-tls}" = "plain" ]; then
+    omitir "certificado que sirve nginx" "modo plain: la plantilla no escucha en el 443, no hay TLS que servir"
+  elif ! declara_puertos nginx; then
+    omitir "certificado que sirve nginx" \
+      "este stack no publica el 443 — el reload tras renovar se ejercita a mano con cert-renew"
+  elif [ -z "$PUBLIC_HOSTNAME" ]; then
     omitir "certificado que sirve nginx" "falta PUBLIC_HOSTNAME en .env"
   else
     local cert
@@ -572,6 +665,14 @@ v_odoo() {
 
 v_backups() {
   titulo "backups"
+
+  # La capa es exclusiva de producción: en un stack que no la trae, cada chequeo
+  # de abajo fallaría por la razón equivocada. Se omite entera, no servicio a servicio.
+
+  if ! declarado backup; then
+    omitir "capa de backups" "no está en este stack — es exclusiva de producción"
+    return
+  fi
 
   sano backup
 
@@ -620,6 +721,13 @@ v_backups() {
 
 v_observability() {
   titulo "observability"
+
+  # Ídem backups: solo producción observa. Sin Prometheus no hay nada que preguntar.
+
+  if ! declarado prometheus; then
+    omitir "capa de observabilidad" "no está en este stack — es exclusiva de producción"
+    return
+  fi
 
   sano prometheus; sano loki; sano grafana; sano alloy
 
