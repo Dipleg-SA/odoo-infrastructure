@@ -19,6 +19,7 @@ make up / down / logs / ps
 make addons-sync            # rearma el árbol de addons desde config/odoo/addons.txt
 make odoo-install MODULES=x # -i explícito; MODULES es obligatorio
 make odoo-update MODULES=x  # -u explícito
+make cert-issue            # emisión inicial; nginx no arranca sin el archivo
 make backup / backup-full / backup-check
 make secrets-init / secrets-perms / secrets-check
 ```
@@ -40,7 +41,8 @@ Para scripts, `bash -n scripts/<x>.sh` y después correrlos de verdad. **Correr 
 | Capa | Servicios | Módulo |
 |---|---|---|
 | DNS local | `dnsmasq` | `compose.dns.yaml` |
-| Borde | `traefik` · `cloudflared` | `compose.edge.yaml` |
+| Proxy | `nginx` | `compose.proxy.yaml` |
+| Borde | `cloudflared` · `certbot` | `compose.edge.yaml` |
 | Datos | `postgres` · `pgbouncer` | `compose.db.yaml` |
 | Aplicación | `odoo` | `compose.odoo.yaml` |
 | Protección | `backup` (restic) + pgBackRest dentro de Postgres | `compose.backups.yaml` |
@@ -72,7 +74,7 @@ Estos valores están duplicados por necesidad —hay formatos que no interpolan 
 
 - **El acceso lo define el `ports:`, no el firewall.** Docker publica por DNAT e inserta sus reglas antes de las cadenas del firewall. Cuatro niveles, nunca `0.0.0.0`. Ese criterio **no habla de los binds internos del contenedor**: un proceso que escucha en `0.0.0.0` sin `ports:` no expone nada al host, y a veces es necesario.
 - **Los secretos son archivos, nunca variables de entorno** — una env var queda visible en `docker inspect`. Compose fuera de Swarm **ignora `uid`/`gid`/`mode`** de los secrets de archivo, así que un `600` root-owned deja sin lectura a cualquier contenedor no-root. El mapa de GIDs esperados es dueño único de `scripts/secrets-perms.sh`; verificá el usuario real de la imagen, muchas corren distroless.
-- **Parametrizá por `.env` solo lo que se usa dentro de un `compose.*.yaml`.** Cuando el valor vive en el archivo de config propio de una herramienta, tiene que llegar por el mecanismo que *esa herramienta* ofrezca: Compose no interpola dentro de archivos bind-mounted. Loki necesita `-config.expand-env=true` **y** un bloque `environment:`, porque expande desde su propio entorno. Traefik trata archivo, flags y env como excluyentes: con su archivo presente no hay valor que inyectar por afuera.
+- **Parametrizá por `.env` solo lo que se usa dentro de un `compose.*.yaml`.** Cuando el valor vive en el archivo de config propio de una herramienta, tiene que llegar por el mecanismo que *esa herramienta* ofrezca: Compose no interpola dentro de archivos bind-mounted. Loki necesita `-config.expand-env=true` **y** un bloque `environment:`, porque expande desde su propio entorno. nginx sustituye con `envsubst` sobre `/etc/nginx/templates`, y `NGINX_ENVSUBST_FILTER` acota qué variables entran — sin él, una env var homónima de una de nginx (`$host`, `$status`) se la come la sustitución.
 - **Nunca archivos `.example` paralelos** a un config: son una copia que se desincroniza. Si el valor no se puede parametrizar, se elimina o se versiona literal.
 - **`scripts/verify.sh` es dueño único de qué se chequea y qué se espera.** `INSTALL.md` nombra el comando; los valores esperados no se duplican en la documentación.
 - `docker compose port` devuelve `invalid IP:0` con exit 0 para un puerto **no** publicado — no cadena vacía.

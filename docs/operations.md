@@ -6,7 +6,8 @@ Qué comando correr en el día a día, una vez que el stack ya está deployado. 
 
 | Comando | Qué hace |
 |---|---|
-| `make config-init` | Crea `config/traefik/acme.json`, lo único de `config/` que no se versiona (estado de runtime). Idempotente. Paso 1 de un deploy nuevo |
+| `make cert-issue` | Emite el certificado por DNS-01. Va **antes** del primer arranque de nginx, que no levanta sin el archivo |
+| `make cert-renew` | Renueva y recarga nginx. Lo corre el timer de systemd; a mano solo para diagnosticar |
 | `make up` | `docker compose up -d` — levanta/reconcilia **todo** el stack (operación normal, post-deploy) |
 | `make down` | `docker compose down` |
 | `make logs` | `docker compose logs -f` |

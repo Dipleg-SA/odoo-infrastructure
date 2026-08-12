@@ -3,7 +3,7 @@
 # (%n), que llega acá como %i — así el mail dice cuál corrida falló.
 
 [Unit]
-Description=Aviso de backup fallido (%i)
+Description=Aviso de unit fallida (%i)
 
 [Service]
 Type=oneshot

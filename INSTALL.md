@@ -39,8 +39,8 @@ Cada fase responde las mismas cuatro preguntas, siempre en este orden:
 | **I** | **Preparación** | |
 | 1 | [Cuentas externas](#1-cuentas-externas) | |
 | 2 | El repositorio | |
-| **II** | **Puesta en marcha** | 11 servicios, 7 módulos |
-| 3 | Borde | `dnsmasq` · `traefik` · `cloudflared` |
+| **II** | **Puesta en marcha** | 11 servicios, 8 módulos |
+| 3 | Borde | `dnsmasq` · `nginx` · `cloudflared` · `certbot` |
 | 4 | Datos | `postgres` · `pgbouncer` |
 | 5 | Addons | árbol y build |
 | 6 | Aplicación | `odoo` |
@@ -169,10 +169,10 @@ git fetch --tags && git checkout "$(git describe --tags --abbrev=0)"
 ```bash
 echo "# 3 → Esqueleto de config y secrets"
 cp .env.example .env
-make config-init secrets-init
+make secrets-init
 ```
 
-Al **último tag**, no al `HEAD` de la rama por defecto: es el mismo criterio de "nunca `:latest`" aplicado al propio checkout, con `HEAD` detached como guard-rail contra corregir código en el servidor. `config-init` crea `config/traefik/acme.json` —lo único de `config/` que no se versiona, porque es estado de runtime— y `secrets-init` imprime cuáles quedaron con `CAMBIAR`. Los dos son idempotentes.
+Al **último tag**, no al `HEAD` de la rama por defecto: es el mismo criterio de "nunca `:latest`" aplicado al propio checkout, con `HEAD` detached como guard-rail contra corregir código en el servidor. `secrets-init` imprime cuáles quedaron con `CAMBIAR`, y es idempotente: nunca pisa un valor ya cargado.
 
 ```bash
 echo "# 4 → IPs del servidor — anotá las dos primeras, las piden las fases 3 y 6"
@@ -206,7 +206,7 @@ echo "# 7 → Prerrequisitos del servidor y config del repo"
 make verify-host
 ```
 
-Cubre versión de Compose, arranque automático de Docker, `.env` sin claves vacías, permisos y GID de los 11 secrets, `acme.json`, y la superficie publicada del host. Es también lo que valida los prerrequisitos que este documento da por hechos.
+Cubre versión de Compose, arranque automático de Docker, `.env` sin claves vacías, la identidad declarada del stack, permisos y GID de los 11 secrets, y la superficie publicada del host. Es también lo que valida los prerrequisitos que este documento da por hechos.
 
 ---
 
@@ -214,71 +214,66 @@ Cubre versión de Compose, arranque automático de Docker, `.env` sin claves vac
 
 ## 3. Borde
 
-**Objetivo.** Los tres servicios del borde arriba: el Tunnel conectado, Traefik descubriendo por labels, y `dnsmasq` resolviendo el hostname a la IP local para la LAN.
+**Objetivo.** El certificado emitido, nginx sirviendo con él, el Tunnel conectado y `dnsmasq` resolviendo el hostname a la IP local para la LAN.
+
+**El orden importa y es al revés de lo intuitivo: primero el certificado, después el proxy.** nginx no arranca si el archivo del certificado no existe, y con DNS-01 certbot no necesita que nginx esté vivo para emitirlo — valida contra la API de Cloudflare, no contra el puerto 80.
 
 **A mano.** El **Public Hostname del Tunnel**, en Zero Trust → Networks → Tunnels → el Tunnel → Public Hostname. Va a mano porque el Tunnel es *remotely-managed*: no hay archivo de este repo que lo reemplace.
 
 | Campo | Valor |
 |---|---|
 | Subdomain + Domain | Los que componen tu `PUBLIC_HOSTNAME` |
-| Service | `https://traefik:443` — comparten la red `edge`, se resuelven por nombre |
+| Service | `https://nginx:443` — comparten la red `edge`, se resuelven por nombre |
 | TLS → **Origin Server Name** | Tu `PUBLIC_HOSTNAME` completo — **el que se olvida** |
 | TLS → No TLS Verify | desactivado |
 
-Sin **Origin Server Name**, `cloudflared` valida el certificado contra el nombre `traefik`, Traefik no tiene router para ese SNI, devuelve su self-signed y el sitio entero da **502**. No se manifiesta acá: recién en la fase 6, con Odoo sirviendo tráfico real.
+Sin **Origin Server Name**, `cloudflared` valida el certificado contra el nombre `nginx`, que no es el del certificado, y el sitio entero da **502**. No se manifiesta acá: recién en la fase 6, con Odoo sirviendo tráfico real.
 
 **Comandos.**
 
 ```bash
-echo "# 1 → Levantar el borde (dnsmasq se construye la primera vez)"
-docker compose up -d cloudflared traefik dnsmasq
+echo "# 1 → Emitir el certificado (one-off; nginx todavía no existe)"
+make cert-issue
 ```
 
-**El certificado real todavía no se emite, y está bien.** El resolver ACME solo pide certificado para dominios que tengan un router con `tls.certresolver`, y esos routers los aportan los labels de Odoo. Hasta la fase 6 Traefik sirve su self-signed, así que **el hostname público va a dar 502 al terminar esta fase**. Es el estado correcto, no un fallo.
+```bash
+echo "# 2 → Levantar el borde (dnsmasq se construye la primera vez)"
+docker compose up -d cloudflared nginx dnsmasq
+```
+
+**El hostname público va a dar 502 al terminar esta fase, y está bien.** nginx ya sirve con el certificado real, pero su upstream —Odoo— no existe hasta la fase 6. Es el estado correcto, no un fallo.
 
 **Verificación.**
 
 ```bash
-echo "# 2 → Estado del borde"
+echo "# 3 → Estado del borde"
 make verify-edge
 ```
 
-Cubre los tres servicios `healthy`, que `traefik.yaml` no tenga `email` ni `caServer`, las conexiones registradas del Tunnel, el log de Traefik sin errores, el dashboard respondiendo, los binds (`80`/`443` en `${LOCAL_IP}`, `8080` en loopback) y el token de Cloudflare contra la API.
+Cubre los tres servicios `healthy`, que la config renderizada no tenga variables sin sustituir, que el `server_name` sea tu hostname, que el `proxy_pass` vaya por variable con el resolver de Docker declarado, los días que le quedan al certificado, las conexiones registradas del Tunnel, el log de nginx sin errores, los binds (`80`/`443` en `${LOCAL_IP}`) y el token de Cloudflare contra la API.
 
 Si `dnsmasq` queda `unhealthy`, las dos causas típicas en un servidor nuevo son el `53` ya ocupado por el resolver del sistema, o el `53/udp` bloqueado en el firewall del host (ver Prerrequisitos) — está en [troubleshooting](docs/troubleshooting.md).
 
-Tres chequeos **no se pueden correr en el servidor**: cada bloque va en la máquina que dice, y ahí no tenés `.env`, así que los valores vuelven a la línea de asignación.
+Dos chequeos **no se pueden correr en el servidor**: cada bloque va en la máquina que dice, y ahí no tenés `.env`, así que los valores vuelven a la línea de asignación.
 
 ```bash
-echo "# 3 → Desde otro equipo de la LAN: las dos líneas tienen que dar la IP local del servidor"
+echo "# 4 → Desde otro equipo de la LAN: las dos líneas tienen que dar la IP local del servidor"
 HOST_PUB='el-hostname-publico'; SRV_LAN='ip-lan-del-servidor'
-echo "3a — dnsmasq responde:"; dig +short "$HOST_PUB" @"$SRV_LAN"
-echo "3b — la LAN le pregunta:"; dig +short "$HOST_PUB"
+echo "4a — dnsmasq responde:"; dig +short "$HOST_PUB" @"$SRV_LAN"
+echo "4b — la LAN le pregunta:"; dig +short "$HOST_PUB"
 ```
 
-**El que importa es el 3b.** El `@` del 3a le pregunta a `dnsmasq` directamente, así que prueba que responde bien — no que ningún equipo lo esté usando. Quién resuelve para la LAN lo decide el DHCP del router (ver Prerrequisitos), no este repositorio. Si el 3a da la IP local y el 3b devuelve una IP de Cloudflare, `dnsmasq` está sano y **no lo usa nadie**: la LAN sale a internet para llegar a un servidor que tiene al lado, y se queda sin acceso si internet se cae.
+**El que importa es el 4b.** El `@` del 3a le pregunta a `dnsmasq` directamente, así que prueba que responde bien — no que ningún equipo lo esté usando. Quién resuelve para la LAN lo decide el DHCP del router (ver Prerrequisitos), no este repositorio. Si el 4a da la IP local y el 4b devuelve una IP de Cloudflare, `dnsmasq` está sano y **no lo usa nadie**: la LAN sale a internet para llegar a un servidor que tiene al lado, y se queda sin acceso si internet se cae.
 
 ```bash
-echo "# 4 → Desde fuera de la LAN (datos móviles): tiene que fallar"
+echo "# 5 → Desde fuera de la LAN (datos móviles): tiene que fallar"
 SRV_PUB='ip-publica-del-servidor'
 nc -z -w2 "$SRV_PUB" 443 && echo "MAL: el router está reenviando el 443" || echo "OK: sin reenvío"
 ```
 
-```bash
-echo "# 5 → Desde otro nodo de tu VPN: el dashboard solo escucha en loopback"
-SRV_ADMIN='ip-de-administracion-del-servidor'
-curl -s -m 3 -o /dev/null "http://$SRV_ADMIN:8080/api/rawdata" && echo "MAL: el 8080 escucha fuera de loopback" || echo "OK: inalcanzable"
-```
-
 El `dig` **desde el propio servidor no sirve**: puede dar timeout por NAT sin que haya nada roto. Y devuelve la IP local, no una de Cloudflare — ese split-horizon es la razón por la que el chequeo público de la fase 6 exige headers de Cloudflare y no solo un `200`.
 
-Para ver el dashboard en el navegador, túnel SSH — el `8080` no escucha fuera del loopback, así que no hay forma de llegar directo:
-
-```bash
-ssh -N -L 8080:127.0.0.1:8080 "<usuario>@$SRV_ADMIN"
-```
-
-Con eso, `http://localhost:8080/dashboard/`. No tiene autenticación propia: su aislamiento es el bind, no una credencial.
+nginx no publica ninguna UI: no hay dashboard que abrir. Su estado se lee del log, que sale en JSON a `docker compose logs nginx`, y de `make verify-edge`.
 
 ---
 
@@ -381,7 +376,7 @@ Este árbol es el de **este** checkout. Los otros entornos son checkouts propios
 
 ## 6. Aplicación
 
-**Objetivo.** Odoo sirviendo por el hostname público con certificado propio de Let's Encrypt. Acá se cierra el 502 que dejó la fase 3 y se prueba la cadena Cloudflare → Tunnel → Traefik → Odoo entera.
+**Objetivo.** Odoo sirviendo por el hostname público con certificado propio de Let's Encrypt. Acá se cierra el 502 que dejó la fase 3 y se prueba la cadena Cloudflare → Tunnel → nginx → Odoo entera.
 
 **A mano.** **La contraseña de `admin`, apenas el sitio responda y antes que cualquier otra cosa.** El `-i base` del primer arranque la deja en `admin`, y para ese momento el sitio ya está publicado en internet por el Tunnel.
 
@@ -415,7 +410,7 @@ echo "# 3 → Estado de la aplicación"
 make verify-odoo
 ```
 
-Cubre el servicio `healthy`, los logs sin errores de permisos, Odoo respondiendo en su `:8069`, los worktrees de producción limpios, los tres routers en Traefik, el gestor de bases deshabilitado, los puertos sin publicar, y el **certificado**: emisor Let's Encrypt, sin `(STAGING)`, y con más de 21 días de vigencia. Si todavía dice `TRAEFIK DEFAULT CERT`, el resolver no emitió: esperá ~60 s y repetí.
+Cubre el servicio `healthy`, los logs sin errores de permisos, Odoo respondiendo en su `:8069`, los worktrees limpios, las tres rutas en la config renderizada de nginx, el gestor de bases deshabilitado, los puertos sin publicar, y el **certificado**: emisor Let's Encrypt y con más de 21 días de vigencia.
 
 Tres cosas quedan a mano.
 
@@ -424,24 +419,24 @@ echo "# 4 → ¿Por dónde va a salir el pedido? Esto decide si el chequeo 5 val
 dig +short "$PUBLIC_HOSTNAME"
 ```
 
-Si devuelve IPs de Cloudflare, el 5 es válido desde el propio servidor. Si devuelve `$LOCAL_IP`, el host está usando `dnsmasq` como resolver: el pedido iría directo a Traefik sin pasar por Cloudflare y daría `200` **aunque el Tunnel esté roto**. En ese caso corré el 5 desde otra red.
+Si devuelve IPs de Cloudflare, el 5 es válido desde el propio servidor. Si devuelve `$LOCAL_IP`, el host está usando `dnsmasq` como resolver: el pedido iría directo a nginx sin pasar por Cloudflare y daría `200` **aunque el Tunnel esté roto**. En ese caso corré el 5 desde otra red.
 
 ```bash
 echo "# 5 → La cadena pública completa: tienen que salir LOS TRES headers"
 curl -sI "https://$PUBLIC_HOSTNAME/web/login" | grep -iE "^HTTP|^server:|^cf-ray:"
 ```
 
-Solo Cloudflare agrega `server:` y `cf-ray:`. Un `200` sin ellos significa que el pedido nunca salió a internet. Si en cambio da **502**, es el Origin Server Name de la fase 3: `cloudflared` está validando el certificado contra el nombre `traefik`.
+Solo Cloudflare agrega `server:` y `cf-ray:`. Un `200` sin ellos significa que el pedido nunca salió a internet. Si en cambio da **502**, es el Origin Server Name de la fase 3: `cloudflared` está validando el certificado contra el nombre `nginx`.
 
 ```bash
-echo "# 6 → Rate-limit del login: diez 400 y después 429"
+echo "# 6 → Rate-limit del login: diez 400 y después 503"
 for i in $(seq 1 20); do curl -sk -o /dev/null -w "%{http_code} " -X POST \
-  --resolve "$PUBLIC_HOSTNAME:443:127.0.0.1" "https://$PUBLIC_HOSTNAME/web/login"; done; echo
+  --resolve "$PUBLIC_HOSTNAME:443:$LOCAL_IP" "https://$PUBLIC_HOSTNAME/web/login"; done; echo
 ```
 
-El `400` es Odoo rechazando un POST sin token CSRF — respuesta válida, no un fallo; lo que se mide es el corte en el 11.º (`average=2`, `burst=10`). Va contra Traefik por `--resolve` a propósito: con la latencia de Cloudflare de por medio (~300 ms por request) el bucket repone fichas más rápido de lo que el loop las consume y el `429` no aparece nunca, aunque el middleware esté perfecto. Por eso tampoco está en `verify.sh`: dispara un rate-limiter deliberadamente y no corresponde en cada corrida.
+El `400` es Odoo rechazando un POST sin token CSRF — respuesta válida, no un fallo; lo que se mide es el corte en el 11.º (`average=2`, `burst=10`), que `limit_req` devuelve como **503**, no como 429. Va directo a nginx por `--resolve` a propósito, y a `$LOCAL_IP` porque es ahí donde publica: con la latencia de Cloudflare de por medio (~300 ms por request) el bucket repone fichas más rápido de lo que el loop las consume y el corte no aparece nunca, aunque la zona esté perfecta. Por eso tampoco está en `verify.sh`: dispara un rate-limiter deliberadamente y no corresponde en cada corrida.
 
-**Y el chatter, con dos sesiones abiertas:** mandá un mensaje y confirmá que aparece solo, sin recargar. Prueba dos cosas de un tiro — que Traefik rutea `/websocket` al worker gevent (`8072`) sin `StripPrefix`, y que `bus_alt_connection` está activo: sin él, el modo transacción de PgBouncer rompe el `LISTEN/NOTIFY` del que depende el bus y el mensaje no llegaría hasta recargar.
+**Y el chatter, con dos sesiones abiertas:** mandá un mensaje y confirmá que aparece solo, sin recargar. Prueba dos cosas de un tiro — que nginx rutea `/websocket` al worker gevent (`8072`) con la ruta entera, y que `bus_alt_connection` está activo: sin él, el modo transacción de PgBouncer rompe el `LISTEN/NOTIFY` del que depende el bus y el mensaje no llegaría hasta recargar.
 
 ---
 
@@ -470,7 +465,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now odoo-backup-daily.timer odoo-backup-monthly.timer && echo "OK: timers activos"
 ```
 
-El `sudo -v` adelante no es decorativo: si `sudo` pidiera contraseña en medio del pegado, se comería la línea siguiente como respuesta y ese comando **no correría**. El glob incluye `odoo-backup-notify@.service`, la unit plantilla que instancia el `OnFailure=` de las otras dos: sin ella, un backup que falle **no avisa** y nada más lo delata.
+El `sudo -v` adelante no es decorativo: si `sudo` pidiera contraseña en medio del pegado, se comería la línea siguiente como respuesta y ese comando **no correría**. El glob incluye `odoo-notify@.service`, la unit plantilla que instancia el `OnFailure=` de las otras dos: sin ella, un backup que falle **no avisa** y nada más lo delata.
 
 ```bash
 echo "# 3 → Primera corrida completa (tarda; ver abajo antes de arrancarla)"
@@ -500,8 +495,8 @@ Si el contenedor sale `health: starting` **no es un fallo**: con `interval: 1h` 
 
 ```bash
 echo "# 5 → El aviso de fallo, de punta a punta"
-sudo systemctl start odoo-backup-notify@prueba.service
-systemctl is-active odoo-backup-notify@prueba.service; systemctl show -p Result --value odoo-backup-notify@prueba.service
+sudo systemctl start odoo-notify@prueba.service
+systemctl is-active odoo-notify@prueba.service; systemctl show -p Result --value odoo-notify@prueba.service
 ```
 
 Dispara la unit real, no el script suelto: prueba el cableado, la ruta absoluta del `ExecStart` y el envío. Tiene que dar `Result=success` **y llegar el mail**. Un rechazo del SMTP acá es saldo o remitente sin verificar — lo mismo que ya probaste en la fase 1, ahora desde el servidor y con la credencial que quedó en `secrets/`.
@@ -544,9 +539,9 @@ Cubre los cuatro servicios, que ningún target de Prometheus esté caído, las t
 
 `loki` es el único servicio sin `(healthy)` y es correcto: su imagen es distroless estricta, no hay binario con el cual ejecutar un healthcheck. Su caída la cubre `up == 0` en Prometheus, que lo scrapea directo.
 
-Eso último no es un detalle de implementación sino la razón de que la topología sea híbrida: si todo se empujara por el agente, la muerte de Alloy **no dispararía ninguna alerta** — las series simplemente dejarían de llegar, y un umbral sobre una serie ausente no alerta nada. Por eso Prometheus scrapea por pull todo lo que ya expone HTTP (Traefik, `cloudflared`, Loki, Grafana, sí mismo **y el propio Alloy**), y el agente solo empuja lo que ningún pull alcanza.
+Eso último no es un detalle de implementación sino la razón de que la topología sea híbrida: si todo se empujara por el agente, la muerte de Alloy **no dispararía ninguna alerta** — las series simplemente dejarían de llegar, y un umbral sobre una serie ausente no alerta nada. Por eso Prometheus scrapea por pull todo lo que ya expone HTTP (`cloudflared`, Loki, Grafana, sí mismo **y el propio Alloy**), y el agente solo empuja lo que ningún pull alcanza.
 
-Grafana se abre por túnel SSH, igual que el dashboard de Traefik — el `3000` solo escucha en loopback:
+Grafana se abre por túnel SSH — el `3000` solo escucha en loopback:
 
 ```bash
 echo "# 4 → Túnel para ver Grafana en el navegador"

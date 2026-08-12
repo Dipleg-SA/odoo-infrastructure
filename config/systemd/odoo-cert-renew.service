@@ -2,7 +2,7 @@
 # Corre como root: necesita acceso al socket de Docker.
 
 [Unit]
-Description=Backup diario Odoo (pgBackRest check + diff, restic + prune)
+Description=Renovacion del certificado (certbot DNS-01 + reload de nginx)
 OnFailure=odoo-notify@%n.service
 Requires=docker.service
 After=docker.service
@@ -10,4 +10,4 @@ After=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=CAMBIAR-en-deploy
-ExecStart=CAMBIAR-en-deploy/scripts/backup.sh daily
+ExecStart=CAMBIAR-en-deploy/scripts/cert.sh renew

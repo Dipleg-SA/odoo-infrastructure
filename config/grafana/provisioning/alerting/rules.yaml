@@ -13,7 +13,6 @@ groups:
       # Regla única multi-serie: up cubre los targets que Prometheus scrapea directo
       # (por eso la caída de Alloy dispara), pg_up la base, y container_last_seen Odoo (regex: el nombre
       # del contenedor lleva el prefijo del proyecto),
-      # que no expone healthcheck de Traefik sin tocar su propio módulo de compose.
       - uid: svc-caido
         title: Servicio caído
         condition: alerta
@@ -144,11 +143,17 @@ groups:
         data:
           - refId: consulta
             relativeTimeRange: { from: 300, to: 0 }
-            datasourceUid: prometheus
+            datasourceUid: loki
             model:
               refId: consulta
-              instant: true
-              expr: sum(rate(traefik_service_requests_total{service=~"odoo.*",code=~"5.."}[5m])) / clamp_min(sum(rate(traefik_service_requests_total{service=~"odoo.*"}[5m])), 0.001)
+              queryType: instant
+              # Desde el cambio de proxy la capa de aplicacion se mide por logs: nginx
+              # loguea en JSON y esta es su unica fuente de latencia y codigos.
+              # La etiqueta es service y no container: container lleva el nombre del
+              # proyecto adelante y la consulta se romperia al renombrar el stack.
+              # __error__="" descarta lo que no es JSON: el error_log y los 301 del
+              # server :80 comparten stream y si no, inflan el denominador.
+              expr: sum(rate({service="nginx"} | json | __error__="" | status >= 500 [5m])) / sum(rate({service="nginx"} | json | __error__="" [5m]))
           - refId: alerta
             datasourceUid: __expr__
             model:
@@ -192,7 +197,7 @@ groups:
                 - evaluator: { type: gt, params: [108000] }
 
       # Única señal sobre el certificado: sin email de ACME, Let's Encrypt no avisa nada.
-      # Traefik renueva 30 días antes, así que 21 restantes = la renovación falla hace ~9.
+      # El timer renueva 30 días antes, así que 21 restantes = la renovación falla hace ~9.
       - uid: cert-por-vencer
         title: Certificado TLS por vencer
         condition: alerta
@@ -210,9 +215,10 @@ groups:
             model:
               refId: consulta
               instant: true
-              # min() = el que vence primero. El absent() a -1 cubre acme.json vacío o
-              # convertido en directorio; el for: 10m evita que dispare al reiniciar Traefik.
-              expr: ((min(traefik_tls_certs_not_after) - time()) / 86400) or (absent(traefik_tls_certs_not_after) * -1)
+              # La escribe scripts/cert.sh en state/textfile/ y la levanta el colector de
+              # Alloy: mide lo que certbot tiene en disco. El absent() a -1 cubre que la
+              # métrica no exista todavía, que es el caso de un deploy sin cert-issue.
+              expr: ((min(odoo_cert_expiry_timestamp_seconds) - time()) / 86400) or (absent(odoo_cert_expiry_timestamp_seconds) * -1)
           - refId: alerta
             datasourceUid: __expr__
             model:

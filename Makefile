@@ -1,10 +1,7 @@
-.PHONY: up down logs ps config-init secrets-init secrets-perms secrets-check backup backup-full backup-check restore-up restore-down addons-sync addons odoo-install odoo-update odoo-modules require-modules require-backups require-restore verify verify-host verify-edge verify-db verify-odoo verify-backups verify-observability
+.PHONY: up down logs ps cert-issue cert-renew secrets-init secrets-perms secrets-check backup backup-full backup-check restore-up restore-down addons-sync addons odoo-install odoo-update odoo-modules require-modules require-backups require-restore verify verify-host verify-edge verify-db verify-odoo verify-backups verify-observability
 
 # --- Inicialización de un deploy nuevo ---
-# En orden: config-init, secrets-init, cargar los valores a mano, secrets-perms, secrets-check.
-
-config-init:
-	scripts/config-init.sh
+# En orden: secrets-init, cargar los valores a mano, secrets-perms, secrets-check.
 
 secrets-init:
 	scripts/secrets-init.sh
@@ -17,6 +14,16 @@ secrets-perms:
 
 secrets-check:
 	scripts/secrets-perms.sh --check
+
+# --- Certificados ---
+# Emisión a mano la primera vez —nginx no arranca sin el archivo— y renovación
+# por timer de systemd. DNS-01: no necesita que el borde esté arriba.
+
+cert-issue:
+	scripts/cert.sh issue
+
+cert-renew:
+	scripts/cert.sh renew
 
 # --- Verificación del deploy ---
 # scripts/verify.sh es dueño único de qué se chequea y qué se espera; INSTALL.md solo

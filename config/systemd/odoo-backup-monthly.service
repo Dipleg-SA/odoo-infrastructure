@@ -3,7 +3,7 @@
 
 [Unit]
 Description=Backup full mensual Odoo (pgBackRest)
-OnFailure=odoo-backup-notify@%n.service
+OnFailure=odoo-notify@%n.service
 Requires=docker.service
 After=docker.service
 

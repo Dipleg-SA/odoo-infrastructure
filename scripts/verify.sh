@@ -184,17 +184,6 @@ v_host() {
     bad "secrets con permisos, grupo y valor cargado" "correr: scripts/secrets-perms.sh --check"
   fi
 
-  # --- acme.json ---
-  # Si Docker lo creó como directorio, Traefik nunca persiste el certificado.
-
-  if [ -d config/traefik/acme.json ]; then
-    bad "acme.json es archivo" "es un DIRECTORIO — Traefik reemite hasta chocar el rate-limit de LE"
-  elif [ -f config/traefik/acme.json ]; then
-    ok "acme.json es archivo"
-  else
-    bad "acme.json es archivo" "no existe — correr make config-init"
-  fi
-
   # --- ufw ---
   # Solo gobierna puertos de procesos del host; acá el 53/udp de dnsmasq.
 
@@ -222,13 +211,13 @@ v_host() {
 }
 
 # =====================================================================
-# edge — traefik, cloudflared, dnsmasq
+# edge — dnsmasq, nginx, cloudflared y el certificado
 # =====================================================================
 
 v_edge() {
   titulo "edge"
 
-  sano traefik; sano cloudflared; sano dnsmasq
+  sano nginx; sano cloudflared; sano dnsmasq
 
   # --- Resolver de la LAN ---
   # El healthcheck de dnsmasq le pregunta a él: prueba que responde, no que se lo consulte.
@@ -236,10 +225,49 @@ v_edge() {
   omitir "la LAN usa dnsmasq como resolver" \
     "no verificable desde el servidor — correr el chequeo 3b de INSTALL.md en un equipo de la LAN"
 
-  # --- Config estática de Traefik ---
-  # Un caServer de staging emite un cert que cloudflared rechaza: el sitio entero queda en 502.
+  # --- Config renderizada ---
+  # envsubst corre al arrancar: si el filtro o la variable fallan, nginx levanta
+  # igual con el literal ${PUBLIC_HOSTNAME} adentro y sirve un server_name inútil.
 
-  vacio "traefik.yaml sin email ni caServer" grep -E '^[[:space:]]*(email|caServer):' config/traefik/traefik.yaml
+  if corriendo nginx; then
+    vacio "sin variables sin sustituir en la config" \
+      docker compose exec -T nginx grep -rl '\${' /etc/nginx/conf.d/
+    if [ -n "$PUBLIC_HOSTNAME" ]; then
+      expect "server_name es el hostname público" "$PUBLIC_HOSTNAME" \
+        docker compose exec -T nginx grep -h server_name /etc/nginx/conf.d/default.conf
+    else
+      omitir "server_name es el hostname público" "falta PUBLIC_HOSTNAME en .env"
+    fi
+  else
+    omitir "sin variables sin sustituir en la config" "nginx no está corriendo"
+    omitir "server_name es el hostname público" "nginx no está corriendo"
+  fi
+
+  # --- Resolver dinámico ---
+  # Sin resolver + proxy_pass por variable, nginx cachea la IP de Odoo al arrancar
+  # y devuelve 502 en cuanto el contenedor se recrea, hasta que alguien lo recargue.
+
+  vacio "proxy_pass va por variable, no por nombre fijo" \
+    grep -nE 'proxy_pass +http://odoo' config/nginx/odoo.locations.template
+  expect "resolver de Docker declarado" "127.0.0.11" \
+    grep -h resolver config/nginx/00-http.conf.template
+
+  # --- Certificado ---
+  # Lo emite certbot, no nginx: si falta, nginx ni siquiera arranca. Se avisa
+  # antes de que el timer sea el que descubra el problema.
+
+  local venc epoch ahora dias
+  venc=$(docker compose --profile cert run --rm -T certbot certificates 2>/dev/null \
+    | sed -n 's/.*Expiry Date: \([^ ]* [^ ]*\).*/\1/p' | head -1)
+  if [ -z "$venc" ]; then
+    bad "certificado emitido" "certbot no reporta ninguno — correr make cert-issue"
+  else
+    epoch=$(date -u -d "$venc" +%s 2>/dev/null || date -u -j -f '%Y-%m-%d %H:%M:%S' "$venc" +%s 2>/dev/null || echo 0)
+    ahora=$(date -u +%s); dias=$(( (epoch - ahora) / 86400 ))
+    if [ "$epoch" -eq 0 ]; then aviso "certificado emitido" "no se pudo interpretar la fecha: $venc"
+    elif [ "$dias" -lt 15 ]; then bad "certificado vigente" "vence en $dias días — la renovación no está corriendo"
+    else ok "certificado vigente ($dias días)"; fi
+  fi
 
   # --- Túnel ---
   # Cuatro conexiones registradas es lo normal; una sola funciona pero está degradado.
@@ -250,28 +278,21 @@ v_edge() {
   elif [ "${conns:-0}" -eq 1 ]; then aviso "cloudflared con >=2 conexiones" "solo 1 — degradado"
   else bad "cloudflared con >=2 conexiones" "0 — el Tunnel no conecta"; fi
 
-  log_limpio "traefik sin errores en el log" 'level=error|level=fatal' traefik
-
-  # --- Dashboard ---
-  # Sin auth propia: su aislamiento es el bind a loopback, no una credencial.
-
-  expect "dashboard de Traefik responde" "200" \
-    curl -s -o /dev/null -w '%{http_code}' -m 5 http://127.0.0.1:8080/api/rawdata
+  log_limpio "nginx sin errores en el log" '\[error\]|\[emerg\]' nginx
 
   # --- Binds ---
-  # Nivel 3 (LAN) para 80/443, nivel 2 (loopback) para el dashboard.
+  # Nivel 3 (LAN): el acceso local esquiva el túnel y necesita llegar al proxy.
 
   if [ -n "$LOCAL_IP" ]; then
-    bind_es traefik 80 "$LOCAL_IP"
-    bind_es traefik 443 "$LOCAL_IP"
+    bind_es nginx 80 "$LOCAL_IP"
+    bind_es nginx 443 "$LOCAL_IP"
   else
-    omitir "binds de traefik" "falta LOCAL_IP en .env"
+    omitir "binds de nginx" "falta LOCAL_IP en .env"
   fi
-  bind_es traefik 8080 127.0.0.1
 
   # --- Token de Cloudflare ---
-  # Valor y alcance de una sola vez, contra la API real. Un token inválido no se
-  # manifiesta hasta la capa de Odoo, y ahí lo hace como un 502 que no lo menciona.
+  # Valor y alcance de una sola vez, contra la API real. Lo consume certbot para
+  # el desafío DNS-01: un token inválido no se nota hasta que el cert no renueva.
 
   local token resp
   if token=$(cat secrets/cloudflare_api_token 2>/dev/null) && [ -n "$token" ]; then
@@ -475,34 +496,43 @@ v_odoo() {
         "addons.sh: [$cats_sync] · entrypoint: [$cats_path]"
   fi
 
-  # --- Routers ---
-  # Los tres: raíz, websocket al worker gevent, y el de rate-limit del login.
+  # --- Rutas del proxy ---
+  # Las tres: raíz, websocket al worker gevent, y el login con rate-limit. Se
+  # cuentan sobre la config renderizada, que es lo que nginx está sirviendo de
+  # verdad — no sobre la plantilla, que puede no haberse sustituido.
 
-  local routers
-  routers=$(curl -s -m 5 http://127.0.0.1:8080/api/http/routers 2>/dev/null | grep -o '"name":"odoo[^"]*"' | wc -l | tr -d ' ')
-  if [ "${routers:-0}" -ge 3 ]; then ok "los 3 routers de Odoo en Traefik"
-  else bad "los 3 routers de Odoo en Traefik" "hay $routers — faltan labels o Traefik no los descubrió"; fi
+  local rutas
+  if corriendo nginx; then
+    rutas=$(docker compose exec -T nginx grep -c '^location' /etc/nginx/conf.d/odoo.locations 2>/dev/null | tr -d '\r ')
+    if [ "${rutas:-0}" -ge 3 ]; then ok "las 3 rutas de Odoo en nginx"
+    else bad "las 3 rutas de Odoo en nginx" "hay ${rutas:-0} — la config renderizada está incompleta"; fi
+  else
+    omitir "las 3 rutas de Odoo en nginx" "nginx no está corriendo"
+  fi
 
-  # --- Certificado ---
-  # Uno de staging hace que cloudflared rechace el origen y todo el sitio dé 502.
+  # --- Certificado que se está sirviendo ---
+  # Contra el socket real, no contra el disco: es el único chequeo que ve el caso
+  # "certbot renovó y nadie recargó nginx", que la métrica de textfile no cubre.
+  # La dirección es la publicada, no loopback: el proxy bindea en LOCAL_IP.
 
+  local destino="${LOCAL_IP:-127.0.0.1}"
   if [ -z "$PUBLIC_HOSTNAME" ]; then
-    omitir "certificado de producción" "falta PUBLIC_HOSTNAME en .env"
+    omitir "certificado que sirve nginx" "falta PUBLIC_HOSTNAME en .env"
   else
     local cert
-    cert=$(echo | openssl s_client -connect 127.0.0.1:443 -servername "$PUBLIC_HOSTNAME" 2>/dev/null \
+    cert=$(echo | openssl s_client -connect "$destino:443" -servername "$PUBLIC_HOSTNAME" 2>/dev/null \
       | openssl x509 -noout -issuer -subject -enddate 2>/dev/null)
     case "$cert" in
-      "") bad "certificado de producción" "no se pudo leer el certificado del :443" ;;
-      *"(STAGING)"*) bad "certificado de producción" "es de la CA de staging — sacar caServer y borrar acme.json" ;;
+      "") bad "certificado que sirve nginx" "no se pudo leer el certificado de $destino:443" ;;
+      *"(STAGING)"*) bad "certificado que sirve nginx" "es de la CA de staging — reemitir sin --staging" ;;
       *"Let's Encrypt"*)
-        if echo | openssl s_client -connect 127.0.0.1:443 -servername "$PUBLIC_HOSTNAME" 2>/dev/null \
+        if echo | openssl s_client -connect "$destino:443" -servername "$PUBLIC_HOSTNAME" 2>/dev/null \
            | openssl x509 -noout -checkend $((21*86400)) >/dev/null 2>&1; then
           ok "certificado de Let's Encrypt, vence en más de 21 días"
         else
           bad "certificado vigente" "vence en menos de 21 días — la renovación automática no corrió"
         fi ;;
-      *) bad "certificado de producción" "emisor inesperado; ¿sigue sirviendo TRAEFIK DEFAULT CERT?" ;;
+      *) bad "certificado que sirve nginx" "emisor inesperado — ¿el certificado no es el de certbot?" ;;
     esac
   fi
 
@@ -555,10 +585,10 @@ v_backups() {
       systemctl list-timers --all --no-pager odoo-backup-monthly.timer
 
     # Sin la unit plantilla instalada, un backup que falle no avisa y nada lo delata.
-    expect "aviso de fallo cableado" "odoo-backup-notify" \
+    expect "aviso de fallo cableado" "odoo-notify" \
       systemctl cat odoo-backup-daily.service
-    expect "unit plantilla de aviso instalada" "odoo-backup-notify@" \
-      systemctl list-unit-files --no-pager "odoo-backup-notify@*"
+    expect "unit plantilla de aviso instalada" "odoo-notify@" \
+      systemctl list-unit-files --no-pager "odoo-notify@*"
   else
     omitir "timers de systemd" "sin systemd"
   fi

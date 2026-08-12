@@ -39,6 +39,7 @@ secrets:
 
 include:
   - compose.dns.yaml
+  - compose.proxy.yaml
   - compose.edge.yaml
   - compose.db.yaml
   - compose.odoo.yaml

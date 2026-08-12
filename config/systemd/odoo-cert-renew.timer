@@ -1,0 +1,14 @@
+# Dos veces por dia es la cadencia que recomienda Let's Encrypt: certbot no hace
+# nada si faltan mas de 30 dias, y con dos ventanas diarias una caida puntual del
+# DNS o de la API no consume la ventana de renovacion entera.
+
+[Unit]
+Description=Renovacion del certificado, dos veces por dia
+
+[Timer]
+OnCalendar=*-*-* 03,15:00:00
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

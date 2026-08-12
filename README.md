@@ -2,14 +2,15 @@
 
 Infraestructura Docker autoalojada para una instancia de Odoo, operada por una sola persona sobre un único servidor.
 
-Once servicios en siete módulos de Compose, uno por capa: reverse proxy con TLS propio, túnel de ingreso sin puertos abiertos, acceso por red local, Postgres con pooling, la aplicación, backups con recuperación a un punto en el tiempo, y observabilidad con alerting.
+Once servicios en ocho módulos de Compose, uno por capa: reverse proxy con TLS propio, túnel de ingreso sin puertos abiertos, acceso por red local, Postgres con pooling, la aplicación, backups con recuperación a un punto en el tiempo, y observabilidad con alerting.
 
 ## Qué levanta
 
 | Capa | Servicios | Módulo |
 |---|---|---|
 | DNS local | `dnsmasq` | `compose.dns.yaml` |
-| Borde | `traefik` · `cloudflared` | `compose.edge.yaml` |
+| Proxy | `nginx` | `compose.proxy.yaml` |
+| Borde | `cloudflared` · `certbot` | `compose.edge.yaml` |
 | Datos | `postgres` · `pgbouncer` | `compose.db.yaml` |
 | Aplicación | `odoo` | `compose.odoo.yaml` |
 | Protección | `backup` (restic) + pgBackRest embebido en Postgres | `compose.backups.yaml` |
@@ -22,7 +23,7 @@ Once servicios en siete módulos de Compose, uno por capa: reverse proxy con TLS
 
 ```bash
 cp .env.example .env
-make config-init secrets-init
+make secrets-init
 ```
 
 El recorrido completo —qué cuentas hacen falta, en qué orden se levanta cada capa y cómo se verifica— está en [`INSTALL.md`](INSTALL.md). Son once fases, cada una con su verificación ejecutable.

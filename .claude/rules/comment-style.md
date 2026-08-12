@@ -39,5 +39,5 @@ effective_cache_size = 1536MB
 
 ## Ya aplicado en
 
-`config/odoo`, `config/pgbouncer`, `config/postgres`, `config/traefik`,
+`config/odoo`, `config/pgbouncer`, `config/postgres`, `config/nginx`,
 `docker/odoo/{Dockerfile,entrypoint.sh}`.

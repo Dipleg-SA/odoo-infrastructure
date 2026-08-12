@@ -36,33 +36,6 @@ services:
       - ./config/odoo/odoo.conf:/etc/odoo/odoo.conf:ro
       # Un árbol por checkout: qué rama se materializa lo dice ADDONS_BRANCH.
       - ./addons:/mnt/extra-addons:ro
-    labels:
-      traefik.enable: "true"
-      # router principal -> :8069 (HTTP)
-      traefik.http.routers.odoo.rule: "Host(`${PUBLIC_HOSTNAME}`)"
-      traefik.http.routers.odoo.entrypoints: "websecure"
-      traefik.http.routers.odoo.tls: "true"
-      traefik.http.routers.odoo.tls.certresolver: "cloudflare"
-      traefik.http.routers.odoo.service: "odoo-http"
-      traefik.http.services.odoo-http.loadbalancer.server.port: "8069"
-      # router websocket -> :8072 (gevent/longpolling), sin StripPrefix
-      traefik.http.routers.odoo-ws.rule: "Host(`${PUBLIC_HOSTNAME}`) && PathPrefix(`/websocket`)"
-      traefik.http.routers.odoo-ws.entrypoints: "websecure"
-      traefik.http.routers.odoo-ws.tls: "true"
-      traefik.http.routers.odoo-ws.tls.certresolver: "cloudflare"
-      traefik.http.routers.odoo-ws.service: "odoo-ws"
-      traefik.http.services.odoo-ws.loadbalancer.server.port: "8072"
-      # router rate-limit de login -> :8069, solo POST /web/login
-      traefik.http.routers.odoo-login.rule: "Host(`${PUBLIC_HOSTNAME}`) && Path(`/web/login`) && Method(`POST`)"
-      traefik.http.routers.odoo-login.entrypoints: "websecure"
-      traefik.http.routers.odoo-login.tls: "true"
-      traefik.http.routers.odoo-login.tls.certresolver: "cloudflare"
-      traefik.http.routers.odoo-login.service: "odoo-http"
-      traefik.http.routers.odoo-login.middlewares: "odoo-login-ratelimit"
-      # Punto de partida moderado: se ajusta por .env si genera falsos positivos
-      # detrás de NAT o de una red compartida.
-      traefik.http.middlewares.odoo-login-ratelimit.ratelimit.average: "${LOGIN_RATE_AVERAGE:-2}"
-      traefik.http.middlewares.odoo-login-ratelimit.ratelimit.burst: "${LOGIN_RATE_BURST:-10}"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8069/web/health?db_server_status=1"]
       start_period: 90s

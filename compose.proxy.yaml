@@ -1,0 +1,53 @@
+# Capa de proxy. nginx es el único reverse proxy del stack: termina TLS, rutea
+# el bus a su puerto propio y aplica el rate-limit del login.
+#
+# La llevan LOS TRES entornos. Development no tiene túnel ni certificados, pero
+# sí proxy: es lo que hace honesto al proxy_mode = True de odoo.conf, que sin
+# nadie escribiendo X-Forwarded-* confía en cabeceras que no existen.
+services:
+  nginx:
+    image: nginx:1.29.3-alpine
+    # Nombre derivado del proyecto: predecible y sin el sufijo -1 del autonaming,
+    # pero sin colisionar si se levanta un segundo stack con otro nombre de proyecto.
+    container_name: ${COMPOSE_PROJECT_NAME}-nginx
+    networks:
+      - edge
+      - app
+    # --- Binds ---
+    # Nivel 3 (LAN) por default; un entorno que no atiende la red local los borra
+    # con `ports: !reset []` en su entrypoint. cloudflared NO pasa por acá: llega
+    # por la red edge, por nombre de contenedor.
+
+    ports:
+      - "${HTTP_BIND:-${LOCAL_IP}}:${HTTP_PORT:-80}:80"
+      - "${HTTPS_BIND:-${LOCAL_IP}}:${HTTPS_PORT:-443}:443"
+    # --- Valores por deployment ---
+    # La imagen corre envsubst sobre /etc/nginx/templates al arrancar. El FILTER
+    # acota qué se sustituye: sin él, cualquier variable de entorno homónima de
+    # una de nginx ($host, $status) se la comería la sustitución.
+
+    environment:
+      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME:-localhost}
+      LOGIN_RATE_AVERAGE: ${LOGIN_RATE_AVERAGE:-2}
+      LOGIN_RATE_BURST: ${LOGIN_RATE_BURST:-10}
+      # Rango de donde llega cloudflared, único origen al que se le cree la
+      # CF-Connecting-IP. Nunca el de la LAN: ahí el cliente la podría forjar.
+      PROXY_TRUSTED_CIDR: ${PROXY_TRUSTED_CIDR:-172.16.0.0/12}
+      NGINX_ENVSUBST_FILTER: "^(PUBLIC_HOSTNAME|LOGIN_RATE_.*|PROXY_TRUSTED_CIDR)$$"
+    # --- Config ---
+    # Dos plantillas compartidas y una que elige el modo. server-tls para
+    # producción y staging, server-plain para development, vía NGINX_MODE en .env.
+
+    volumes:
+      - ./config/nginx/00-http.conf.template:/etc/nginx/templates/00-http.conf.template:ro
+      - ./config/nginx/odoo.locations.template:/etc/nginx/templates/odoo.locations.template:ro
+      - ./config/nginx/server-${NGINX_MODE:-tls}.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - letsencrypt:/etc/letsencrypt:ro
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: "0.50"
+
+volumes:
+  letsencrypt:

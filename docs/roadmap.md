@@ -186,7 +186,7 @@ infrastructure-odoo/
 │   └── systemd/
 │       ├── odoo-backup-daily.{service,timer}
 │       ├── odoo-backup-monthly.{service,timer}
-│       ├── odoo-backup-notify@.service
+│       ├── odoo-notify@.service
 │       └── odoo-cert-renew.{service,timer}                            ← nuevo
 │
 ├── docker/

@@ -11,7 +11,7 @@ services:
     # Nombre derivado del proyecto: predecible y sin el sufijo -1 del autonaming,
     # pero sin colisionar si se levanta un segundo stack con otro nombre de proyecto.
     container_name: ${COMPOSE_PROJECT_NAME}-prometheus
-    # Red edge además de observability: scrapea Traefik y cloudflared por nombre.
+    # Red edge además de observability: scrapea cloudflared por nombre.
     networks:
       - observability
       - edge

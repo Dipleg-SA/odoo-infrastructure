@@ -14,7 +14,7 @@ MARK="CAMBIAR"
 
 expected_gid_for() {
   case "$1" in
-    cloudflare_api_token) echo "10002" ;;      # traefik root — no load-bearing
+    cloudflare_api_token) echo "" ;;           # lo lee certbot, que corre como root — sin GID que exigir
     cloudflare_tunnel_token) echo "65532" ;;   # cloudflared non-root (65532:65532, distroless) — load-bearing
     postgres_password) echo "101" ;;           # lo lee odoo non-root (gid 101); postgres lo lee como root — load-bearing por odoo
     pgbouncer_credentials) echo "70" ;;               # edoburu/pgbouncer non-root (70:70) — load-bearing

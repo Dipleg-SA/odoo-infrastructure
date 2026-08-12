@@ -1,35 +1,9 @@
+# Capa de borde. El ingreso público entra por el túnel, sin puertos abiertos en
+# el router, y los certificados los emite certbot por DNS-01.
+#
+# El reverse proxy NO vive acá: es compose.proxy.yaml, que también lleva
+# development. Lo de este archivo es lo que development no tiene.
 services:
-  traefik:
-    image: traefik:v3.7.8
-    # Nombre derivado del proyecto: predecible y sin el sufijo -1 del autonaming,
-    # pero sin colisionar si se levanta un segundo stack con otro nombre de proyecto.
-    container_name: ${COMPOSE_PROJECT_NAME}-traefik
-    networks:
-      - edge
-      - app
-    # --- Binds: el acceso lo define la IP publicada, no ufw ---
-    # Docker publica por DNAT y saltea ufw; nivel 3 (LAN) para 80/443, nivel 2 (loopback) para el dashboard.
-
-    ports:
-      # cloudflared llega por la red edge (nombre de contenedor), no por estos puertos.
-      - "${LOCAL_IP}:80:80"
-      - "${LOCAL_IP}:443:443"
-      # Dashboard sin auth propia: el aislamiento es el bind, se entra por túnel SSH.
-      - "127.0.0.1:8080:8080"
-    volumes:
-      - ./config/traefik/traefik.yaml:/etc/traefik/traefik.yaml:ro
-      - ./config/traefik/acme.json:/acme.json
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    secrets:
-      - cloudflare_api_token
-    environment:
-      CF_DNS_API_TOKEN_FILE: /run/secrets/cloudflare_api_token
-    healthcheck:
-      test: ["CMD", "traefik", "healthcheck", "--ping"]
-    restart: unless-stopped
-    mem_limit: 128m
-    cpus: "0.25"
-
   cloudflared:
     image: cloudflare/cloudflared:2026.7.2
     command: tunnel --metrics 0.0.0.0:2000 run
@@ -45,3 +19,25 @@ services:
     restart: unless-stopped
     mem_limit: 64m
     cpus: "0.15"
+
+  # --- Emisión y renovación de certificados ---
+  # profiles lo deja fuera de `make up`: corre como one-off, a mano la primera vez
+  # y por timer de systemd después. DNS-01 y no HTTP-01 para que la emisión no
+  # dependa del ingreso — hoy el certificado se emite aunque el borde esté roto.
+
+  certbot:
+    image: certbot/dns-cloudflare:v5.1.0
+    container_name: ${COMPOSE_PROJECT_NAME}-certbot
+    profiles: [cert]
+    networks:
+      - edge
+    secrets:
+      - cloudflare_api_token
+    # El volumen lo declara compose.proxy.yaml, que es quien lo lee: certbot
+    # escribe ahí y nginx monta lo mismo en :ro. Van siempre juntos.
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - ./config/certbot/wrapper.sh:/usr/local/bin/wrapper.sh:ro
+    entrypoint: ["/bin/sh", "/usr/local/bin/wrapper.sh"]
+    mem_limit: 256m
+    cpus: "0.50"
