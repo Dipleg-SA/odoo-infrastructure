@@ -598,7 +598,7 @@ A partir de acá el documento es [operación](docs/operations.md).
 
 # Parte IV — Otros entornos
 
-> Todavía sin implementar: `compose.staging.yaml`, `compose.dev.yaml` y el worktree `addons/development/` no existen en el repositorio.
+> Todavía sin implementar: `compose.staging.yaml` y `compose.dev.yaml` no existen en el repositorio. Los árboles de addons de los tres entornos sí: los crea `scripts/addons.sh`. Qué comparte cada stack está en [docs/stacks.md](docs/stacks.md).
 
 ## 10. Staging
 
