@@ -71,41 +71,55 @@ Si no cambió la config resuelta, producción no puede haber cambiado.
 
 El renombre también alcanza al `hostname` de `backup`, y ahí no hay migración posible: restic agrupa la retención por `(host, paths)`, así que los snapshots viejos quedan en un grupo propio al que no le entra nada nuevo. Como `--keep-*` retiene por cantidad y no por edad, ese grupo **nunca se purga**: se paga en R2 para siempre y un `restic snapshots` muestra dos linajes. Si no se los quiere conservar, se borran a mano con `restic forget --host <nombre viejo>` después del primer backup exitoso con el nombre nuevo.
 
-## Etapa 3 — nginx, construido sin tocar producción
+## Etapa 3 — nginx reemplaza a Traefik
 
-nginx nace en un archivo nuevo, **conviviendo** con Traefik. Producción sigue en Traefik durante toda la etapa.
+Traefik **sale del repositorio** en esta etapa: no hay convivencia ni archivo transitorio. El reverse proxy pasa a ser nginx, uno por entorno, y `config/traefik/` se borra en el mismo commit.
 
-- `config/nginx/` con las plantillas `envsubst` de la imagen oficial.
+Lo que protege a producción no es un archivo paralelo, es su checkout: se clona **fijado al último tag, con `HEAD` detached**, justamente como guard-rail. Mientras nadie haga `git checkout` de un tag nuevo en `/srv/odoo-production`, ese stack sigue corriendo Traefik aunque la rama ya no lo tenga. Es el mismo criterio de «nunca `:latest`» aplicado al propio repositorio.
+
+La capa de borde se parte en dos, porque development no lleva túnel ni certificados:
+
+| Módulo | Servicios | Quién lo incluye |
+|---|---|---|
+| `compose.proxy.yaml` | `nginx` | producción, staging, development |
+| `compose.edge.yaml` | `cloudflared` · `certbot` | producción, staging |
+
+- `config/nginx/` con las plantillas `envsubst` de la imagen oficial. `config/traefik/` se borra.
 - `resolver 127.0.0.11 valid=10s` y `proxy_pass` a través de una variable, desde la primera línea: sin eso nginx cachea la IP de Odoo al arrancar y devuelve 502 tras cada recreación.
-- `compose.nginx.yaml` transitorio: `nginx`, `certbot` y el volumen `letsencrypt`.
-- `scripts/cert-renew.sh` y las units `odoo-cert-renew.{service,timer}`, con el mismo `OnFailure=` que los backups.
-- `cert-renew.sh` escribe la métrica de vencimiento en `state/textfile/`.
+- Las labels de Traefik salen de `compose.odoo.yaml`; el ruteo pasa a ser archivo, no descubrimiento.
+- `scripts/cert-renew.sh` y las units `odoo-cert-renew.{service,timer}`, con el mismo `OnFailure=` que los backups. `cert-renew.sh` escribe la métrica de vencimiento en `state/textfile/`.
+- `prometheus.yaml` pierde el job `traefik`. Las dos reglas de Grafana se migran: tasa de error a LogQL sobre el access log, vencimiento de certificado a la métrica de textfile.
+- `scripts/config-init.sh` y su target del Makefile se borran: existían solo para pre-crear `acme.json`, y el estado de certbot vive en un volumen nombrado.
+- `verify.sh`: los chequeos de borde pasan de Traefik a nginx. `INSTALL.md` fase 3, `docs/troubleshooting.md`, `docs/architecture.md`.
 
 **Verificación.** Un stack descartable en la máquina del operador, con nombre de proyecto propio, sirviendo Odoo por nginx sin TLS. Mismo método con el que se validaron `daemon.json`, Loki y Alloy: contenedores de prueba, nunca los secrets reales.
 
+**Producción no se entera.** Su checkout sigue en el tag anterior. La etapa termina con un tag nuevo publicado y nadie corriéndolo todavía.
+
 ## Etapa 4 — Staging en pie
 
-El primer stack nuevo. Nace con nginx, así que valida la etapa 3 en el servidor y con TLS real.
+El primer stack nuevo, y el primero que corre nginx de verdad: con TLS, con túnel y con tráfico. Es el ensayo del cutover de producción.
 
-- Checkout, `.env`, `secrets-init.sh` más los tres valores que van a mano, túnel y hostname en Cloudflare.
-- `compose.staging.yaml` con su `include:`, sus 8 secrets y `ports: !reset []`.
-- Siembra por restore desde el repositorio remoto — que es, a la vez, el primer simulacro completo.
+- Checkout, `.env` con `COMPOSE_PROJECT_NAME=staging` y `COMPOSE_FILE=compose.staging.yaml`, `secrets-init.sh` más los tres valores que van a mano, túnel y hostname en Cloudflare.
+- `compose.staging.yaml` con su `include:` —proxy, edge, datos, aplicación, restore—, sus 8 secrets y `ports: !reset []`.
+- Siembra por restore desde el repositorio remoto, que es a la vez el primer simulacro completo.
 - `integrity-check.sh` adaptado para no depender del servicio `backup`.
 
-**Verificación.** `make verify` en staging, con las capas ausentes omitidas y no en rojo. El hostname de staging sirviendo con certificado válido. El chat en vivo funcionando, que es lo que prueba el `location /websocket`.
+**Verificación.** `make verify` en staging, con las capas ausentes omitidas y no en rojo. El hostname de staging sirviendo con certificado válido emitido por certbot. El chat en vivo funcionando, que es lo que prueba el `location /websocket`. Y una renovación forzada (`--force-renewal`) para ejercitar el timer y el reload de nginx antes de que producción dependa de eso.
 
-## Etapa 5 — Cutover de producción a nginx
+## Etapa 5 — Cutover de producción
 
-Recién acá se toca el borde de producción, con nginx ya probado en el servidor y con tráfico real de staging encima.
+Ya no es un cambio de código: el código está escrito y probado desde la etapa 3. Es una **operación**, y por eso es corta.
 
-- `compose.edge.yaml`: Traefik sale, nginx entra; el `compose.nginx.yaml` transitorio se disuelve.
-- Las labels de Traefik salen de `compose.odoo.yaml`.
-- `prometheus.yaml` pierde el job `traefik`.
-- Las dos reglas de Grafana se migran: tasa de error a LogQL sobre el access log, vencimiento de certificado a la métrica de textfile.
-- `config/traefik/`, `scripts/config-init.sh` y su target del Makefile se borran.
-- `INSTALL.md` fase de borde, `docs/troubleshooting.md`, `docs/architecture.md`.
+```bash
+cd /srv/odoo-production
+git fetch --tags && git checkout "$(git describe --tags --abbrev=0)"
+docker compose up -d
+```
 
-**Rollback.** El `.env` vuelve a apuntar `COMPOSE_FILE` al entrypoint anterior, y `acme.json` sigue en disco. Por eso `config/traefik/` **no se borra en el mismo commit**: se borra después de un ciclo de renovación exitoso de certbot.
+**Rollback:** `git checkout <tag anterior> && docker compose up -d`. Vuelve `compose.edge.yaml` con Traefik y `config/traefik/` completo, y `acme.json` nunca se fue del disco porque está gitignoreado. El estado de certbot tampoco se pierde: vive en un volumen nombrado que un checkout no toca.
+
+Esto es lo que compra fijar el checkout a un tag en vez de seguir una rama: el rollback del borde entero es un comando, y no depende de que nadie se haya acordado de no borrar un archivo.
 
 **Verificación.** Las alertas primero. Una alerta migrada mal no falla ruidosa: no dispara nunca.
 
@@ -141,7 +155,8 @@ infrastructure-odoo/
 ├── compose.dev.yaml                entrypoint · development           ← nuevo
 │
 ├── compose.dns.yaml                capa · dnsmasq                     ← extraído de edge
-├── compose.edge.yaml               capa · nginx + cloudflared + certbot
+├── compose.proxy.yaml              capa · nginx                       ← extraído de edge
+├── compose.edge.yaml               capa · cloudflared + certbot
 ├── compose.db.yaml                 capa · postgres + pgbouncer
 ├── compose.odoo.yaml               capa · odoo
 ├── compose.backups.yaml            capa · restic

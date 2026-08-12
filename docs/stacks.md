@@ -13,7 +13,8 @@ El repositorio implementa hoy **uno solo**: producción, con Traefik en el borde
 | Nombre de proyecto | `production`            | `staging`               | `development-<feature>` |
 | Entrypoint         | `compose.yaml`          | `compose.staging.yaml`  | `compose.dev.yaml`      |
 | Rama de addons     | default del Dockerfile  | `<versión>-stag`        | `feat/*`                |
-| Borde              | nginx con TLS           | nginx con TLS           | nginx sin TLS           |
+| Proxy              | nginx con TLS           | nginx con TLS           | nginx sin TLS           |
+| Túnel y certbot    | sí                      | sí                      | no                      |
 | DNS local          | sí                      | no                      | no                      |
 | Datos              | sí                      | sí                      | sí                      |
 | Aplicación         | sí                      | sí                      | sí                      |
@@ -154,16 +155,17 @@ Un **entrypoint por entorno**: un archivo raíz con su propio `include:`, y el `
 
 | Entrypoint             | Capas que incluye                                            | Secrets |
 |------------------------|--------------------------------------------------------------|---------|
-| `compose.yaml`         | dns, borde, datos, aplicación, backups, restore, observabilidad | 11      |
-| `compose.staging.yaml` | borde, datos, aplicación, restore                            | 8       |
-| `compose.dev.yaml`     | borde, datos, aplicación                                     | 3       |
+| `compose.yaml`         | dns, proxy, borde, datos, aplicación, backups, restore, observabilidad | 11 |
+| `compose.staging.yaml` | proxy, borde, datos, aplicación, restore                     | 8       |
+| `compose.dev.yaml`     | proxy, datos, aplicación                                     | 3       |
 
 Cada entrypoint declara **solo los secrets que sus capas usan**. Compose falla al arrancar si un `file:` declarado no existe, así que declarar los once en dev obligaría a fabricar ocho archivos inertes. Los tres de development son de los que `secrets-init.sh` genera con `openssl`: **cero trabajo manual por checkout**.
 
 Se eligió el entrypoint por entorno sobre un módulo de override porque **Compose no sabe quitar un servicio ya incluido** — staging tendría que cargar la capa de backups para desactivarla.
 
-Dos capas nuevas, ambas por extracción de archivos existentes:
+Tres capas nuevas, todas por extracción de archivos existentes:
 
+- **`compose.proxy.yaml`** — nginx, los tres entornos. Sale de `compose.edge.yaml` porque development quiere el proxy —para que `proxy_mode` no mienta— pero no el túnel ni los certificados. Lo que queda en `compose.edge.yaml` es `cloudflared` y `certbot`.
 - **`compose.dns.yaml`** — dnsmasq, solo producción. Sale de `compose.edge.yaml` porque el `:53` en `network_mode: host` no se puede duplicar y staging no necesita sobrevivir a una caída de internet.
 - **`compose.restore.yaml`** — `restore-db` y `restore-files`, producción y staging. Sale de `compose.backups.yaml`: esos dos servicios solo leen del repositorio remoto, así que llevarlos a staging no rompe la regla de que la capa de backups es exclusiva de producción.
 
