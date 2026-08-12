@@ -18,9 +18,11 @@ services:
       POSTGRES_USER: odoo
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       # Valores por deployment; el entorno pisa al archivo opción por opción.
-      PGBACKREST_STANZA: ${PGBACKREST_STANZA}
-      PGBACKREST_REPO1_S3_BUCKET: ${R2_BUCKET}
-      PGBACKREST_REPO1_S3_ENDPOINT: ${R2_ENDPOINT}
+      # Con default vacío: un stack que no archiva ni restaura no los declara. Que
+      # el que sí lo hace los tenga cargados lo exige verify-db, no la interpolación.
+      PGBACKREST_STANZA: ${PGBACKREST_STANZA:-}
+      PGBACKREST_REPO1_S3_BUCKET: ${R2_BUCKET:-}
+      PGBACKREST_REPO1_S3_ENDPOINT: ${R2_ENDPOINT:-}
       PGBACKREST_REPO1_RETENTION_FULL: ${BACKUP_RETENTION_DAYS:-125}
     secrets:
       - postgres_password

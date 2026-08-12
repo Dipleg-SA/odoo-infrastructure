@@ -36,7 +36,7 @@ Para scripts, `bash -n scripts/<x>.sh` y después correrlos de verdad. **Correr 
 
 ## Arquitectura
 
-**Un entrypoint por entorno**, cada uno solo redes, secrets y un `include:` por capa: `compose.yaml` (producción, 11 secrets) y `compose.staging.yaml` (staging, 8 — sin backups, sin observabilidad, sin dnsmasq). Cuál se usa lo dice `COMPOSE_FILE` en `.env`. El nombre del stack no se declara ahí: sale de `COMPOSE_PROJECT_NAME` en `.env`, y de él derivan `container_name`, volúmenes, redes y **tags de imagen**. Nunca un archivo monolítico, nunca `compose.override.yaml` — ese nombre dispara el autoload implícito de Compose.
+**Un entrypoint por entorno**, cada uno solo redes, secrets y un `include:` por capa: `compose.yaml` (producción, 11 secrets), `compose.staging.yaml` (8 — sin backups, sin observabilidad, sin dnsmasq) y `compose.dev.yaml` (3, todos generados — solo proxy, datos y aplicación). Cuál se usa lo dice `COMPOSE_FILE` en `.env`. Los dos que no son producción sacan el correo saliente con `SMTP_HOST: ""`, para que un `.env` copiado no alcance para mandar mail real. El nombre del stack no se declara ahí: sale de `COMPOSE_PROJECT_NAME` en `.env`, y de él derivan `container_name`, volúmenes, redes y **tags de imagen**. Nunca un archivo monolítico, nunca `compose.override.yaml` — ese nombre dispara el autoload implícito de Compose.
 
 | Capa | Servicios | Módulo |
 |---|---|---|

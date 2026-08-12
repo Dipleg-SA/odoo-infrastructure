@@ -2,7 +2,7 @@
 
 Un **stack** acá es una combinación de tres cosas: un checkout del repositorio, un nombre de proyecto de Compose, y un conjunto de capas incluidas. Cambiar cualquiera de las tres da un stack distinto.
 
-El repositorio implementa hoy **uno solo**: producción, con Traefik en el borde y un árbol de addons pensado para tres entornos dentro de un mismo checkout. La **Parte I** describe ese estado y qué colisiona si se levanta un segundo stack. La **Parte II** recoge las decisiones tomadas para staging y development — varias de ellas reemplazan lo que hay hoy. Nada de la Parte II está implementado todavía.
+El repositorio implementa hoy **los tres**: cada uno tiene su entrypoint —`compose.yaml`, `compose.staging.yaml`, `compose.dev.yaml`— y nginx reemplazó a Traefik en el borde. La **Parte I** describe qué se comparte entre stacks y qué colisiona si se levanta un segundo. La **Parte II** recoge las decisiones tomadas para staging y development, y es lo que esos dos entrypoints implementan.
 
 ## Los tres stacks
 

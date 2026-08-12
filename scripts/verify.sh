@@ -126,21 +126,41 @@ publicado_en() {
   esac
 }
 
-# --- ¿El servicio declara puertos? ---
-# Staging borra el bloque entero con `ports: !reset []` y entra solo por el túnel.
-# Sin distinguirlo, "no está publicado" saldría en rojo justo donde es lo correcto.
+# --- ¿El stack publica ESE puerto, y en qué IP? ---
+# No lo publican todos: staging borra el bloque entero y development deja solo el 80,
+# porque server-plain no escucha en el 443. El $ ancla: "target: 80" matchea 8069.
 
-declara_puertos() {
-  docker compose config 2>/dev/null | sed -n "/^  $1:$/,/^  [a-z_-]*:$/p" | grep -q 'published:'
+# La IP esperada sale de la composición resuelta y NO de repetir la cadena de defaults
+# del .env: development pisa el ports: con !override y su cadena no consulta LOCAL_IP.
+
+# Sin composición legible imprime '?' y devuelve 0, como declarado(): falla abierta
+# para que el chequeo reporte su propio fallo y no uno inventado sobre las capas.
+
+bind_declarado() {
+  local bloque
+  bloque=$(docker compose config 2>/dev/null | sed -n "/^  $1:$/,/^  [a-z_-]*:$/p")
+  [ -z "$bloque" ] && { echo '?'; return 0; }
+  printf '%s\n' "$bloque" | grep -qE "target: $2\$" || return 1
+  printf '%s\n' "$bloque" | grep -B1 -E "target: $2\$" | sed -n 's/^ *host_ip: //p' | head -1 \
+    | grep . || echo '0.0.0.0'
 }
 
 bind_es() {
-  local svc="$1" puerto="$2" esperado="$3" actual
+  local svc="$1" puerto="$2" esperado actual
+  if ! esperado=$(bind_declarado "$svc" "$puerto"); then
+    omitir "$svc:$puerto publicado" "este stack no lo publica"; return
+  fi
   if ! corriendo "$svc"; then omitir "$svc:$puerto publicado en $esperado" "$(motivo "$svc")"; return; fi
   if ! actual=$(publicado_en "$svc" "$puerto"); then
     bad "$svc:$puerto publicado en $esperado" "no está publicado"; return
   fi
-  if [ "$actual" = "$esperado" ]; then ok "$svc:$puerto publicado en $esperado"
+  # --- 0.0.0.0 ---
+  # Rama propia y antes de comparar: coincidir con lo declarado no lo salva, porque
+  # el criterio no es "corre lo que dice la composición" sino "no en toda interfaz".
+
+  if [ "$actual" = "0.0.0.0" ]; then
+    bad "$svc:$puerto con bind acotado" "está en 0.0.0.0 — expuesto en todas las interfaces"
+  elif [ "$actual" = "$esperado" ]; then ok "$svc:$puerto publicado en $esperado"
   else bad "$svc:$puerto publicado en $esperado" "está en $actual — viola el criterio de bind"; fi
 }
 
@@ -343,17 +363,19 @@ v_edge() {
   # Nivel 3 (LAN): el acceso local esquiva el túnel y necesita llegar al proxy. La
   # dirección esperada es la misma que arma el ports: de compose.proxy.yaml.
 
-  # Cada puerto tiene su propia variable y su propio default, así que cada uno se
-  # guarda por separado: una sola guarda deja al otro comparando contra vacío.
+  # El esperado no se declara acá: lo lee bind_es de la composición resuelta, que es
+  # la única que sabe qué cadena de defaults aplicó el entrypoint de ESTE stack.
 
-  local http_esperado="${HTTP_BIND:-$LOCAL_IP}" https_esperado="${HTTPS_BIND:-$LOCAL_IP}"
-  if ! declara_puertos nginx; then
-    omitir "binds de nginx" "este stack no publica puertos — el ingreso entra solo por el túnel"
-  else
-    if [ -n "$http_esperado" ]; then bind_es nginx 80 "$http_esperado"
-    else omitir "nginx:80 publicado" "faltan HTTP_BIND y LOCAL_IP en .env"; fi
-    if [ -n "$https_esperado" ]; then bind_es nginx 443 "$https_esperado"
-    else omitir "nginx:443 publicado" "faltan HTTPS_BIND y LOCAL_IP en .env"; fi
+  bind_es nginx 80
+  bind_es nginx 443
+
+  # --- Bind caído al default ---
+  # El loopback de compose.proxy.yaml es una red de contención, no una configuración:
+  # sin LOCAL_IP el proxy deja de atender la LAN y el esperado cae con él, en verde.
+
+  if bind_declarado nginx 443 >/dev/null && [ -z "${HTTP_BIND:-}${HTTPS_BIND:-}${LOCAL_IP:-}" ]; then
+    bad "LOCAL_IP declarada en .env" \
+        "falta y este stack publica el 443 — nginx cae al loopback y no atiende la LAN"
   fi
 
   # --- Token de Cloudflare ---
@@ -424,8 +446,13 @@ v_db() {
   # sección y PGBACKREST_STANZA se mantienen iguales a mano. Si divergen, se queda
   # sin pg1-path y el archivado muere sin que la config parezca rota.
 
+  # Producción archiva y restaura, staging solo restaura, development ninguna de las
+  # dos: sin pgBackRest en juego, la stanza no es un dato que falte.
+
   local stanza="${PGBACKREST_STANZA:-}"
-  if [ -z "$stanza" ]; then
+  if ! declarado backup && ! declarado restore-db; then
+    omitir "stanza declarada en .env" "este stack no archiva ni restaura"
+  elif [ -z "$stanza" ]; then
     bad "stanza declarada en .env" "PGBACKREST_STANZA vacío"
   elif grep -q "^\[$stanza\]" config/pgbackrest/pgbackrest.conf 2>/dev/null; then
     ok "stanza '$stanza' tiene su sección en pgbackrest.conf"
@@ -463,7 +490,9 @@ v_db() {
   pmax=$(sed -n 's/^process-max[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' \
          config/pgbackrest/pgbackrest.conf | head -1)
   pcpus=$(sed -n '/^  postgres:/,/^  [a-z]/p' compose.db.yaml | sed -n 's/.*cpus: "\([0-9.]*\)".*/\1/p' | head -1)
-  if [ -z "$pmax" ] || [ -z "$pcpus" ]; then
+  if ! declarado backup && ! declarado restore-db; then
+    omitir "process-max dentro de los cpus de postgres" "este stack no corre pgBackRest"
+  elif [ -z "$pmax" ] || [ -z "$pcpus" ]; then
     aviso "process-max dentro de los cpus de postgres" "no se pudieron leer los valores"
   elif awk -v a="$pmax" -v b="$pcpus" 'BEGIN{exit !(a<=b)}'; then
     ok "process-max ($pmax) dentro de los cpus de postgres ($pcpus)"
@@ -573,6 +602,11 @@ v_odoo() {
     case "$rama" in
       "$ver_img"|"$ver_img"-*)
         ok "ADDONS_BRANCH ($rama) coherente con la imagen ($ver_img)" ;;
+      # Una rama de feature no lleva la versión en el nombre, así que no hay nada
+      # que cruzar: se avisa en vez de fallar, y el operador es quien sabe de dónde salió.
+      [!0-9]*)
+        aviso "ADDONS_BRANCH coherente con la imagen" \
+              "'$rama' no declara versión — nada garantiza que sea de la $ver_img" ;;
       *)
         bad "ADDONS_BRANCH coherente con la imagen" \
             "ADDONS_BRANCH=$rama contra imagen $ver_img" ;;
@@ -613,12 +647,13 @@ v_odoo() {
   # --- Certificado que se está sirviendo ---
   # Contra el socket real, no contra el disco: es el único chequeo que ve el caso
   # "certbot renovó y nadie recargó nginx", que la métrica de textfile no cubre.
-  # La dirección es la publicada, no loopback: el proxy bindea en LOCAL_IP.
+  # La dirección es la publicada, no loopback: sale de la composición, como los binds.
 
-  local destino="${HTTPS_BIND:-${LOCAL_IP:-127.0.0.1}}"
+  local destino
+  destino=$(bind_declarado nginx 443) || destino=""
   if [ "${NGINX_MODE:-tls}" = "plain" ]; then
     omitir "certificado que sirve nginx" "modo plain: la plantilla no escucha en el 443, no hay TLS que servir"
-  elif ! declara_puertos nginx; then
+  elif [ -z "$destino" ]; then
     omitir "certificado que sirve nginx" \
       "este stack no publica el 443 — el reload tras renovar se ejercita a mano con cert-renew"
   elif [ -z "$PUBLIC_HOSTNAME" ]; then

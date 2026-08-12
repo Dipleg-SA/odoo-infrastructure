@@ -109,6 +109,8 @@ El primer stack nuevo, y el primero que corre nginx de verdad: con TLS, con tún
 
 ## Etapa 5 — Cutover de producción
 
+**No aplica: no hay producción largada.** Esta etapa existía para mover un stack que ya estaba corriendo con Traefik, y ese stack no existe. Un deploy nuevo arranca directamente en el estado que dejan las etapas 1 a 4 —nginx, certbot, el nombre en `.env`— sin nada que migrar y sin rollback que preparar. Lo de abajo queda como referencia por si alguna vez hay que mover un deployment viejo.
+
 Ya no es un cambio de código: el código está escrito y probado desde la etapa 3. Es una **operación**, y por eso es corta.
 
 ```bash
