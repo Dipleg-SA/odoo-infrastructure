@@ -1,0 +1,199 @@
+# Roadmap de implementación
+
+Plan para llevar el repositorio del estado actual —un solo stack, con Traefik en el borde— al que describe la Parte II de [stacks.md](stacks.md): tres entornos, nginx, un árbol de addons por checkout.
+
+El principio de ordenamiento es uno solo: **producción está corriendo y no se toca hasta que lo nuevo esté probado en otro lado.** De ahí sale la inversión más importante del plan — staging se construye **antes** de migrar producción a nginx, y sirve de ensayo del cutover.
+
+## Dos decisiones ya tomadas
+
+**El proyecto de producción no se renombra.** Sigue siendo `infrastructure-odoo`. El nombre literal no cumple ninguna función —la derivación de `container_name`, volúmenes y redes funciona con cualquier valor— y renombrarlo obligaría a migrar los volúmenes a mano, con la base detenida, porque Docker no sabe renombrar un volumen. Staging y development nacen con nombres limpios de todos modos.
+
+**La alerta de vencimiento de certificado pasa a `state/textfile/`.** Hoy sale de `traefik_tls_certs_not_after` y con certbot se queda sin fuente. `cert-renew.sh` escribe la métrica por el mismo mecanismo que ya usa `backup.sh`, sin sumar componentes. La salvedad: mide lo que certbot cree, no lo que nginx sirve — el caso «se renovó pero nginx no recargó» queda fuera y necesitaría un chequeo sobre el puerto.
+
+---
+
+## Etapa 0 — El agujero de hoy
+
+Lo único de todo el plan que arregla algo que ya está roto. No depende de ninguna otra etapa.
+
+La resiliencia ante caída de internet depende de que los equipos de la LAN usen dnsmasq como resolver, y eso lo decide el DHCP del router. El repositorio nunca lo pide, y el chequeo que parece cubrirlo usa `dig … @servidor`: prueba que dnsmasq contesta, no que alguien le pregunte.
+
+- `INSTALL.md`: prerrequisito de apuntar el DNS de la LAN al servidor.
+- El chequeo de la fase de borde pasa a `dig +short` **sin** `@`, corrido desde un equipo de la LAN.
+- `verify.sh`: dejar dicho que `sano dnsmasq` valida que responde, no que se lo consulte. Desde el servidor no se puede verificar lo otro.
+
+**Verificación.** Desde un equipo de la LAN, `dig +short <hostname>` a secas devuelve la IP local del servidor.
+
+## Etapa 1 — Refactors mecánicos, producción idéntica
+
+Cuatro cambios independientes entre sí. Ninguno cambia lo que corre.
+
+- `ADDONS_BRANCH` reemplaza a `ODOO_BRANCH`; default leído del `FROM` del Dockerfile; el chequeo de `verify.sh` pasa de igualdad a prefijo.
+- `addons.sh` a un árbol por checkout: se van `entornos()`, `ensure_dev_worktree()` y el bootstrap de la rama `-stag`.
+- `require-prod` en el `Makefile`, colgando de `backup`, `backup-full`, `backup-check`, `restore-up` y `restore-down`.
+- Extraer `compose.dns.yaml` de `compose.edge.yaml`, y `compose.restore.yaml` de `compose.backups.yaml`.
+
+**Verificación.** Es la que hace segura toda la etapa: la config resuelta tiene que ser idéntica antes y después.
+
+```bash
+docker compose config > /tmp/antes.yaml
+# … refactor …
+docker compose config | diff /tmp/antes.yaml -
+```
+
+Si no cambió la config resuelta, producción no puede haber cambiado.
+
+**Migración.** El árbol de addons del checkout de producción sube un nivel: `addons/production/<categoría>/` pasa a `addons/<categoría>/`. Los worktrees se rehacen con `addons.sh`, no se mueven a mano.
+
+## Etapa 2 — Nombre de proyecto e imágenes
+
+- Tags `local/<servicio>:${COMPOSE_PROJECT_NAME}` en `compose.db.yaml`, `compose.odoo.yaml`, `compose.dns.yaml` y en `restore-db`.
+- El `.env` de producción declara `COMPOSE_PROJECT_NAME` y `COMPOSE_FILE` explícitamente, aunque coincidan con los defaults: es lo que hace que los tres entornos se lean igual.
+
+**Verificación.** `docker compose config` muestra los tags nuevos; `docker compose build && docker compose up -d` recrea los contenedores sin tocar los volúmenes.
+
+## Etapa 3 — nginx, construido sin tocar producción
+
+nginx nace en un archivo nuevo, **conviviendo** con Traefik. Producción sigue en Traefik durante toda la etapa.
+
+- `config/nginx/` con las plantillas `envsubst` de la imagen oficial.
+- `resolver 127.0.0.11 valid=10s` y `proxy_pass` a través de una variable, desde la primera línea: sin eso nginx cachea la IP de Odoo al arrancar y devuelve 502 tras cada recreación.
+- `compose.nginx.yaml` transitorio: `nginx`, `certbot` y el volumen `letsencrypt`.
+- `scripts/cert-renew.sh` y las units `odoo-cert-renew.{service,timer}`, con el mismo `OnFailure=` que los backups.
+- `cert-renew.sh` escribe la métrica de vencimiento en `state/textfile/`.
+
+**Verificación.** Un stack descartable en la máquina del operador, con nombre de proyecto propio, sirviendo Odoo por nginx sin TLS. Mismo método con el que se validaron `daemon.json`, Loki y Alloy: contenedores de prueba, nunca los secrets reales.
+
+## Etapa 4 — Staging en pie
+
+El primer stack nuevo. Nace con nginx, así que valida la etapa 3 en el servidor y con TLS real.
+
+- Checkout, `.env`, `secrets-init.sh` más los tres valores que van a mano, túnel y hostname en Cloudflare.
+- `compose.staging.yaml` con su `include:`, sus 8 secrets y `ports: !reset []`.
+- Siembra por restore desde el repositorio remoto — que es, a la vez, el primer simulacro completo.
+- `integrity-check.sh` adaptado para no depender del servicio `backup`.
+
+**Verificación.** `make verify` en staging, con las capas ausentes omitidas y no en rojo. El hostname de staging sirviendo con certificado válido. El chat en vivo funcionando, que es lo que prueba el `location /websocket`.
+
+## Etapa 5 — Cutover de producción a nginx
+
+Recién acá se toca el borde de producción, con nginx ya probado en el servidor y con tráfico real de staging encima.
+
+- `compose.edge.yaml`: Traefik sale, nginx entra; el `compose.nginx.yaml` transitorio se disuelve.
+- Las labels de Traefik salen de `compose.odoo.yaml`.
+- `prometheus.yaml` pierde el job `traefik`.
+- Las dos reglas de Grafana se migran: tasa de error a LogQL sobre el access log, vencimiento de certificado a la métrica de textfile.
+- `config/traefik/`, `scripts/config-init.sh` y su target del Makefile se borran.
+- `INSTALL.md` fase de borde, `docs/troubleshooting.md`, `docs/architecture.md`.
+
+**Rollback.** El `.env` vuelve a apuntar `COMPOSE_FILE` al entrypoint anterior, y `acme.json` sigue en disco. Por eso `config/traefik/` **no se borra en el mismo commit**: se borra después de un ciclo de renovación exitoso de certbot.
+
+**Verificación.** Las alertas primero. Una alerta migrada mal no falla ruidosa: no dispara nunca.
+
+## Etapa 6 — Development
+
+- `compose.dev.yaml`: borde, datos, aplicación. nginx sin TLS, publicando en loopback.
+- `.env.example` con el caso de development: `COMPOSE_FILE`, nombre de proyecto único por checkout, `ADDONS_BRANCH`.
+
+**Verificación.** Dos checkouts clonados, uno levantado, y comprobar que el otro tiene sus propios volúmenes — que es el modo de falla de reusar el nombre de proyecto.
+
+## Etapa 7 — Documentación
+
+- `INSTALL.md` fases 10 y 11, hoy esqueletos vacíos.
+- `PRINCIPLES.md`: convención del árbol de addons, capa de borde, y `compose.staging.yaml`/`compose.dev.yaml` como entrypoints en vez de módulos excluidos del `include:`.
+- `docs/stacks.md`: la Parte I pasa a describir el estado nuevo y la Parte II deja de ser futuro.
+
+---
+
+## Árbol objetivo del repositorio
+
+```
+infrastructure-odoo/
+├── .claude/rules/comment-style.md
+├── .env.example
+├── .gitignore
+├── INSTALL.md
+├── Makefile
+├── PRINCIPLES.md
+├── README.md
+│
+├── compose.yaml                    entrypoint · producción
+├── compose.staging.yaml            entrypoint · staging               ← nuevo
+├── compose.dev.yaml                entrypoint · development           ← nuevo
+│
+├── compose.dns.yaml                capa · dnsmasq                     ← extraído de edge
+├── compose.edge.yaml               capa · nginx + cloudflared + certbot
+├── compose.db.yaml                 capa · postgres + pgbouncer
+├── compose.odoo.yaml               capa · odoo
+├── compose.backups.yaml            capa · restic
+├── compose.restore.yaml            capa · restore-db + restore-files  ← extraído de backups
+├── compose.observability.yaml      capa · prometheus + loki + grafana + alloy
+│
+├── config/
+│   ├── nginx/                                                         ← reemplaza traefik/
+│   │   ├── nginx.conf
+│   │   └── templates/
+│   │       ├── 00-upstreams.conf.template
+│   │       ├── 10-odoo.conf.template
+│   │       └── 20-log-format.conf.template
+│   ├── certbot/cli.ini                                                ← nuevo
+│   ├── odoo/{odoo.conf, addons.txt}
+│   ├── postgres/postgresql.conf
+│   ├── pgbouncer/pgbouncer.ini
+│   ├── pgbackrest/pgbackrest.conf
+│   ├── prometheus/prometheus.yaml
+│   ├── loki/loki.yaml
+│   ├── alloy/config.alloy
+│   ├── grafana/
+│   │   ├── grafana.ini
+│   │   ├── dashboards/*.json
+│   │   └── provisioning/{alerting,dashboards,datasources,plugins}/
+│   ├── docker/daemon.json
+│   └── systemd/
+│       ├── odoo-backup-daily.{service,timer}
+│       ├── odoo-backup-monthly.{service,timer}
+│       ├── odoo-backup-notify@.service
+│       └── odoo-cert-renew.{service,timer}                            ← nuevo
+│
+├── docker/
+│   ├── dnsmasq/Dockerfile
+│   ├── odoo/{Dockerfile, entrypoint.sh, requirements.txt}
+│   └── postgres/Dockerfile
+│
+├── docs/
+│   ├── addons.md · architecture.md · operations.md
+│   ├── restore.md · roadmap.md · stacks.md · troubleshooting.md
+│
+├── scripts/
+│   ├── addons.sh              más corto: sin entornos
+│   ├── backup.sh
+│   ├── cert-renew.sh                                                  ← nuevo
+│   ├── failure-notify.sh
+│   ├── integrity-check.sh     sin depender del servicio backup
+│   ├── secrets-init.sh
+│   ├── secrets-perms.sh
+│   └── verify.sh
+│       config-init.sh                                                 ← se borra
+│
+└── state/{meta,textfile}/.gitkeep
+```
+
+No versionado, y propio de cada checkout: `.env`, `secrets/`, `addons/<categoría>/<repo>`, `addons/.repos/*.git`, y `state/*` salvo los `.gitkeep`.
+
+## Layout de deployment
+
+```
+SERVIDOR
+  /srv/odoo-production/     COMPOSE_PROJECT_NAME=infrastructure-odoo
+                            COMPOSE_FILE=compose.yaml
+                            11 secrets · systemd: backups + cert-renew
+
+  /srv/odoo-staging/        COMPOSE_PROJECT_NAME=staging
+                            COMPOSE_FILE=compose.staging.yaml
+                            8 secrets · systemd: cert-renew
+
+MÁQUINA DEL OPERADOR
+  ~/odoo-dev-<feature>/     COMPOSE_PROJECT_NAME=dev-<feature>   ← único por checkout
+                            COMPOSE_FILE=compose.dev.yaml
+                            3 secrets, todos generados · sin systemd
+```
