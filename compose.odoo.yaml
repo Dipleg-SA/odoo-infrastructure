@@ -34,7 +34,8 @@ services:
     volumes:
       - odoo-data:/var/lib/odoo
       - ./config/odoo/odoo.conf:/etc/odoo/odoo.conf:ro
-      - ./addons/production:/mnt/extra-addons:ro
+      # Un árbol por checkout: qué rama se materializa lo dice ADDONS_BRANCH.
+      - ./addons:/mnt/extra-addons:ro
     labels:
       traefik.enable: "true"
       # router principal -> :8069 (HTTP)

@@ -43,7 +43,7 @@ Cuatro cambios independientes entre sí. Ninguno cambia lo que corre.
 
 - `ADDONS_BRANCH` reemplaza a `ODOO_BRANCH`; default leído del `FROM` del Dockerfile; el chequeo de `verify.sh` pasa de igualdad a prefijo.
 - `addons.sh` a un árbol por checkout: se van `entornos()`, `ensure_dev_worktree()` y el bootstrap de la rama `-stag`.
-- `require-prod` en el `Makefile`, colgando de `backup`, `backup-full`, `backup-check`, `restore-up` y `restore-down`.
+- Dos guardas en el `Makefile`: `require-backups` sobre `backup`, `backup-full` y `backup-check`; `require-restore` sobre `restore-up` y `restore-down`. Son capas distintas — staging **sí** lleva restore —, así que una sola guarda le prohibiría a staging justo lo que tiene que hacer.
 - Extraer `compose.dns.yaml` de `compose.edge.yaml`, y `compose.restore.yaml` de `compose.backups.yaml`.
 
 **Verificación.** Es la que hace segura toda la etapa: la config resuelta tiene que ser idéntica antes y después.
@@ -56,7 +56,7 @@ docker compose config | diff /tmp/antes.yaml -
 
 Si no cambió la config resuelta, producción no puede haber cambiado.
 
-**Migración.** El árbol de addons del checkout de producción sube un nivel: `addons/production/<categoría>/` pasa a `addons/<categoría>/`. Los worktrees se rehacen con `addons.sh`, no se mueven a mano.
+**Migración.** El árbol de addons del checkout de producción sube un nivel: `addons/production/<categoría>/` pasa a `addons/<categoría>/`. Los worktrees se rehacen con `addons.sh`, no se mueven a mano — pero primero hay que borrar los árboles viejos (`rm -rf addons/production addons/staging addons/development`), porque sus worktrees retienen la rama y `worktree add` fallaría con `already checked out`. `addons.sh sync` aborta con ese mensaje si todavía están.
 
 ## Etapa 2 — Nombre de proyecto e imágenes
 

@@ -56,7 +56,7 @@ registrar_addons() {
   local dir="state/meta" tmp
   mkdir -p "$dir" 2>/dev/null || { echo "aviso: no se pudo crear $dir — backup sigue sin el registro de addons" >&2; return 0; }
   tmp=$(mktemp "$dir/.addons.XXXXXX" 2>/dev/null) || { echo "aviso: no se pudo escribir el registro de addons" >&2; return 0; }
-  if scripts/addons.sh status 2>/dev/null | grep '^production' > "$tmp"; then
+  if scripts/addons.sh status 2>/dev/null | grep -E '^(enterprise|custom-addons|oca|third-party)[[:space:]]' > "$tmp"; then
     chmod 644 "$tmp"
     mv "$tmp" "$dir/addons.txt"
   else

@@ -15,18 +15,17 @@ if [ -f .env ]; then . ./.env; fi
 MANIFEST="config/odoo/addons.txt"
 BARE_DIR="addons/.repos"
 
-# --- Rama por entorno ---
-# La versión de Odoo es un parámetro, no una constante: sale de .env y acompaña
-# al tag de la imagen. Staging deriva de producción, nunca se declara aparte.
+# --- Rama de los addons ---
+# Un árbol por checkout: qué entorno es este lo dice .env, no un subdirectorio.
+# El default sale del tag de la imagen, único lugar donde vive la versión de Odoo.
 
-RAMA_PROD="${ODOO_BRANCH:-19.0}"
-RAMA_STAG="${RAMA_PROD}-stag"
+ADDONS_BRANCH="${ADDONS_BRANCH:-$(sed -n 's/^FROM odoo:\([0-9.]*\).*/\1/p' docker/odoo/Dockerfile | head -1)}"
 
-# --- Worktree de desarrollo ---
-# Opt-in: solo existe en la máquina del operador. El servidor es réplica de solo
-# lectura, así que un árbol donde se escribe no tiene nada que hacer ahí.
-
-CON_DEV="${ADDONS_WITH_DEV:-0}"
+if [ -z "$ADDONS_BRANCH" ]; then
+  echo "addons.sh: no se pudo leer la versión del tag FROM odoo: del Dockerfile" >&2
+  echo "addons.sh: declarar ADDONS_BRANCH en .env" >&2
+  exit 1
+fi
 
 FAILED=0
 
@@ -78,104 +77,72 @@ ensure_bare() {
   return 0
 }
 
-# --- Worktrees ---
-# Paths absolutos: relativos se resuelven contra el cwd del bare, no el repo.
+# --- Worktree ---
+# Uno solo, en la rama que declara el checkout. Path absoluto: uno relativo se
+# resolvería contra el cwd del bare, no contra el repo.
 
-ensure_worktrees() {
-  local bare="$1" prod="$2" stag="$3" name="$4" err
-
+ensure_worktree() {
+  local bare="$1" tree="$2" name="$3" err
   git -C "$bare" worktree prune
-
-  if [ ! -d "$prod" ]; then
-    if ! err=$(git -C "$bare" worktree add "$prod" "$RAMA_PROD" 2>&1); then
-      fail "$name: worktree de producción falló — $err"
-      return 1
-    fi
-  fi
-
-  if [ ! -d "$stag" ]; then
-    if git -C "$bare" show-ref --verify -q "refs/remotes/origin/$RAMA_STAG"; then
-      if ! err=$(git -C "$bare" worktree add "$stag" "$RAMA_STAG" 2>&1); then
-        fail "$name: worktree de staging falló — $err"
-        return 1
-      fi
-    else
-      if ! err=$(git -C "$bare" worktree add -b "$RAMA_STAG" "$stag" "origin/$RAMA_PROD" 2>&1); then
-        fail "$name: bootstrap de $RAMA_STAG falló — $err"
-        return 1
-      fi
-    fi
-  fi
-  return 0
-}
-
-# --- Actualización ---
-# Producción avanza siempre (ff-only). Staging se reescribe: es descartable en
-# todo momento, así que un reset --hard nunca pierde nada que no exista en GitHub.
-
-update_worktrees() {
-  local bare="$1" prod="$2" stag="$3" name="$4" err
-
-  if [ -n "$(git -C "$prod" status --porcelain)" ]; then
-    fail "$name: producción tiene cambios sin commitear, no se actualiza"
-  elif ! err=$(git -C "$prod" merge --ff-only "origin/$RAMA_PROD" 2>&1); then
-    fail "$name: merge --ff-only en producción falló — $err"
-  fi
-
-  if git -C "$bare" show-ref --verify -q "refs/remotes/origin/$RAMA_STAG"; then
-    if ! err=$(git -C "$stag" reset --hard "origin/$RAMA_STAG" 2>&1); then
-      fail "$name: reset --hard en staging falló — $err"
-    fi
-  else
-    warn "$name: $RAMA_STAG no existe en el remoto todavía, staging sigue en su rama local"
-  fi
-  return 0
-}
-
-# --- Worktree de desarrollo ---
-# Se crea una vez y NUNCA se actualiza: es donde nacen las ramas feat/*, así que
-# tiene trabajo sin commitear y un reset o un merge lo destruiría. Nace detached
-# en origin/<rama de producción> porque git no deja tener la misma rama
-# checkouteada en dos worktrees, y desde ahí se hace checkout -b feat/loquesea.
-
-ensure_dev_worktree() {
-  local bare="$1" dev="$2" name="$3" err
-  [ "$CON_DEV" = "0" ] && return 0
-  [ -d "$dev" ] && return 0
-  if ! err=$(git -C "$bare" worktree add --detach "$dev" "origin/$RAMA_PROD" 2>&1); then
-    fail "$name: worktree de desarrollo falló — $err"
+  [ -d "$tree" ] && return 0
+  if ! err=$(git -C "$bare" worktree add "$tree" "$ADDONS_BRANCH" 2>&1); then
+    fail "$name: worktree en $ADDONS_BRANCH falló — $err"
     return 1
   fi
   return 0
 }
 
-sync_repo() {
-  local url="$1" category="$2" name bare prod stag dev
-  name=$(module_name "$url")
-  bare="$BARE_DIR/$name.git"
-  prod="$ROOT/addons/production/$category/$name"
-  stag="$ROOT/addons/staging/$category/$name"
-  dev="$ROOT/addons/development/$category/$name"
+# --- Actualización ---
+# Solo avanza si el worktree está en la rama declarada: en un checkout de
+# desarrollo HEAD vive en una feat/*, y ahí sync no tiene nada que hacer.
+#
+# ff-only y nunca reset: el script no sabe si la rama de este checkout es
+# descartable. Una rama de staging se reescribe a propósito y su reset es
+# inofensivo; la de producción no, y ahí un reset se comería un commit local.
+# Ante una divergencia nombra el comando y deja la decisión al operador.
 
-  ensure_bare "$url" "$bare" || return
-  ensure_worktrees "$bare" "$prod" "$stag" "$name" || return
-  ensure_dev_worktree "$bare" "$dev" "$name" || true
-  update_worktrees "$bare" "$prod" "$stag" "$name"
+update_worktree() {
+  local tree="$1" name="$2" err actual
+  actual=$(git -C "$tree" rev-parse --abbrev-ref HEAD)
+
+  if [ "$actual" != "$ADDONS_BRANCH" ]; then
+    warn "$name: el worktree está en '$actual', no en '$ADDONS_BRANCH' — no se actualiza"
+    return 0
+  fi
+  if [ -n "$(git -C "$tree" status --porcelain)" ]; then
+    fail "$name: hay cambios sin commitear, no se actualiza"
+    return 0
+  fi
+  if ! git -C "$tree" show-ref --verify -q "refs/remotes/origin/$ADDONS_BRANCH"; then
+    warn "$name: origin/$ADDONS_BRANCH no existe en el remoto todavía, el worktree sigue en su rama local"
+    return 0
+  fi
+  if ! err=$(git -C "$tree" merge --ff-only "origin/$ADDONS_BRANCH" 2>&1); then
+    if git -C "$tree" merge-base --is-ancestor "origin/$ADDONS_BRANCH" HEAD 2>/dev/null; then
+      fail "$name: el worktree tiene commits que no están en origin/$ADDONS_BRANCH — este checkout no debería escribir"
+    else
+      fail "$name: origin/$ADDONS_BRANCH fue reescrita, el merge no avanza en línea recta.
+            Si esa rama es descartable (staging), rehacela con:
+              git -C addons/$(basename "$(dirname "$tree")")/$name reset --hard origin/$ADDONS_BRANCH
+            Detalle: $err"
+    fi
+  fi
+  return 0
 }
 
-# --- Entornos a listar ---
-# development solo aparece si está habilitado o si ya existe en disco: en el
-# servidor no existe, y una fila "(sin worktree)" por repo sería ruido.
+sync_repo() {
+  local url="$1" category="$2" name bare tree
+  name=$(module_name "$url")
+  bare="$BARE_DIR/$name.git"
+  tree="$ROOT/addons/$category/$name"
 
-entornos() {
-  printf 'production\nstaging\n'
-  if [ "$CON_DEV" != "0" ] || [ -d addons/development ]; then
-    printf 'development\n'
-  fi
+  ensure_bare "$url" "$bare" || return
+  ensure_worktree "$bare" "$tree" "$name" || return
+  update_worktree "$tree" "$name"
 }
 
 cmd_sync() {
-  local url category invalid=0
+  local url category invalid=0 viejo
   require_manifest
 
   # --- Manifiesto sin entradas ---
@@ -188,6 +155,18 @@ cmd_sync() {
     echo "addons.sh: agregá al menos una línea 'URL categoría' antes de levantar Odoo" >&2
     exit 1
   fi
+
+  # --- Árbol viejo por entorno ---
+  # Sus worktrees siguen registrados en el bare y retienen la rama, así que el
+  # add en la ruta nueva fallaría con "already checked out". Lo borra el operador.
+
+  for viejo in addons/production addons/staging addons/development; do
+    if [ -d "$viejo" ]; then
+      echo "addons.sh: existe $viejo, del layout por entorno anterior — retiene la rama y bloquea el árbol nuevo" >&2
+      echo "addons.sh: borralo (rm -rf addons/production addons/staging addons/development) y volvé a correr el sync" >&2
+      exit 1
+    fi
+  done
 
   # --- Validación previa: categoría inválida aborta antes de clonar nada ---
 
@@ -218,48 +197,48 @@ cmd_sync() {
 # Puro host: rama, commit corto, y si hay cambios sin commitear.
 
 print_row() {
-  local env="$1" category="$2" name="$3" tree="$4" branch commit dirty
+  local category="$1" name="$2" tree="$3" branch commit dirty
   if [ ! -d "$tree" ]; then
-    printf '%-10s %-14s %-24s %s\n' "$env" "$category" "$name" "(sin worktree)"
+    printf '%-14s %-24s %s\n' "$category" "$name" "(sin worktree)"
     return
   fi
   branch=$(git -C "$tree" rev-parse --abbrev-ref HEAD)
   commit=$(git -C "$tree" rev-parse --short HEAD)
   if [ -n "$(git -C "$tree" status --porcelain)" ]; then dirty="sucio"; else dirty="limpio"; fi
-  printf '%-10s %-14s %-24s %-20s %-9s %s\n' "$env" "$category" "$name" "$branch" "$commit" "$dirty"
+  printf '%-14s %-24s %-20s %-9s %s\n' "$category" "$name" "$branch" "$commit" "$dirty"
 }
 
 # --- Huérfanos ---
 # Presentes en disco, ausentes del manifiesto; no se tocan, solo se listan.
+# El glob no alcanza a .repos/: los directorios ocultos no matchean sin dotglob.
 
 list_orphans() {
-  local known=" " url env cat_dir repo_dir n
+  local known=" " url cat_dir repo_dir n
   while read -r url _; do
     known="$known $(module_name "$url") "
   done < <(manifest_entries)
 
-  while read -r env; do
-    for cat_dir in "addons/$env"/*/; do
-      [ -d "$cat_dir" ] || continue
-      for repo_dir in "$cat_dir"*/; do
-        [ -d "$repo_dir" ] || continue
-        n=$(basename "$repo_dir")
-        case "$known" in *" $n "*) continue ;; esac
-        echo "huérfano: $env/$(basename "$cat_dir")/$n (no está en $MANIFEST)"
-      done
+  for cat_dir in addons/*/; do
+    [ -d "$cat_dir" ] || continue
+    for repo_dir in "$cat_dir"*/; do
+      [ -d "$repo_dir" ] || continue
+      n=$(basename "$repo_dir")
+      case "$known" in *" $n "*) continue ;; esac
+      echo "huérfano: $(basename "$cat_dir")/$n (no está en $MANIFEST)"
     done
-  done < <(entornos)
+  done
 }
 
 cmd_status() {
-  local url category name env
+  local url category name
   require_manifest
+
+  echo "rama declarada: $ADDONS_BRANCH"
+  echo
 
   while read -r url category; do
     name=$(module_name "$url")
-    while read -r env; do
-      print_row "$env" "$category" "$name" "addons/$env/$category/$name"
-    done < <(entornos)
+    print_row "$category" "$name" "addons/$category/$name"
   done < <(manifest_entries)
 
   list_orphans

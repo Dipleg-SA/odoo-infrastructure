@@ -394,9 +394,9 @@ v_odoo() {
   # Llegan por bind-mount: su presencia ya no la garantiza la imagen.
 
   local estado sucios faltan
-  estado=$(scripts/addons.sh status 2>/dev/null | grep '^production')
-  sucios=$(printf '%s\n' "$estado" | awk '$NF=="sucio" {print $3}' | tr '\n' ' ')
-  faltan=$(printf '%s\n' "$estado" | grep 'sin worktree' | awk '{print $3}' | tr '\n' ' ')
+  estado=$(scripts/addons.sh status 2>/dev/null | grep -E '^(enterprise|custom-addons|oca|third-party)[[:space:]]')
+  sucios=$(printf '%s\n' "$estado" | awk '$NF=="sucio" {print $2}' | tr '\n' ' ')
+  faltan=$(printf '%s\n' "$estado" | grep 'sin worktree' | awk '{print $2}' | tr '\n' ' ')
   if [ -z "$estado" ]; then
     bad "worktrees de producción presentes" "árbol vacío — correr make addons-sync"
   elif [ -n "$faltan" ]; then
@@ -416,27 +416,33 @@ v_odoo() {
   while read -r mod; do
     [ -n "$mod" ] || continue
     case "$mod" in base|web) continue ;; esac
-    hallado=$(find addons/production -mindepth 3 -maxdepth 3 -type d -name "$mod" 2>/dev/null | head -1)
+    hallado=$(find addons -mindepth 3 -maxdepth 3 -type d -name "$mod" 2>/dev/null | head -1)
     if [ -n "$hallado" ]; then
       ok "módulo server-wide '$mod' presente en el árbol"
     else
       bad "módulo server-wide '$mod' presente en el árbol" \
-          "no está en addons/production — Odoo arranca igual y falla en silencio"
+          "no está en addons/ — Odoo arranca igual y falla en silencio"
     fi
   done <<< "$swm"
 
   # --- Rama de addons contra la versión de la imagen ---
-  # Clonar ramas de una versión y montarlas en un Odoo de otra rompe de formas raras.
+  # Clonar ramas de una versión y montarlas en un Odoo de otra rompe de formas
+  # raras. Prefijo y no igualdad: 19.0-stag es coherente con la imagen 19.0, y
+  # 18.0 no lo es. La versión vive solo en el Dockerfile; ADDONS_BRANCH la hereda.
 
-  local ver_img
+  local ver_img rama
   ver_img=$(sed -n 's/^FROM odoo:\([0-9.]*\).*/\1/p' docker/odoo/Dockerfile | head -1)
+  rama="${ADDONS_BRANCH:-$ver_img}"
   if [ -z "$ver_img" ]; then
-    aviso "ODOO_BRANCH coincide con la imagen" "no se pudo leer el tag del Dockerfile"
-  elif [ "$ver_img" = "${ODOO_BRANCH:-19.0}" ]; then
-    ok "ODOO_BRANCH (${ODOO_BRANCH:-19.0}) coincide con la imagen ($ver_img)"
+    aviso "ADDONS_BRANCH coherente con la imagen" "no se pudo leer el tag del Dockerfile"
   else
-    bad "ODOO_BRANCH coincide con la imagen" \
-        "ODOO_BRANCH=${ODOO_BRANCH:-19.0} contra imagen $ver_img"
+    case "$rama" in
+      "$ver_img"|"$ver_img"-*)
+        ok "ADDONS_BRANCH ($rama) coherente con la imagen ($ver_img)" ;;
+      *)
+        bad "ADDONS_BRANCH coherente con la imagen" \
+            "ADDONS_BRANCH=$rama contra imagen $ver_img" ;;
+    esac
   fi
 
   # --- Categorías de addons ---

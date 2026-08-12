@@ -36,8 +36,10 @@ secrets:
     file: ./secrets/postgres_exporter_password
 
 include:
+  - compose.dns.yaml
   - compose.edge.yaml
   - compose.db.yaml
   - compose.odoo.yaml
   - compose.backups.yaml
+  - compose.restore.yaml
   - compose.observability.yaml

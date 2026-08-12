@@ -44,7 +44,7 @@ Si restaurás a un punto posterior al último snapshot (ej. PITR a las 14:00 de 
 
 ## A qué commit de addons corresponde el snapshot
 
-Desde el paso a bind-mount, `addons/` no está pineado en este repo — `git-aggregator` se fue, y lo que corre en producción es lo que `19.0` apunte hoy en cada repo. Cada snapshot de restic lleva, además del filestore, un registro de texto con el estado exacto que tenía `addons/production/` en el momento del backup:
+Desde el paso a bind-mount, `addons/` no está pineado en este repo — `git-aggregator` se fue, y lo que corre en producción es lo que la rama declarada en `ADDONS_BRANCH` apunte hoy en cada repo. Cada snapshot de restic lleva, además del filestore, un registro de texto con el estado exacto que tenía `addons/` en el momento del backup:
 
 ```bash
 docker compose exec backup restic dump latest /data/meta/addons.txt
@@ -53,7 +53,7 @@ docker compose exec backup restic dump latest /data/meta/addons.txt
 Una fila por repo: categoría, nombre, rama, commit corto. Si el código actual del servidor no coincide con lo que corría cuando se tomó el backup que estás restaurando (por ejemplo, promoviste un módulo después), volvé cada repo al commit que indica el registro:
 
 ```bash
-git -C addons/production/<categoría>/<repo> checkout <commit>
+git -C addons/<categoría>/<repo> checkout <commit>
 ```
 
 Esto es información, no una precondición del restore — si el registro faltara en un snapshot viejo (falló al generarse, o el snapshot es anterior a la capa correspondiente), la base y el filestore restauran igual. Lo que se pierde es solo la certeza de a qué código correspondían.

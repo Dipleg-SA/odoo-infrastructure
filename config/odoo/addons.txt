@@ -6,8 +6,9 @@
 #   enterprise > custom-addons > oca > third-party
 # El entrypoint arma el addons_path recorriéndolas en ese orden.
 
-# Cada repo necesita la rama de producción (ODOO_BRANCH, default 19.0). La de
-# staging (<rama>-stag) se bootstrapea sola si todavía no existe en el remoto.
+# Cada repo necesita la rama que este checkout declara en ADDONS_BRANCH. Por
+# default es la versión del tag `FROM odoo:` del Dockerfile; un checkout de
+# staging pone <versión>-stag, y esa rama tiene que existir en el remoto.
 
 # Los módulos de OCA se forkean primero a tu organización —públicos, por AGPL-3—
 # con `upstream` apuntando al original: así se pueden parchear sin salir del modelo.

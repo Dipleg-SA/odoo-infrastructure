@@ -347,11 +347,11 @@ read -rs GIT_TOKEN && printf 'https://%s:%s@%s\n' "$GIT_USER" "$GIT_TOKEN" "$GIT
 ```
 
 ```bash
-echo "# 3 → Clonar los repos del manifiesto y armar los dos árboles"
+echo "# 3 → Clonar los repos del manifiesto y armar el árbol"
 make addons-sync
 ```
 
-Lee `config/odoo/addons.txt` —el manifiesto versionado, URL más categoría— y deja un clon bare por módulo bajo `addons/.repos/` más un `git worktree` por entorno: `addons/production/` en la rama `19.0` y `addons/staging/` en `19.0-stag`. Todo `addons/` va gitignoreado: el manifiesto es lo único versionado, y con él se rearma el árbol entero desde cero. Sumar un módulo más adelante es una línea ahí y volver a correr esto.
+Lee `config/odoo/addons.txt` —el manifiesto versionado, URL más categoría— y deja un clon bare por módulo bajo `addons/.repos/` más un `git worktree` en `addons/<categoría>/<repo>`. La rama la decide `ADDONS_BRANCH` en `.env`, cuyo default es la versión del tag `FROM odoo:` del Dockerfile: en producción no hay nada que declarar. Todo `addons/` va gitignoreado — el manifiesto es lo único versionado, y con él se rearma el árbol entero desde cero. Sumar un módulo más adelante es una línea ahí y volver a correr esto.
 
 ```bash
 echo "# 4 → Construir la imagen de Odoo"
@@ -367,11 +367,11 @@ echo "# 5 → Estado de cada worktree"
 make addons
 ```
 
-Una fila por repo del manifiesto y por entorno —dos por módulo—, todas en `limpio`. Un `(sin worktree)` o un `sucio` es un sync incompleto. Si un repo privado falló con `Repository not found` o `Authentication failed`, el token no tiene los permisos justos: alcanza con lectura de contenidos sobre tu organización, y si es de los que expiran, revisá también que no haya vencido.
+Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, todas en `limpio`. Un `(sin worktree)` o un `sucio` es un sync incompleto. Si un repo privado falló con `Repository not found` o `Authentication failed`, el token no tiene los permisos justos: alcanza con lectura de contenidos sobre tu organización, y si es de los que expiran, revisá también que no haya vencido.
 
 Es un chequeo visual, no un exit code: `make verify-odoo` lo vuelve a validar mecánicamente en la fase siguiente, junto con el resto de la aplicación.
 
-`addons/development/` no aparece acá: el entorno de desarrollo es local y lo arma la fase 11, en tu máquina.
+Este árbol es el de **este** checkout. Los otros entornos son checkouts propios, con su `.env` y su `ADDONS_BRANCH`; los arman las fases 10 y 11.
 
 ---
 

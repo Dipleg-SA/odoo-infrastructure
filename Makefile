@@ -1,4 +1,4 @@
-.PHONY: up down logs ps config-init secrets-init secrets-perms secrets-check backup backup-full backup-check restore-up restore-down addons-sync addons odoo-install odoo-update odoo-modules require-modules verify verify-host verify-edge verify-db verify-odoo verify-backups verify-observability
+.PHONY: up down logs ps config-init secrets-init secrets-perms secrets-check backup backup-full backup-check restore-up restore-down addons-sync addons odoo-install odoo-update odoo-modules require-modules require-backups require-restore verify verify-host verify-edge verify-db verify-odoo verify-backups verify-observability
 
 # --- Inicialización de un deploy nuevo ---
 # En orden: config-init, secrets-init, cargar los valores a mano, secrets-perms, secrets-check.
@@ -84,24 +84,36 @@ odoo-update: require-modules
 odoo-modules:
 	docker compose exec -T postgres psql -U odoo -d odoo -c "SELECT name, latest_version FROM ir_module_module WHERE state='installed' ORDER BY name"
 
+# --- Guardas de capa ---
+# Le preguntan a la composición, no a una variable: qué capas trae cada stack ya
+# lo dice su entrypoint, y declararlo dos veces es una divergencia esperando.
+
+require-backups:
+	@docker compose config --services 2>/dev/null | grep -qx backup || \
+	  { echo "este stack no incluye la capa de backups — es exclusiva de producción (revisar COMPOSE_FILE en .env)" >&2; exit 2; }
+
+require-restore:
+	@docker compose --profile restore config --services 2>/dev/null | grep -qx restore-db || \
+	  { echo "este stack no incluye la capa de restore (revisar COMPOSE_FILE en .env)" >&2; exit 2; }
+
 # --- Backups ---
 # El restore no es un target — necesita un timestamp/snapshot según el incidente; ver docs/restore.md.
 
-backup:
+backup: require-backups
 	scripts/backup.sh daily
 
-backup-full:
+backup-full: require-backups
 	scripts/backup.sh monthly
 
-backup-check:
+backup-check: require-backups
 	docker compose exec -T -u postgres postgres pgbackrest check
 	docker compose exec -T backup restic check
 
 # --- Restore ---
 # Solo los dos servicios del perfil: `--profile restore down` a secas bajaría el stack entero.
 
-restore-up:
+restore-up: require-restore
 	docker compose --profile restore up -d restore-db restore-files
 
-restore-down:
+restore-down: require-restore
 	docker compose rm -sf restore-db restore-files

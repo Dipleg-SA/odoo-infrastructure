@@ -2,19 +2,19 @@
 
 Cómo llega un módulo a producción, y qué comando corre dónde. El diseño de fondo —por qué bind-mount, por qué dos ramas fijas, por qué el servidor nunca escribe— está en [`architecture.md`](architecture.md); acá está el procedimiento.
 
-En lo que sigue, `<rama>` es la rama de producción de cada repositorio de módulo: sale de `ODOO_BRANCH` en `.env` y acompaña a la versión de Odoo de la imagen. Staging usa siempre `<rama>-stag`.
+En lo que sigue, `<rama>` es la rama de producción de cada repositorio de módulo. Sale de `ADDONS_BRANCH` en `.env`, y su default es la versión del tag `FROM odoo:` del Dockerfile — el único lugar donde vive la versión de Odoo. Staging usa siempre `<rama>-stag`.
 
-## Los tres entornos
+## Un árbol por checkout
 
-| Entorno | Dónde vive | Rama | Quién lo actualiza |
+Cada entorno es un checkout propio del repositorio, con su `.env`, y **un solo árbol de addons** en `addons/<categoría>/<repo>`. Qué rama se materializa lo dice `ADDONS_BRANCH`; no hay subdirectorio por entorno, porque el directorio del checkout ya separa lo que ese nivel separaba.
+
+| Checkout | Dónde vive | `ADDONS_BRANCH` | Quién lo actualiza |
 |---|---|---|---|
-| `development` | Solo tu máquina | detached; de ahí salen las `feat/*` | Vos. `addons-sync` **nunca** lo toca |
-| `staging` | Servidor, bajo demanda | `<rama>-stag` | `addons-sync`, con `reset --hard` |
-| `production` | Servidor | `<rama>` | `addons-sync`, con `merge --ff-only` |
+| development | Solo tu máquina, uno por feature | `<rama>` | Vos. `addons-sync` lo salta apenas HEAD está en una `feat/*` |
+| staging | Servidor | `<rama>-stag` | `addons-sync` |
+| production | Servidor | `<rama>` (default) | `addons-sync` |
 
-El de desarrollo es **opt-in**: se crea solo si ponés `ADDONS_WITH_DEV=1` en tu `.env`. En el servidor no debe existir, porque ahí nada escribe en un repositorio de módulos.
-
-Que `addons-sync` no lo toque es deliberado: es el único árbol con trabajo sin commitear, y un `reset` o un `merge` lo destruiría. Nace *detached* porque git no permite tener la misma rama checkouteada en dos worktrees a la vez.
+`addons-sync` **solo actualiza si el worktree está parado en la rama declarada**. Es la regla que reemplaza al viejo árbol de desarrollo opt-in: en cuanto hacés `checkout -b feat/algo`, el script avisa y no toca nada. Es el único árbol con trabajo sin commitear, y un merge lo destruiría.
 
 ## El ciclo
 
@@ -22,12 +22,14 @@ Que `addons-sync` no lo toque es deliberado: es el único árbol con trabajo sin
 feat/*  →  <rama>-stag  →  validar en staging  →  <rama>  →  addons-sync en el servidor
 ```
 
-**1. Desarrollo.** En tu máquina, dentro del worktree de desarrollo del módulo:
+**1. Desarrollo.** En tu checkout de development, dentro del worktree del módulo:
 
 ```bash
-cd addons/development/<categoría>/<repo>
+cd addons/<categoría>/<repo>
 git checkout -b feat/nombre-del-cambio
 ```
+
+Desde acá `addons-sync` deja de tocar ese repositorio, y lo dice cada vez que corre.
 
 **2. Integración.** Cuando el cambio está listo, subilo a la rama de staging:
 
@@ -40,7 +42,7 @@ git push --force origin <rama>-stag
 
 El `reset --hard` no es opcional: la rama de staging es **descartable en todo momento** — nunca contiene nada que no exista además en una `feat/*` o en producción. Es lo que permite serializar features sin cherry-picks: si mergeaste dos cosas y solo una está lista, reseteás, mergeás solo esa, y la otra sigue esperando en su rama.
 
-**3. Traer el cambio al servidor** y validarlo en staging:
+**3. Traer el cambio al servidor** y validarlo, desde el checkout de staging:
 
 ```bash
 make addons-sync
@@ -48,7 +50,15 @@ make addons-sync
 
 El servidor **nunca** mergea ni pushea: solo trae. Todo lo que hay en ese árbol existe también en el remoto.
 
-**4. Promover.** De vuelta en tu máquina:
+Como la rama de staging se reescribe con `--force`, el `merge --ff-only` de `addons-sync` no va a avanzar en línea recta. El script **no resuelve eso solo** —no puede saber si la rama de este checkout es descartable— y en cambio nombra el comando exacto:
+
+```bash
+git -C addons/<categoría>/<repo> reset --hard origin/<rama>-stag
+```
+
+En un checkout de staging ese reset es inofensivo; en producción, la misma condición significa que alguien commiteó en el servidor, y ahí el reset se comería trabajo. Por eso lo decide el operador y no el script.
+
+**4. Promover.** De vuelta en tu checkout de development:
 
 ```bash
 git checkout <rama>
@@ -80,7 +90,7 @@ Es deliberado: si el servidor nunca escribe en un repositorio de módulos, nada 
 | Comando | Qué hace |
 |---|---|
 | `make addons-sync` | Clona lo que falte y actualiza los árboles desde el manifiesto. Idempotente, puro host, sin contenedores. Falla si el manifiesto está vacío |
-| `make addons` | Tabla de estado: entorno, categoría, repositorio, rama, commit corto, limpio o sucio. Funciona con el stack abajo |
+| `make addons` | Rama declarada del checkout, y una fila por repositorio: categoría, nombre, rama, commit corto, limpio o sucio. Funciona con el stack abajo |
 | `make odoo-install MODULES=x` | Instala el módulo `x` en la base y deja el servicio arriba |
 | `make odoo-update MODULES=x` | Actualiza el módulo `x` — un solo camino para cualquier tipo de cambio: código, vistas o datos |
 | `make odoo-modules` | Lista los módulos instalados y su versión, leídos de la base, que es la fuente de verdad |
@@ -90,7 +100,7 @@ Instalar y actualizar **detienen el servicio** mientras corren: es un paso expl�
 ## Sumar un módulo
 
 1. Agregá una línea al manifiesto `config/odoo/addons.txt`: URL del repositorio y categoría (`custom-addons`, `oca`, `third-party` o `enterprise`).
-2. `make addons-sync` — crea el clon bare y los worktrees.
+2. `make addons-sync` — crea el clon bare y el worktree.
 3. Si el módulo declara dependencias de Python, sumalas a `docker/odoo/requirements.txt` y reconstruí la imagen. Es lo único, junto al entrypoint, que dispara un rebuild.
 4. `make odoo-install MODULES=<módulo>` cuando corresponda instalarlo.
 

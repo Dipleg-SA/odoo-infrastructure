@@ -1,0 +1,31 @@
+# Capa de DNS local. Resuelve el hostname público a la IP de la LAN, para que
+# los equipos de la red no salgan a internet para llegar a un servidor que tienen al lado.
+#
+# EXCLUSIVA DE PRODUCCIÓN. Corre en network_mode: host sobre el 53, así que es
+# el único servicio del stack que no admite una segunda instancia de ninguna
+# forma. Un entorno de prueba resuelve su hostname por el DNS público.
+#
+# No alcanza con levantarlo: quién resuelve para la LAN lo decide el DHCP de la
+# red, no este archivo. Sin ese paso dnsmasq queda sano y sin consultarlo nadie.
+services:
+  dnsmasq:
+    build: ./docker/dnsmasq
+    # Namespace local/ y no el nombre del proyecto: sin image: explícito Compose
+    # autogenera <proyecto>-dnsmasq:latest, que ata la imagen al proyecto y flota.
+    image: local/dnsmasq:local
+    container_name: ${COMPOSE_PROJECT_NAME}-dnsmasq
+    # network_mode: host — bindea directo en ${LOCAL_IP}:53 para evitar el
+    # conflicto con systemd-resolved y el NAT/ufw del publish de Docker.
+    network_mode: host
+    # --- Forwarders y caché ---
+    # Sin --server, --no-resolv deja SERVFAIL todo lo que no sea el hostname. Los
+    # forwarders son política del deployment: se cambian por .env. Caché 1000 (default 150).
+
+    command: ["--keep-in-foreground", "--no-resolv", "--bind-interfaces", "--listen-address=${LOCAL_IP}", "--address=/${PUBLIC_HOSTNAME}/${LOCAL_IP}", "--server=${DNS_FORWARDER_1:-1.1.1.1}", "--server=${DNS_FORWARDER_2:-8.8.8.8}", "--cache-size=1000"]
+    # Corre como root porque el 53 es puerto privilegiado y usa el stack de red
+    # del host; dnsmasq baja de privilegios por su cuenta después de bindear.
+    healthcheck:
+      test: ["CMD-SHELL", "nslookup ${PUBLIC_HOSTNAME} ${LOCAL_IP} | grep -q ${LOCAL_IP}"]
+    restart: unless-stopped
+    mem_limit: 32m
+    cpus: "0.10"
