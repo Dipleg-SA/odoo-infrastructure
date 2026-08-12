@@ -145,6 +145,14 @@ bind_declarado() {
     | grep . || echo '0.0.0.0'
 }
 
+# --- ¿Este stack sirve TLS? ---
+# Qué plantilla monta nginx lo dice la composición, no .env: development la fija en
+# su entrypoint, así que su .env puede no traer NGINX_MODE y el modo se sabe igual.
+
+modo_plain() {
+  docker compose config 2>/dev/null | grep -q 'source:.*/server-plain\.conf\.template$'
+}
+
 bind_es() {
   local svc="$1" puerto="$2" esperado actual
   if ! esperado=$(bind_declarado "$svc" "$puerto"); then
@@ -301,7 +309,7 @@ v_edge() {
   if corriendo nginx; then
     vacio "sin variables sin sustituir en la config" \
       docker compose exec -T nginx grep -rl '\${' /etc/nginx/conf.d/
-    if [ "${NGINX_MODE:-tls}" = "plain" ]; then
+    if modo_plain; then
       omitir "server_name es el hostname público" "modo plain: el server_name es el catch-all, no hay hostname que servir"
     elif [ -n "$PUBLIC_HOSTNAME" ]; then
       expect "server_name es el hostname público" "$PUBLIC_HOSTNAME" \
@@ -651,7 +659,7 @@ v_odoo() {
 
   local destino
   destino=$(bind_declarado nginx 443) || destino=""
-  if [ "${NGINX_MODE:-tls}" = "plain" ]; then
+  if modo_plain; then
     omitir "certificado que sirve nginx" "modo plain: la plantilla no escucha en el 443, no hay TLS que servir"
   elif [ -z "$destino" ]; then
     omitir "certificado que sirve nginx" \
@@ -869,7 +877,7 @@ v_observability() {
   sin_publicar prometheus 9090
   sin_publicar loki 3100
   sin_publicar alloy 12345
-  bind_es grafana 3000 127.0.0.1
+  bind_es grafana 3000
 }
 
 # --- Resumen ---
