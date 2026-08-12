@@ -5,9 +5,9 @@ services:
   odoo:
     build:
       context: ./docker/odoo
-    # Namespace local/ y no el nombre del proyecto: sin image: explícito Compose
-    # autogenera <proyecto>-odoo:latest, que ata la imagen al proyecto y flota.
-    image: local/odoo:local
+    # Tag por proyecto: el nombre de imagen es global al daemon, así que un tag
+    # fijo deja que el build de un stack pise la imagen que corre el otro.
+    image: local/odoo:${COMPOSE_PROJECT_NAME}
     # Nombre derivado del proyecto: predecible y sin el sufijo -1 del autonaming,
     # pero sin colisionar si se levanta un segundo stack con otro nombre de proyecto.
     container_name: ${COMPOSE_PROJECT_NAME}-odoo

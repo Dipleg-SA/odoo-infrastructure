@@ -69,7 +69,8 @@ Las reglas que este stack sigue siempre. Cada una nombra un mecanismo concreto y
 - Servicios de Compose: minúsculas, singular donde se pueda.
 - Secretos: un archivo por credencial bajo `secrets/`, `640`, grupo del GID que lo consume.
 - Tags de imagen: siempre versión explícita.
-- Módulos de Compose: `compose.<capa>.yaml`, uno por capa. `compose.staging.yaml` y `compose.dev.yaml` quedan fuera del `include:` por defecto.
+- Módulos de Compose: `compose.<capa>.yaml`, uno por capa, y un **entrypoint por entorno** que elige cuáles incluir. `compose.yaml` es el de producción; `compose.staging.yaml` y `compose.dev.yaml` son archivos raíz hermanos, no módulos, y se seleccionan con `COMPOSE_FILE` en `.env`.
+- Identidad del stack: `COMPOSE_PROJECT_NAME` y `COMPOSE_FILE` en `.env`, en los tres entornos igual. Ningún archivo de Compose declara `name:`. Del nombre derivan `container_name`, volúmenes, redes y **tags de imagen**: el nombre de una imagen es global al daemon, así que un tag fijo deja que el `build` de un stack pise la imagen que corre otro, sin avisar.
 - Valores por deployment: `.env` (no versionado) y `.env.example` (versionado, con las claves sin completar).
 - Config de runtime de cada herramienta: un directorio por herramienta bajo `config/`. Todo se versiona tal cual; el único archivo no trackeado es el estado de runtime del resolver ACME.
 - Extensiones: la que nombra cada herramienta. Donde hay elección entre `.yml` y `.yaml`, se usa `.yaml`.

@@ -39,8 +39,8 @@ Cada fase responde las mismas cuatro preguntas, siempre en este orden:
 | **I** | **Preparación** | |
 | 1 | [Cuentas externas](#1-cuentas-externas) | |
 | 2 | El repositorio | |
-| **II** | **Puesta en marcha** | 11 servicios, 5 módulos |
-| 3 | Borde | `traefik` · `cloudflared` · `dnsmasq` |
+| **II** | **Puesta en marcha** | 11 servicios, 7 módulos |
+| 3 | Borde | `dnsmasq` · `traefik` · `cloudflared` |
 | 4 | Datos | `postgres` · `pgbouncer` |
 | 5 | Addons | árbol y build |
 | 6 | Aplicación | `odoo` |
@@ -140,10 +140,14 @@ Lo que no se puede probar todavía: el token del Tunnel (fase 3), R2 (fase 4) y 
 - `pgbackrest_r2_credentials` y `restic_r2_credentials` ya vienen con su esqueleto INI. **La misma clave de R2 va en los dos**, en sintaxis distinta: al rotarla hay que tocar ambos.
 - Editor interactivo, nunca `echo >>`: así el token no queda en el historial.
 
-En `.env`, cuatro claves que la fase 1 no cubre. Las otras cuatro (`R2_ENDPOINT`, `R2_BUCKET`, `SMTP_USER`, `ALERT_EMAIL_FROM`) salen de su tabla.
+En `.env`, seis claves que la fase 1 no cubre. Las otras cuatro (`R2_ENDPOINT`, `R2_BUCKET`, `SMTP_USER`, `ALERT_EMAIL_FROM`) salen de su tabla.
+
+Las dos primeras definen **qué stack es este checkout**, y son las mismas dos en los tres entornos. Ningún archivo de Compose declara el nombre: si falta, el proyecto pasa a llamarse como el directorio, y con él sus volúmenes y sus imágenes.
 
 | Clave | Valor |
 |---|---|
+| `COMPOSE_PROJECT_NAME` | Nombre del stack: `production` acá. Gobierna contenedores, volúmenes, redes y tags de imagen |
+| `COMPOSE_FILE` | Qué capas se levantan: `compose.yaml` para producción |
 | `PUBLIC_HOSTNAME` | El hostname público de esta instancia, el mismo que va a servir el Tunnel |
 | `LOCAL_IP` | La IP LAN del servidor — **real y de una interfaz existente**: `dnsmasq` bindea exactamente ahí y si no, queda `unhealthy` |
 | `PGBACKREST_STANZA` | Nombre de la stanza, estable — cambiarlo deja huérfanos los backups viejos |

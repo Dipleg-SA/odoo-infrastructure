@@ -162,6 +162,19 @@ v_host() {
   elif [ -n "$vacias" ]; then bad ".env sin claves vacías" "vacías: $vacias"
   else ok ".env sin claves vacías"; fi
 
+  # --- Identidad del stack ---
+  # Sin COMPOSE_PROJECT_NAME el proyecto sale del nombre del directorio. No rompe
+  # nada, pero el stack —y sus volúmenes— pasan a llamarse según dónde se clonó.
+
+  local proyecto
+  proyecto=$(docker compose config 2>/dev/null | sed -n 's/^name: //p' | head -1)
+  if grep -qE '^COMPOSE_PROJECT_NAME=.+' .env 2>/dev/null; then
+    ok "identidad declarada en .env (proyecto: ${proyecto:-?}, capas: ${COMPOSE_FILE:-compose.yaml})"
+  else
+    aviso "identidad declarada en .env" \
+          "falta COMPOSE_PROJECT_NAME — el proyecto sale del directorio: ${proyecto:-?}"
+  fi
+
   # --- Secrets ---
   # Delegado: scripts/secrets-perms.sh es el dueño único del mapa de GIDs.
 

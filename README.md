@@ -2,19 +2,21 @@
 
 Infraestructura Docker autoalojada para una instancia de Odoo, operada por una sola persona sobre un único servidor.
 
-Once servicios en cinco módulos de Compose: reverse proxy con TLS propio, túnel de ingreso sin puertos abiertos, acceso por red local, Postgres con pooling, la aplicación, backups con recuperación a un punto en el tiempo, y observabilidad con alerting.
+Once servicios en siete módulos de Compose, uno por capa: reverse proxy con TLS propio, túnel de ingreso sin puertos abiertos, acceso por red local, Postgres con pooling, la aplicación, backups con recuperación a un punto en el tiempo, y observabilidad con alerting.
 
 ## Qué levanta
 
 | Capa | Servicios | Módulo |
 |---|---|---|
-| Borde | `traefik` · `cloudflared` · `dnsmasq` | `compose.edge.yaml` |
+| DNS local | `dnsmasq` | `compose.dns.yaml` |
+| Borde | `traefik` · `cloudflared` | `compose.edge.yaml` |
 | Datos | `postgres` · `pgbouncer` | `compose.db.yaml` |
 | Aplicación | `odoo` | `compose.odoo.yaml` |
 | Protección | `backup` (restic) + pgBackRest embebido en Postgres | `compose.backups.yaml` |
+| Restore | `restore-db` · `restore-files`, bajo `profiles` | `compose.restore.yaml` |
 | Observación | `prometheus` · `loki` · `grafana` · `alloy` | `compose.observability.yaml` |
 
-`compose.yaml` no es monolítico: declara las redes y los secretos compartidos y suma un módulo por capa con `include:`.
+`compose.yaml` no es monolítico: declara las redes y los secretos compartidos y suma un módulo por capa con `include:`. Tampoco declara el nombre del stack — eso vive en `.env`, junto a `COMPOSE_FILE`, que es lo que elige qué capas se levantan.
 
 ## Empezar
 

@@ -69,6 +69,8 @@ Si no cambió la config resuelta, producción no puede haber cambiado.
 
 **Cuidado.** Es la primera etapa que **no** es transparente para un stack corriendo: renombrar el proyecto renombra los volúmenes, así que `up -d` después de esto arranca con `pgdata` vacío. En un servidor ya desplegado, va junto con la migración de volúmenes o junto al redeploy; en un deploy nuevo no cuesta nada.
 
+El renombre también alcanza al `hostname` de `backup`, y ahí no hay migración posible: restic agrupa la retención por `(host, paths)`, así que los snapshots viejos quedan en un grupo propio al que no le entra nada nuevo. Como `--keep-*` retiene por cantidad y no por edad, ese grupo **nunca se purga**: se paga en R2 para siempre y un `restic snapshots` muestra dos linajes. Si no se los quiere conservar, se borran a mano con `restic forget --host <nombre viejo>` después del primer backup exitoso con el nombre nuevo.
+
 ## Etapa 3 — nginx, construido sin tocar producción
 
 nginx nace en un archivo nuevo, **conviviendo** con Traefik. Producción sigue en Traefik durante toda la etapa.

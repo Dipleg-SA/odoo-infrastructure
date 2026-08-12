@@ -6,8 +6,9 @@ services:
     # Imagen propia = postgres:17.10 + pgbackrest: archive_command lo
     # ejecuta el proceso de la base, así que el binario tiene que vivir acá.
     build: ./docker/postgres
-    # Nombre explícito para que restore-db reuse exactamente esta imagen.
-    image: local/postgres:local
+    # Tag por proyecto: el nombre de imagen es global al daemon, así que un tag
+    # fijo deja que el build de un stack pise la imagen que corre el otro.
+    image: local/postgres:${COMPOSE_PROJECT_NAME}
     # Nombre derivado del proyecto: predecible y sin el sufijo -1 del autonaming,
     # pero sin colisionar si se levanta un segundo stack con otro nombre de proyecto.
     container_name: ${COMPOSE_PROJECT_NAME}-postgres

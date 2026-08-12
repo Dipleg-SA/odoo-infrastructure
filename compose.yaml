@@ -1,4 +1,6 @@
-name: infrastructure-odoo
+# Archivo base y entrypoint de producción: redes, secretos y una capa por include:.
+# El nombre del stack NO se declara acá — sale de COMPOSE_PROJECT_NAME en .env,
+# junto a COMPOSE_FILE, para que los tres entornos usen el mismo mecanismo.
 
 networks:
   edge:

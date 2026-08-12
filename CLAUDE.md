@@ -35,14 +35,16 @@ Para scripts, `bash -n scripts/<x>.sh` y después correrlos de verdad. **Correr 
 
 ## Arquitectura
 
-`compose.yaml` es solo redes, secrets y un `include:` por capa. Nunca un archivo monolítico, nunca `compose.override.yaml` — ese nombre dispara el autoload implícito de Compose.
+`compose.yaml` es solo redes, secrets y un `include:` por capa. El nombre del stack no se declara ahí: sale de `COMPOSE_PROJECT_NAME` en `.env`, y de él derivan `container_name`, volúmenes, redes y **tags de imagen**. Nunca un archivo monolítico, nunca `compose.override.yaml` — ese nombre dispara el autoload implícito de Compose.
 
 | Capa | Servicios | Módulo |
 |---|---|---|
-| Borde | `traefik` · `cloudflared` · `dnsmasq` | `compose.edge.yaml` |
+| DNS local | `dnsmasq` | `compose.dns.yaml` |
+| Borde | `traefik` · `cloudflared` | `compose.edge.yaml` |
 | Datos | `postgres` · `pgbouncer` | `compose.db.yaml` |
 | Aplicación | `odoo` | `compose.odoo.yaml` |
 | Protección | `backup` (restic) + pgBackRest dentro de Postgres | `compose.backups.yaml` |
+| Restore | `restore-db` · `restore-files`, bajo `profiles` | `compose.restore.yaml` |
 | Observación | `prometheus` · `loki` · `grafana` · `alloy` | `compose.observability.yaml` |
 
 Cosas que no se deducen leyendo un archivo solo:

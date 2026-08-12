@@ -10,9 +10,9 @@
 services:
   dnsmasq:
     build: ./docker/dnsmasq
-    # Namespace local/ y no el nombre del proyecto: sin image: explícito Compose
-    # autogenera <proyecto>-dnsmasq:latest, que ata la imagen al proyecto y flota.
-    image: local/dnsmasq:local
+    # Tag por proyecto: el nombre de imagen es global al daemon, así que un tag
+    # fijo deja que el build de un stack pise la imagen que corre el otro.
+    image: local/dnsmasq:${COMPOSE_PROJECT_NAME}
     container_name: ${COMPOSE_PROJECT_NAME}-dnsmasq
     # network_mode: host — bindea directo en ${LOCAL_IP}:53 para evitar el
     # conflicto con systemd-resolved y el NAT/ufw del publish de Docker.
