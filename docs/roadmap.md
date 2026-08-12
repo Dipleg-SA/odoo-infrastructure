@@ -6,7 +6,11 @@ El principio de ordenamiento es uno solo: **producción está corriendo y no se 
 
 ## Dos decisiones ya tomadas
 
-**El proyecto de producción no se renombra.** Sigue siendo `infrastructure-odoo`. El nombre literal no cumple ninguna función —la derivación de `container_name`, volúmenes y redes funciona con cualquier valor— y renombrarlo obligaría a migrar los volúmenes a mano, con la base detenida, porque Docker no sabe renombrar un volumen. Staging y development nacen con nombres limpios de todos modos.
+**Producción y staging declaran su nombre; development no.** `compose.yaml` dice `name: production` y `compose.staging.yaml` dice `name: staging`: son uno por servidor, con identidad fija, que no debe depender de dónde se clonó. `compose.dev.yaml` **no declara `name:`**, así que Compose lo deriva del directorio — `~/odoo-development-sale` da el proyecto `odoo-development-sale`.
+
+La asimetría es deliberada y está medida. Con `name: development` declarado, dos checkouts de development resuelven al **mismo** volumen `development_pgdata`: no colisionan al arrancar, porque corre uno a la vez, se pisan los datos en silencio. Derivar del directorio da `odoo-development-sale_pgdata` y `odoo-development-accountant_pgdata`, sin configurar nada y sin nada que recordar.
+
+Renombrar el proyecto de producción **de `infrastructure-odoo` a `production` renombra sus volúmenes**, y Docker no sabe renombrar un volumen: hay que crear el nuevo y copiar, con el stack abajo. Si la adopción de esta rama en el servidor pasa por un redeploy con restore —que es lo esperable, porque cambia el borde entero—, los volúmenes nacen con el nombre nuevo y no hay migración. Si se quiere renombrar antes, sobre el stack actual, se copian `pgdata` y `odoo-data`; `prometheus-data`, `loki-data` y `grafana-data` se dejan nacer vacíos, porque son datos de diagnóstico y no de restauración.
 
 **La alerta de vencimiento de certificado pasa a `state/textfile/`.** Hoy sale de `traefik_tls_certs_not_after` y con certbot se queda sin fuente. `cert-renew.sh` escribe la métrica por el mismo mecanismo que ya usa `backup.sh`, sin sumar componentes. La salvedad: mide lo que certbot cree, no lo que nginx sirve — el caso «se renovó pero nginx no recargó» queda fuera y necesitaría un chequeo sobre el puerto.
 
@@ -47,10 +51,12 @@ Si no cambió la config resuelta, producción no puede haber cambiado.
 
 ## Etapa 2 — Nombre de proyecto e imágenes
 
+- `compose.yaml` pasa de `name: infrastructure-odoo` a `name: production`.
 - Tags `local/<servicio>:${COMPOSE_PROJECT_NAME}` en `compose.db.yaml`, `compose.odoo.yaml`, `compose.dns.yaml` y en `restore-db`.
-- El `.env` de producción declara `COMPOSE_PROJECT_NAME` y `COMPOSE_FILE` explícitamente, aunque coincidan con los defaults: es lo que hace que los tres entornos se lean igual.
 
-**Verificación.** `docker compose config` muestra los tags nuevos; `docker compose build && docker compose up -d` recrea los contenedores sin tocar los volúmenes.
+**Verificación.** `docker compose config` muestra los tags nuevos y el proyecto nuevo.
+
+**Cuidado.** Es la primera etapa que **no** es transparente para un stack corriendo: renombrar el proyecto renombra los volúmenes, así que `up -d` después de esto arranca con `pgdata` vacío. En un servidor ya desplegado, va junto con la migración de volúmenes o junto al redeploy; en un deploy nuevo no cuesta nada.
 
 ## Etapa 3 — nginx, construido sin tocar producción
 
@@ -184,16 +190,20 @@ No versionado, y propio de cada checkout: `.env`, `secrets/`, `addons/<categorí
 
 ```
 SERVIDOR
-  /srv/odoo-production/     COMPOSE_PROJECT_NAME=infrastructure-odoo
-                            COMPOSE_FILE=compose.yaml
-                            11 secrets · systemd: backups + cert-renew
+  /srv/odoo-production/           COMPOSE_FILE=compose.yaml
+                                  proyecto: production   (lo declara el archivo)
+                                  11 secrets · systemd: backups + cert-renew
 
-  /srv/odoo-staging/        COMPOSE_PROJECT_NAME=staging
-                            COMPOSE_FILE=compose.staging.yaml
-                            8 secrets · systemd: cert-renew
+  /srv/odoo-staging/              COMPOSE_FILE=compose.staging.yaml
+                                  proyecto: staging      (lo declara el archivo)
+                                  8 secrets · systemd: cert-renew
 
 MÁQUINA DEL OPERADOR
-  ~/odoo-dev-<feature>/     COMPOSE_PROJECT_NAME=dev-<feature>   ← único por checkout
-                            COMPOSE_FILE=compose.dev.yaml
-                            3 secrets, todos generados · sin systemd
+  ~/odoo-development-sale/        COMPOSE_FILE=compose.dev.yaml
+                                  proyecto: odoo-development-sale
+  ~/odoo-development-accountant/  COMPOSE_FILE=compose.dev.yaml
+                                  proyecto: odoo-development-accountant
+                                  ↑ lo deriva Compose del directorio: nada que declarar,
+                                    nada que recordar, imposible que dos compartan volumen
+                                  3 secrets, todos generados · sin systemd
 ```
