@@ -139,4 +139,19 @@ for caso in "producción:$PROD" "staging:$STG" "development:$DEV"; do
     "$(printf '%s\n' "$cfg" | grep -c 'host_ip:')"
 done
 
+# =====================================================================
+titulo "las tres plantillas de .env"
+# =====================================================================
+
+# Una plantilla por entorno es una copia por entorno: lo que puede pasar es que una
+# clave nueva entre en un compose.*.yaml compartido y solo se sume a una. Compose
+# avisa por cada variable sin default que no esté declarada, así que ese warning
+# —vacío en las tres— es la prueba de que ninguna plantilla se quedó atrás.
+
+for caso in "producción:prod:compose.yaml" "staging:stag:compose.staging.yaml" "development:dev:compose.dev.yaml"; do
+  nombre="${caso%%:*}"; resto="${caso#*:}"; plantilla="${resto%%:*}"; entrypoint="${resto#*:}"
+  igual "$nombre no deja variables sin declarar en su plantilla" "" \
+    "$(docker compose --env-file ".env.$plantilla.example" -f "$entrypoint" config -q 2>&1 | grep -i 'is not set' | tr '\n' ' ')"
+done
+
 resumen

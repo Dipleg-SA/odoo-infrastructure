@@ -40,6 +40,7 @@ Cada entorno tiene su **entrypoint** propio —un archivo raíz con su `include:
 | Archivo                                     | Producción     | Staging                     | Development                 |
 |---------------------------------------------|----------------|-----------------------------|-----------------------------|
 | entrypoint                                  | `compose.yaml` | `compose.staging.yaml`      | `compose.dev.yaml`          |
+| plantilla de `.env`                         | `.env.prod.example` | `.env.stag.example`    | `.env.dev.example`          |
 | `compose.proxy.yaml`                        | sí             | sí, sin publicar puertos    | sí, solo el 80 en loopback  |
 | `compose.dns.yaml`                          | sí             | no                          | no                          |
 | `compose.edge.yaml`                         | sí             | sí                          | no                          |
@@ -70,11 +71,12 @@ Cada entorno tiene su **entrypoint** propio —un archivo raíz con su `include:
 | `scripts/integrity-check.sh`                | sí             | sí                          | sí                          |
 | `Makefile`                                  | sí             | sí                          | sí                          |
 
-Cuatro consecuencias que importan:
+Cinco consecuencias que importan:
 
 - **`scripts/failure-notify.sh` no lo llama nadie fuera de producción.** Su único invocador es el `OnFailure=` de las units de backup, que no se instalan en los otros stacks. Va donde va la capa de backups.
 - **`scripts/integrity-check.sh` recorre el filestore por el contenedor de `odoo`.** Antes lo hacía por el de `backup`, que es exclusivo de producción, y eso lo dejaba fuera de staging — justo el entorno donde el simulacro de restore lo necesita. `odoo` monta el mismo volumen y lo lleva cualquier stack.
-- **`config/odoo/odoo.conf` es único para los tres.** `workers`, `limit_memory_*` y `dbfilter` son los mismos en la máquina del operador que en el servidor. Un stack de desarrollo que quiera menos workers necesita otro mecanismo, no otra copia del archivo — los principios prohíben archivos `.example` paralelos.
+- **`config/odoo/odoo.conf` es único para los tres.** `workers`, `limit_memory_*` y `dbfilter` son los mismos en la máquina del operador que en el servidor. Un stack de desarrollo que quiera menos workers necesita otro mecanismo, no otra copia del archivo — los principios prohíben archivos `.example` paralelos a un config.
+- **Las plantillas de `.env` son tres, y eso son tres copias.** La alternativa era un archivo genérico del que cada entorno borra los bloques que no le tocan, y borrar sale mal más seguido que completar: `cp .env.stag.example .env` deja el `COMPOSE_FILE`, el `PG_ARCHIVE_MODE=off` y las claves de staging ya puestas, sin decidir nada. La copia se paga con un chequeo y no con disciplina — `make test` resuelve cada entrypoint con su plantilla y falla si queda una variable sin declarar, que es justo lo que pasa cuando una clave nueva entra a una capa compartida y se suma a una sola plantilla.
 - **`dbfilter = ^odoo$` y el rol `odoo` son fijos.** No es un problema mientras cada stack tenga su propio volumen `pgdata`, que es lo que pasa: el nombre de la base se repite, la base no.
 
 ## 2. Estado del host no versionado — compartido por checkout

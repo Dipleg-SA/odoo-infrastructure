@@ -145,7 +145,9 @@ Esto es lo que compra fijar el checkout a un tag en vez de seguir una rama: el r
 ```
 infrastructure-odoo/
 ├── .claude/rules/comment-style.md
-├── .env.example
+├── .env.prod.example
+├── .env.stag.example
+├── .env.dev.example
 ├── .gitignore
 ├── INSTALL.md
 ├── Makefile

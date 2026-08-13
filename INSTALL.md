@@ -168,7 +168,7 @@ git fetch --tags && git checkout "$(git describe --tags --abbrev=0)"
 
 ```bash
 echo "# 3 → Esqueleto de config y secrets"
-cp .env.example .env
+cp .env.prod.example .env
 make secrets-init
 ```
 
@@ -630,7 +630,7 @@ En `.env`, ocho claves. Las de R2 y la stanza son **las de producción**, porque
 | `PGBACKREST_STANZA` · `R2_ENDPOINT` · `R2_BUCKET` | Los mismos valores que producción: es su repositorio el que se restaura |
 | `ADDONS_BRANCH` | `<versión>-stag`, la rama de staging de los repos de addons |
 
-Todo lo demás **se borra del archivo**, no se deja vacío: SMTP, alertas, retenciones y `LOCAL_IP`. `make verify-host` marca las claves vacías, y staging no publica puertos — entra solo por el túnel.
+Lo que las capas ausentes necesitarían —SMTP, alertas, retenciones— **no está en la plantilla**, y `LOCAL_IP` tampoco: staging no publica puertos, entra solo por el túnel. Si copiás una clave de más desde el `.env` de producción, dejala con valor o borrala: `make verify-host` marca las vacías.
 
 > **`PG_ARCHIVE_MODE=off` es la línea que protege los backups de producción.** Staging apunta a la stanza de producción para poder restaurar; con el archivado prendido su propio Postgres le empuja WAL a ese repositorio y lo contamina desde el entorno que existe para romper cosas. Lo verifica `make verify-db`, que en un stack sin capa de backups **exige** que esté apagado.
 
@@ -646,11 +646,11 @@ Checkout propio, como producción: `.env`, `secrets/`, `state/` y el árbol de a
 
 ```bash
 echo "# 2 → Config primero: el .env es lo que dice qué stack es este"
-cp .env.example .env
-${EDITOR:-vi} .env    # las ocho claves de la tabla de arriba, COMPOSE_FILE incluido
+cp .env.stag.example .env
+${EDITOR:-vi} .env    # las claves de la tabla de arriba; COMPOSE_FILE ya viene puesto
 ```
 
-**El `.env` se completa antes de `secrets-init`, no después.** El script le pregunta a la composición cuáles secrets lleva este stack, y quién es la composición lo dice `COMPOSE_FILE`: con el valor del ejemplo (`compose.yaml`) crearía los 11 de producción, tres de ellos inertes y con `CAMBIAR` para siempre, porque nunca pisa un archivo que ya existe.
+**El `.env` se completa antes de `secrets-init`, no después.** El script le pregunta a la composición cuáles secrets lleva este stack, y quién es la composición lo dice `COMPOSE_FILE`. La plantilla ya trae el de staging, así que el orden alcanza con respetarlo: `secrets-init` nunca pisa un archivo que ya existe, y un secret creado de más queda inerte y con `CAMBIAR` para siempre.
 
 ```bash
 echo "# 3 → Los 8 secrets que declara este entrypoint"
@@ -759,12 +759,12 @@ git clone "$REPO_URL" ~/odoo-development-$FEATURE && cd ~/odoo-development-$FEAT
 Acá **no** se fija a un tag: el checkout de desarrollo sigue la rama en la que estás trabajando. El `HEAD` detached es un guard-rail del servidor, donde nadie debería estar corrigiendo código.
 
 ```bash
-echo "# 2 → Config: las cinco claves de la tabla, COMPOSE_FILE y el nombre del proyecto incluidos"
-cp .env.example .env
+echo "# 2 → Config: las cinco claves de la tabla; COMPOSE_FILE ya viene puesto"
+cp .env.dev.example .env
 ${EDITOR:-vi} .env
 ```
 
-**Antes de `secrets-init`, no después.** El ejemplo trae el `COMPOSE_FILE` de producción, y el script deriva de ahí qué secrets lleva el stack: con el valor sin cambiar crearía los 11 de producción —ocho de ellos pidiendo valores que development no usa— y, como nunca pisa un archivo existente, quedarían así. El `COMPOSE_PROJECT_NAME` del ejemplo es igual de peligroso: es el mismo para todo checkout que no lo edite.
+**Antes de `secrets-init`, no después.** El script deriva de `COMPOSE_FILE` qué secrets lleva el stack, y nunca pisa un archivo existente: un secret creado de más queda pidiendo un valor que development no usa, para siempre. La plantilla trae el `COMPOSE_FILE` correcto, pero el `COMPOSE_PROJECT_NAME` **hay que editarlo igual**: el placeholder es el mismo para todo checkout que no lo cambie, y de ahí salen los volúmenes.
 
 ```bash
 echo "# 3 → Los 3 secrets, todos generados"

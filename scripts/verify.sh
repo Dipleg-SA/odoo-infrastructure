@@ -217,7 +217,7 @@ v_host() {
 
   local vacias
   vacias=$(grep -nE '^[A-Z0-9_]+=$' .env 2>/dev/null | cut -d: -f2 | tr '\n' ' ')
-  if [ ! -f .env ]; then bad ".env presente" "no existe — cp .env.example .env"
+  if [ ! -f .env ]; then bad ".env presente" "no existe — cp .env.<entorno>.example .env"
   elif [ -n "$vacias" ]; then bad ".env sin claves vacías" "vacías: $vacias"
   else ok ".env sin claves vacías"; fi
 

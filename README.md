@@ -22,7 +22,7 @@ Once servicios en ocho módulos de Compose, uno por capa: reverse proxy con TLS 
 ## Empezar
 
 ```bash
-cp .env.example .env
+cp .env.prod.example .env   # o .env.stag.example / .env.dev.example
 make secrets-init
 ```
 
