@@ -60,8 +60,11 @@ cmd_issue() {
   echo "certificado emitido para $PUBLIC_HOSTNAME — ya se puede levantar nginx"
 }
 
+# --- Renovación ---
+# Los argumentos extra pasan a certbot: --force-renewal ejercita la cadena entera.
+
 cmd_renew() {
-  certbot renew --non-interactive
+  certbot renew --non-interactive "$@"
   recargar_nginx
   escribir_metrica
 }

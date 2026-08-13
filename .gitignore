@@ -6,8 +6,12 @@
 # Credenciales y estado que Docker genera/lee en runtime, nunca versionado.
 
 secrets/
-acme.json
 .env
+
+# --- Clave de cuenta ACME ---
+# Ya no se genera —certbot escribe en un volumen—, pero un checkout viejo la tiene.
+
+acme.json
 
 # --- Estado runtime ---
 # Métricas y registro de addons que backup.sh deja; los directorios sí se versionan.

@@ -299,7 +299,7 @@ v_edge() {
 
   if declarado dnsmasq; then
     omitir "la LAN usa dnsmasq como resolver" \
-      "no verificable desde el servidor — correr el chequeo 3b de INSTALL.md en un equipo de la LAN"
+      "no verificable desde el servidor — correr el chequeo 4b de INSTALL.md en un equipo de la LAN"
   fi
 
   # --- Config renderizada ---

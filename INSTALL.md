@@ -263,7 +263,7 @@ echo "4a — dnsmasq responde:"; dig +short "$HOST_PUB" @"$SRV_LAN"
 echo "4b — la LAN le pregunta:"; dig +short "$HOST_PUB"
 ```
 
-**El que importa es el 4b.** El `@` del 3a le pregunta a `dnsmasq` directamente, así que prueba que responde bien — no que ningún equipo lo esté usando. Quién resuelve para la LAN lo decide el DHCP del router (ver Prerrequisitos), no este repositorio. Si el 4a da la IP local y el 4b devuelve una IP de Cloudflare, `dnsmasq` está sano y **no lo usa nadie**: la LAN sale a internet para llegar a un servidor que tiene al lado, y se queda sin acceso si internet se cae.
+**El que importa es el 4b.** El `@` del 4a le pregunta a `dnsmasq` directamente, así que prueba que responde bien — no que ningún equipo lo esté usando. Quién resuelve para la LAN lo decide el DHCP del router (ver Prerrequisitos), no este repositorio. Si el 4a da la IP local y el 4b devuelve una IP de Cloudflare, `dnsmasq` está sano y **no lo usa nadie**: la LAN sale a internet para llegar a un servidor que tiene al lado, y se queda sin acceso si internet se cae.
 
 ```bash
 echo "# 5 → Desde fuera de la LAN (datos móviles): tiene que fallar"
@@ -605,20 +605,204 @@ A partir de acá el documento es [operación](docs/operations.md).
 
 ## 10. Staging
 
-**Objetivo.**
+**Objetivo.** Un segundo stack en el mismo servidor, con su hostname, su certificado y su túnel, **sembrado con los datos de producción por un restore**. Sembrarlo y hacer el simulacro de restore son la misma operación: el paso que los principios exigen y que siempre se posterga acá tiene ocasión natural.
 
-**A mano.**
+Lleva proxy, borde, datos, aplicación y restore. **No lleva backups, observabilidad ni `dnsmasq`**: los tres son exclusivos de producción, y el `53` en `network_mode: host` no admite un segundo de ninguna forma.
+
+**A mano.** Un **Tunnel propio** en Zero Trust, no el de producción: el token es el que distingue a los dos stacks. Mismos campos que la fase 3, con el hostname de staging en Subdomain y en **Origin Server Name**, y `https://nginx:443` como Service.
+
+Los 8 secrets se reparten en tres grupos, y solo el último es trabajo nuevo:
+
+| Grupo | Cuáles | De dónde salen |
+|---|---|---|
+| Generados | `postgres_password` · `pgbouncer_credentials` · `odoo_admin_password` | `secrets-init` los saca de `openssl`; no se tocan |
+| Copiados de producción | `restic_password` · `pgbackrest_r2_credentials` · `restic_r2_credentials` | Abren **su** repositorio: sin los mismos valores no hay nada que restaurar |
+| De Cloudflare | `cloudflare_api_token` · `cloudflare_tunnel_token` | El API token puede ser el mismo de producción — es la misma zona. El del Tunnel es el del Tunnel nuevo |
+
+En `.env`, ocho claves. Las de R2 y la stanza son **las de producción**, porque de ahí lee:
+
+| Clave | Valor |
+|---|---|
+| `COMPOSE_PROJECT_NAME` | `staging` |
+| `COMPOSE_FILE` | `compose.staging.yaml` |
+| `PG_ARCHIVE_MODE` | `off` — **la que no se puede olvidar**, ver abajo |
+| `PUBLIC_HOSTNAME` | El hostname de staging, distinto del de producción |
+| `PGBACKREST_STANZA` · `R2_ENDPOINT` · `R2_BUCKET` | Los mismos valores que producción: es su repositorio el que se restaura |
+| `ADDONS_BRANCH` | `<versión>-stag`, la rama de staging de los repos de addons |
+
+Todo lo demás **se borra del archivo**, no se deja vacío: SMTP, alertas, retenciones y `LOCAL_IP`. `make verify-host` marca las claves vacías, y staging no publica puertos — entra solo por el túnel.
+
+> **`PG_ARCHIVE_MODE=off` es la línea que protege los backups de producción.** Staging apunta a la stanza de producción para poder restaurar; con el archivado prendido su propio Postgres le empuja WAL a ese repositorio y lo contamina desde el entorno que existe para romper cosas. Lo verifica `make verify-db`, que en un stack sin capa de backups **exige** que esté apagado.
 
 **Comandos.**
 
+```bash
+echo "# 1 → Clonar en su propio directorio, fijado al último tag"
+git clone "$REPO_URL" /srv/odoo-staging && cd /srv/odoo-staging
+git fetch --tags && git checkout "$(git describe --tags --abbrev=0)"
+```
+
+Checkout propio, como producción: `.env`, `secrets/`, `state/` y el árbol de addons son de este directorio y de ningún otro. Es lo que hace que un error en staging no pueda alcanzar las credenciales del entorno real.
+
+```bash
+echo "# 2 → Config primero: el .env es lo que dice qué stack es este"
+cp .env.example .env
+${EDITOR:-vi} .env    # las ocho claves de la tabla de arriba, COMPOSE_FILE incluido
+```
+
+**El `.env` se completa antes de `secrets-init`, no después.** El script le pregunta a la composición cuáles secrets lleva este stack, y quién es la composición lo dice `COMPOSE_FILE`: con el valor del ejemplo (`compose.yaml`) crearía los 11 de producción, tres de ellos inertes y con `CAMBIAR` para siempre, porque nunca pisa un archivo que ya existe.
+
+```bash
+echo "# 3 → Los 8 secrets que declara este entrypoint"
+make secrets-init
+```
+
+`secrets-init` crea 8 y omite los 3 de producción. Cargá ahora los valores de la tabla de secrets, y después:
+
+```bash
+echo "# 4 → Permisos y grupo, y cargar .env en la shell"
+sudo make secrets-perms
+set -a; . ./.env; set +a
+```
+
+```bash
+echo "# 5 → Certificado propio y árbol de addons de la rama -stag"
+make cert-issue
+make addons-sync
+docker compose build
+```
+
+```bash
+echo "# 6 → Sembrar la base desde el repositorio de producción"
+make restore-up
+docker compose exec restore-db pgbackrest restore --archive-mode=off
+make restore-down
+```
+
+`--archive-mode=off` **no es opcional**: sin él el cluster restaurado hereda el `archive_command` del backup y empieza a empujar WAL a la stanza de producción. Es la misma protección que `PG_ARCHIVE_MODE`, en el otro extremo del proceso.
+
+```bash
+echo "# 7 → Sembrar el filestore, del snapshot más nuevo que la base"
+make restore-up
+docker compose exec restore-files restic restore latest --target / --include /data/odoo
+make restore-down
+```
+
+`--include /data/odoo` acota el restore a lo único que este contenedor monta: el snapshot trae también `/data/meta`, y restic —que corre acá con el uid de Odoo— no puede crear ese directorio en la raíz del contenedor, así que sin el filtro termina con error.
+
+El orden importa y es el inverso al del backup: un filestore **más nuevo** que la base deja archivos huérfanos, inofensivos; uno más viejo deja filas de `ir_attachment` apuntando a archivos que no existen.
+
+```bash
+echo "# 8 → Levantar el stack completo"
+make up
+```
+
 **Verificación.**
+
+```bash
+echo "# 9 → Estado de las capas que este stack sí tiene"
+make verify
+```
+
+Las capas ausentes salen como `--`, no en rojo: backups y observabilidad omitidas enteras, `dnsmasq` y `cloudflared`… — el que no esté, se nombra. Lo que **sí** tiene que pasar es `archive_mode APAGADO`, el certificado vigente y las tres rutas de Odoo en nginx.
+
+```bash
+echo "# 10 → Los adjuntos que la base referencia están en el filestore"
+scripts/integrity-check.sh
+```
+
+Salida esperada `referenciados: N | faltantes: 0`. Cada línea `FALTA:` es un adjunto roto, y significa que el snapshot de restic elegido es **anterior** al punto de la base.
+
+```bash
+echo "# 11 → Ejercitar la renovación ANTES de que producción dependa de ella"
+scripts/cert.sh renew --force-renewal
+```
+
+Es el único paso de esta fase que no es para staging sino **para producción**: fuerza una emisión real, el reload de nginx y la escritura de la métrica de vencimiento, que es toda la cadena que el timer va a correr sola dentro de sesenta días. Si algo de eso está roto, el modo de falla es silencioso — el certificado vence y nadie se entera.
+
+- [ ] `make verify` sale con exit `0`
+- [ ] `https://<hostname de staging>` sirve con certificado de Let's Encrypt
+- [ ] El chat en vivo actualiza sin refrescar — es lo que prueba el `location /websocket`
+- [ ] `integrity-check.sh` sin faltantes
+- [ ] La renovación forzada terminó con nginx sirviendo el certificado nuevo
+
+Refrescar staging más adelante es repetir los bloques 6 a 8. Cada vez es otro simulacro de restore.
 
 ## 11. Desarrollo
 
-**Objetivo.**
+**Objetivo.** Un checkout por feature en tu máquina, con Odoo sirviendo por nginx en loopback. Sin túnel, sin certificados, sin backups y **sin ningún valor que pegar a mano**: los tres secrets se generan.
 
-**A mano.**
+nginx está aunque no haya TLS. Es lo que hace honesto al `proxy_mode = True` de `odoo.conf`: sin nadie escribiendo `X-Forwarded-*`, Odoo confía en cabeceras que no existen, y esa diferencia con producción aparece justo en lo que es difícil de reproducir.
+
+**A mano.** Nada. Dos decisiones, las dos en `.env`:
+
+| Clave | Valor |
+|---|---|
+| `COMPOSE_PROJECT_NAME` | `development-<feature>`, **único por checkout** |
+| `COMPOSE_FILE` | `compose.dev.yaml` |
+| `PG_ARCHIVE_MODE` | `off` |
+| `HTTP_PORT` | El puerto de loopback, distinto por checkout si vas a alternar |
+| `ADDONS_BRANCH` | Tu rama de trabajo |
+
+> **El nombre del proyecto es el único aislamiento entre dos checkouts de desarrollo.** De él salen los volúmenes: dos que lo compartan resuelven al mismo `pgdata`, y como corre uno a la vez no colisionan al arrancar — **se pisan los datos en silencio**, que es precisamente lo que un entorno por feature viene a evitar. Si falta la clave, Compose usa el nombre del directorio, que ya es único; el caso peligroso es copiar el `.env` de un checkout a otro.
+
+`NGINX_MODE` **no se declara**: `compose.dev.yaml` fija la plantilla sin TLS en el entrypoint, para que un `.env` sin la clave no deje a nginx buscando un certificado que nadie emitió.
 
 **Comandos.**
 
+```bash
+echo "# 1 → Un directorio por feature, con su nombre adentro"
+FEATURE='sale'
+git clone "$REPO_URL" ~/odoo-development-$FEATURE && cd ~/odoo-development-$FEATURE
+```
+
+Acá **no** se fija a un tag: el checkout de desarrollo sigue la rama en la que estás trabajando. El `HEAD` detached es un guard-rail del servidor, donde nadie debería estar corrigiendo código.
+
+```bash
+echo "# 2 → Config: las cinco claves de la tabla, COMPOSE_FILE y el nombre del proyecto incluidos"
+cp .env.example .env
+${EDITOR:-vi} .env
+```
+
+**Antes de `secrets-init`, no después.** El ejemplo trae el `COMPOSE_FILE` de producción, y el script deriva de ahí qué secrets lleva el stack: con el valor sin cambiar crearía los 11 de producción —ocho de ellos pidiendo valores que development no usa— y, como nunca pisa un archivo existente, quedarían así. El `COMPOSE_PROJECT_NAME` del ejemplo es igual de peligroso: es el mismo para todo checkout que no lo edite.
+
+```bash
+echo "# 3 → Los 3 secrets, todos generados"
+make secrets-init
+sudo make secrets-perms
+```
+
+`secrets-init` no imprime ningún pendiente: los tres salen de `openssl`. `secrets-perms` sigue necesitando root — deja cada archivo en `640` con el grupo del proceso no-root que lo lee, y ese GID no es tuyo.
+
+```bash
+echo "# 4 → Árbol de addons de tu rama, e imagen"
+set -a; . ./.env; set +a
+make addons-sync
+docker compose build
+```
+
+```bash
+echo "# 5 → Levantar"
+make up
+```
+
+La base arranca vacía: el entrypoint detecta que no está inicializada y corre `-i base` contra `postgres:5432`, no contra PgBouncer. La primera vez tarda.
+
 **Verificación.**
+
+```bash
+echo "# 6 → Estado, y el sitio por el proxy"
+make verify
+curl -s -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:${HTTP_PORT:-8080}/web/login"
+```
+
+Tiene que dar `200`. `make verify` omite el certificado, el `server_name` y el 443 —los tres derivados de que este stack sirve en texto plano, y los deduce de la composición, no de una variable—, y avisa en vez de fallar si tu `ADDONS_BRANCH` no lleva la versión en el nombre: de una rama `feat/*` no se puede afirmar que sea de la misma versión que la imagen.
+
+El aislamiento entre checkouts se comprueba una sola vez, con dos clonados:
+
+```bash
+echo "# 7 → Desde el segundo checkout, con el primero levantado"
+docker volume ls --format '{{.Name}}' | grep '^development-'
+```
+
+Tiene que haber un juego de volúmenes por nombre de proyecto —`development-sale_pgdata`, `development-accountant_pgdata`— y ninguno compartido. Si ves uno solo para los dos, los `COMPOSE_PROJECT_NAME` son iguales y las dos bases son la misma.
