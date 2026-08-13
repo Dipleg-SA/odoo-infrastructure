@@ -449,10 +449,10 @@ v_db() {
   # cipher confirma que el repo está cifrado; el rango de wal archive, que el
   # archive_command llega de verdad a R2 y no solo parsea.
 
-  # --- Coherencia de la stanza ---
-  # pgBackRest no interpola variables dentro de su config, así que el nombre de la
-  # sección y PGBACKREST_STANZA se mantienen iguales a mano. Si divergen, se queda
-  # sin pg1-path y el archivado muere sin que la config parezca rota.
+  # --- Stanza y opciones del cluster ---
+  # pgbackrest.conf no trae sección de stanza: el nombre y pg1-path llegan por
+  # entorno. Sin pg1-path resuelto el archivado muere sin que la config parezca rota,
+  # y `help` es la única forma de leer el valor efectivo sin tocar el repositorio.
 
   # Producción archiva y restaura, staging solo restaura, development ninguna de las
   # dos: sin pgBackRest en juego, la stanza no es un dato que falte.
@@ -462,11 +462,10 @@ v_db() {
     omitir "stanza declarada en .env" "este stack no archiva ni restaura"
   elif [ -z "$stanza" ]; then
     bad "stanza declarada en .env" "PGBACKREST_STANZA vacío"
-  elif grep -q "^\[$stanza\]" config/pgbackrest/pgbackrest.conf 2>/dev/null; then
-    ok "stanza '$stanza' tiene su sección en pgbackrest.conf"
   else
-    bad "stanza '$stanza' tiene su sección en pgbackrest.conf" \
-        "no existe la sección [$stanza] — pgBackRest se queda sin pg1-path"
+    ok "stanza '$stanza' declarada en .env"
+    expect "pg1-path resuelto por entorno" "current: /var/lib/postgresql/data" \
+      docker compose exec -T -u postgres postgres pgbackrest help archive-push pg1-path
   fi
 
   # --- Coherencia de las dos retenciones ---

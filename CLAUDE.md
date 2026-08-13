@@ -67,7 +67,6 @@ Estos valores están duplicados por necesidad —hay formatos que no interpolan 
 
 | Un lado | El otro | Qué pasa si divergen |
 |---|---|---|
-| `PGBACKREST_STANZA` en `.env` | sección `[nombre]` de `pgbackrest.conf` | el archivado de WAL muere sin error de config |
 | categorías en `addons.sh` | bucle `for category` en `entrypoint.sh` | los módulos se clonan y nunca se cargan |
 | rama de addons en `.env` | tag `FROM odoo:` del Dockerfile | ramas de una versión montadas en un Odoo de otra |
 | `RESTIC_KEEP_*` | `BACKUP_RETENTION_DAYS` | un restore viejo se queda sin adjuntos |

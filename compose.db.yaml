@@ -21,6 +21,10 @@ services:
       # Con default vacío: un stack que no archiva ni restaura no los declara. Que
       # el que sí lo hace los tenga cargados lo exige verify-db, no la interpolación.
       PGBACKREST_STANZA: ${PGBACKREST_STANZA:-}
+      # Opciones del cluster acá y no en pgbackrest.conf: ahí vivirían dentro de una
+      # sección [stanza] cuyo nombre repetiría el del .env. pg1-user = POSTGRES_USER.
+      PGBACKREST_PG1_PATH: /var/lib/postgresql/data
+      PGBACKREST_PG1_USER: odoo
       PGBACKREST_REPO1_S3_BUCKET: ${R2_BUCKET:-}
       PGBACKREST_REPO1_S3_ENDPOINT: ${R2_ENDPOINT:-}
       PGBACKREST_REPO1_RETENTION_FULL: ${BACKUP_RETENTION_DAYS:-125}

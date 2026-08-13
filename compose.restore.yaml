@@ -21,6 +21,10 @@ services:
       - app
     environment:
       PGBACKREST_STANZA: ${PGBACKREST_STANZA:-}
+      # Mismas dos que el servicio postgres: pgbackrest.conf no trae sección de stanza,
+      # así que sin estas el restore se queda sin pg1-path.
+      PGBACKREST_PG1_PATH: /var/lib/postgresql/data
+      PGBACKREST_PG1_USER: odoo
       PGBACKREST_REPO1_S3_BUCKET: ${R2_BUCKET:-}
       PGBACKREST_REPO1_S3_ENDPOINT: ${R2_ENDPOINT:-}
       PGBACKREST_REPO1_RETENTION_FULL: ${BACKUP_RETENTION_DAYS:-125}

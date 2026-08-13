@@ -124,7 +124,7 @@ Let's Encrypt dejó de mandar avisos de vencimiento el 2025-06-04, así que la v
 
 **Un secret rotado no surte efecto, o el contenedor reporta `No such file`.** Los secrets son bind-mounts de **archivo**, atados al inode. Editarlos con algo que reemplace el archivo (`sed -i`, varios editores) desvincula el inode montado. El contenedor queda viendo el archivo viejo o ninguno, y **restaurar el contenido no lo arregla**. Solución: `docker compose up -d --force-recreate <servicio>`. Verificar además el GID con `make secrets-check`: si la herramienta recreó el archivo, probablemente también perdió el grupo.
 
-**`unable to find primary cluster` en `stanza-create`.** pgBackRest se conecta a la base como rol `postgres`, que en este cluster no existe (se creó con `POSTGRES_USER=odoo`). La stanza tiene que declarar `pg1-user = odoo`; ya viene así en `config/pgbackrest/pgbackrest.conf`.
+**`unable to find primary cluster` en `stanza-create`.** pgBackRest se conecta a la base como rol `postgres`, que en este cluster no existe (se creó con `POSTGRES_USER=odoo`). El rol correcto llega por `PGBACKREST_PG1_USER` desde `compose.db.yaml`; si el error aparece, es que esa variable no está en el entorno del contenedor.
 
 **`unable to verify certificate presented by ...r2.cloudflarestorage.com`.** Falta el almacén de CAs raíz. La imagen oficial de Postgres no trae `ca-certificates`; el `docker/postgres/Dockerfile` lo instala. Si aparece, la imagen en uso no es la propia: `docker compose build postgres && docker compose up -d postgres`.
 
