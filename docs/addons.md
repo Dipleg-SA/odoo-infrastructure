@@ -48,15 +48,16 @@ El `reset --hard` no es opcional: la rama de staging es **descartable en todo mo
 make addons-sync
 ```
 
-El servidor **nunca** mergea ni pushea: solo trae. Todo lo que hay en ese árbol existe también en el remoto.
+El servidor **nunca** mergea ni pushea: solo trae. Si aun así quedaron commits locales en un worktree, el sync los deja intactos y avisa —`N commit(s) locales sin pushear`— porque el próximo re-clone se los comería.
 
-Como la rama de staging se reescribe con `--force`, el `merge --ff-only` de `addons-sync` no va a avanzar en línea recta. El script **no resuelve eso solo** —no puede saber si la rama de este checkout es descartable— y en cambio nombra el comando exacto:
+Como la rama de staging se reescribe con `--force`, el `merge --ff-only` de `addons-sync` no va a avanzar en línea recta: el worktree y el remoto avanzaron cada uno por su lado. El script **no resuelve eso solo** —no puede saber si los commits locales son descartables— y en cambio los cuenta de cada lado y nombra los dos comandos:
 
 ```bash
-git -C addons/<categoría>/<repo> reset --hard origin/<rama>-stag
+git -C addons/<categoría>/<repo> rebase origin/<rama>-stag       # integrar
+git -C addons/<categoría>/<repo> reset --hard origin/<rama>-stag # descartar
 ```
 
-En un checkout de staging ese reset es inofensivo; en producción, la misma condición significa que alguien commiteó en el servidor, y ahí el reset se comería trabajo. Por eso lo decide el operador y no el script.
+El rebase es el default. El reset solo si esos commits locales son descartables: en un checkout de staging suele serlo; en producción significa que alguien commiteó en el servidor, y ahí se comería trabajo. Por eso lo decide el operador y no el script.
 
 **4. Promover.** De vuelta en tu checkout de development:
 

@@ -1,4 +1,4 @@
-.PHONY: up down logs ps cert-issue cert-renew secrets-init secrets-perms secrets-check backup backup-full backup-check restore-up restore-down addons-sync addons odoo-install odoo-update odoo-modules require-modules require-backups require-restore verify verify-host verify-edge verify-db verify-odoo verify-backups verify-observability
+.PHONY: up down logs ps cert-issue cert-renew secrets-init secrets-perms secrets-check backup backup-full backup-check restore-up restore-down addons-sync addons odoo-install odoo-update odoo-modules require-modules require-backups require-restore test verify verify-host verify-edge verify-db verify-odoo verify-backups verify-observability
 
 # --- Inicialización de un deploy nuevo ---
 # En orden: secrets-init, cargar los valores a mano, secrets-perms, secrets-check.
@@ -24,6 +24,14 @@ cert-issue:
 
 cert-renew:
 	scripts/cert.sh renew
+
+# --- Tests ---
+# El contrato de los tres entrypoints y addons.sh de punta a punta. No levantan
+# contenedores ni salen a la red: el estado de un deploy real es 'make verify'.
+
+# Corre todos aunque uno falle, por el mismo motivo que verify.sh no usa -e.
+test:
+	@estado=0; for t in tests/test_*.sh; do bash "$$t" || estado=1; done; exit $$estado
 
 # --- Verificación del deploy ---
 # scripts/verify.sh es dueño único de qué se chequea y qué se espera; INSTALL.md solo

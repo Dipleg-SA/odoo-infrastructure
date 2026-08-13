@@ -96,14 +96,14 @@ ensure_worktree() {
 # Solo avanza si el worktree está en la rama declarada: en un checkout de
 # desarrollo HEAD vive en una feat/*, y ahí sync no tiene nada que hacer.
 #
-# ff-only y nunca reset: el script no sabe si la rama de este checkout es
-# descartable. Una rama de staging se reescribe a propósito y su reset es
-# inofensivo; la de producción no, y ahí un reset se comería un commit local.
-# Ante una divergencia nombra el comando y deja la decisión al operador.
+# ff-only y nunca reset: tener commits locales sin pushear es el estado normal
+# de un checkout de desarrollo entre el commit y el push, y no es un error —
+# el ff-only contra un ancestro no hace nada y sale bien.
 
 update_worktree() {
-  local tree="$1" name="$2" err actual
+  local tree="$1" name="$2" err actual rel propios ajenos
   actual=$(git -C "$tree" rev-parse --abbrev-ref HEAD)
+  rel="${tree#"$ROOT"/}"
 
   if [ "$actual" != "$ADDONS_BRANCH" ]; then
     warn "$name: el worktree está en '$actual', no en '$ADDONS_BRANCH' — no se actualiza"
@@ -117,15 +117,29 @@ update_worktree() {
     warn "$name: origin/$ADDONS_BRANCH no existe en el remoto todavía, el worktree sigue en su rama local"
     return 0
   fi
+  # --- Divergencia ---
+  # El ff-only solo falla si las dos ramas avanzaron desde un ancestro común, y un
+  # force-push del remoto se ve igual: el script cuenta de cada lado y no elige.
+
   if ! err=$(git -C "$tree" merge --ff-only "origin/$ADDONS_BRANCH" 2>&1); then
-    if git -C "$tree" merge-base --is-ancestor "origin/$ADDONS_BRANCH" HEAD 2>/dev/null; then
-      fail "$name: el worktree tiene commits que no están en origin/$ADDONS_BRANCH — este checkout no debería escribir"
-    else
-      fail "$name: origin/$ADDONS_BRANCH fue reescrita, el merge no avanza en línea recta.
-            Si esa rama es descartable (staging), rehacela con:
-              git -C addons/$(basename "$(dirname "$tree")")/$name reset --hard origin/$ADDONS_BRANCH
+    propios=$(git -C "$tree" rev-list --count "origin/$ADDONS_BRANCH..HEAD" 2>/dev/null || echo '?')
+    ajenos=$(git -C "$tree" rev-list --count "HEAD..origin/$ADDONS_BRANCH" 2>/dev/null || echo '?')
+    fail "$name: divergió de origin/$ADDONS_BRANCH — $propios commit(s) locales, $ajenos en el remoto.
+            El sync no toca un worktree divergido. Integralo desde el worktree:
+              git -C $rel rebase origin/$ADDONS_BRANCH
+            Y solo si esos $propios commit(s) locales son descartables:
+              git -C $rel reset --hard origin/$ADDONS_BRANCH
             Detalle: $err"
-    fi
+    return 0
+  fi
+
+  # --- Commits locales sin pushear ---
+  # No es error, pero en un checkout de servidor el árbol dejó de coincidir con el
+  # remoto y un re-clone se lo comería: sale con 0 y avisa.
+
+  propios=$(git -C "$tree" rev-list --count "origin/$ADDONS_BRANCH..HEAD" 2>/dev/null || echo 0)
+  if [ "$propios" != "0" ]; then
+    warn "$name: $propios commit(s) locales sin pushear a origin/$ADDONS_BRANCH"
   fi
   return 0
 }

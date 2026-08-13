@@ -10,9 +10,10 @@ El estilo de comentarios en archivos versionados de código y config es obligato
 
 ## Comandos
 
-No hay suite de tests: la verificación del sistema **es** `scripts/verify.sh`.
+Dos verificaciones distintas, y no se reemplazan: `make test` corre sin Docker levantado ni red, sobre lo que se puede afirmar leyendo el repositorio —el contrato de los tres entrypoints y `addons.sh` de punta a punta—; `make verify` dice en qué estado está un deploy real, y **eso** necesita el sistema corriendo.
 
 ```bash
+make test                   # tests/, sin levantar nada (~3 s)
 make verify                 # estado del servidor entero, capa por capa
 make verify-<capa>          # host | edge | db | odoo | backups | observability
 make up / down / logs / ps
