@@ -261,8 +261,10 @@ Son dos y no una, porque las capas son distintas: `require-backups` cuelga de `b
 
 **El resolver de la LAN no lo decide este repositorio.** `dnsmasq` resuelve el hostname para quien le pregunte, pero quién le pregunta lo reparte el DHCP del router. El chequeo que parecía cubrirlo usaba `dig … @servidor`, que prueba que dnsmasq contesta y no que alguien lo use: hoy es un prerrequisito escrito de `INSTALL.md`, un `dig` sin `@` desde un equipo de la LAN, y un `omitir` explícito en `verify.sh` que dice que desde el servidor no se puede verificar. **Sigue sin haber mecanismo**, porque no hay ninguno del lado del stack — lo que hay es que dejó de dar verde por accidente.
 
-Lo demás, arrastrado de antes:
+**El workflow de CI sigue sin poder existir.** Hay 105 chequeos de `make test` más `bash -n` y shellcheck listos para correr en cada push, y ningún lugar donde correrlos: esta rama no tiene remoto propio, y el `origin` actual guarda la identidad del deployment que la rama elimina. Es una decisión pendiente sobre dónde vive el repositorio, no trabajo técnico pendiente.
 
-- Bump de `alpine` y de la imagen de Odoo — pendiente de verificar los tags actuales.
-- Arreglo de fondo de `PGBACKREST_STANZA`: mover `pg1-path` y `pg1-user` a variables de entorno.
-- Umbrales numéricos de las alertas de Grafana, hoy sin parametrizar.
+Los otros tres arrastres se cerraron:
+
+- **Imágenes al día.** `alpine` 3.20 → 3.24, Odoo `19.0-20260630` → `19.0-20260810`, nginx `1.29.3` → `1.31.3` (misma rama mainline), Grafana 13.1.2 → 13.1.3, cloudflared 2026.7.2 → 2026.8.0 y certbot 5.1.0 → 5.7.0. Postgres 17.10, PgBouncer, restic, Prometheus, Loki y Alloy ya estaban en su último tag estable.
+- **`pgbackrest.conf` se quedó sin sección de stanza.** El nombre, `pg1-path` y `pg1-user` llegan por `PGBACKREST_*` desde `compose.db.yaml` y `compose.restore.yaml`, junto al `POSTGRES_USER` del que `pg1-user` tiene que ser copia. La invariante «el `[nombre]` del archivo tiene que coincidir con el `.env`» desapareció: ya no hay dos lados que puedan divergir. `verify-db` dejó de comparar cadenas y ahora lee el valor efectivo dentro del contenedor (`pgbackrest help archive-push pg1-path`).
+- **Los umbrales de Grafana quedan literales**, porque no hay mecanismo: el provisioning de alerting no interpola nada. El detalle de lo que se probó está en `docs/architecture.md`.
