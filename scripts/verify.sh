@@ -6,7 +6,7 @@
 # del diagnóstico, que es justo para lo que se lo corre.
 set -uo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 # --- Valores por deployment ---
 # Los lee de .env solo, para que ninguna verificación dependa de la shell del operador.
@@ -887,6 +887,11 @@ resumen() {
   printf '\n%s ok · %s fallas · %s avisos\n' "$PASS" "$FALLO" "$AVISO"
   [ "$FALLO" -eq 0 ]
 }
+
+# --- Sourceado desde los tests ---
+# Sin esto, importar los helpers correría la verificación entera y su exit code.
+
+[ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 
 case "${1:-all}" in
   host)          v_host ;;

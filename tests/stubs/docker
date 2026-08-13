@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Stub de docker. Registra cada invocación en $STUB_DIR/llamadas y devuelve el
+# fixture que preparó el caso; nunca habla con un daemon.
+#
+# El registro es la mitad útil: es lo que permite afirmar qué argumentos le
+# llegaron de verdad a certbot, que es donde vivía el bug de --force-renewal.
+
+printf '%s\n' "$*" >> "$STUB_DIR/llamadas"
+
+# --services antes que config: la primera también contiene la palabra config.
+case "$*" in
+  *"config --services"*) archivo=servicios ;;
+  *config*)              archivo=config ;;
+  *"ps -q"*)             archivo=ps-q ;;
+  *" ps "*)              archivo=ps ;;
+  *" port "*)            archivo=port ;;
+  *)                     archivo=salida ;;
+esac
+
+[ -f "$STUB_DIR/$archivo" ] && cat "$STUB_DIR/$archivo"
+exit "$(cat "$STUB_DIR/exit" 2>/dev/null || echo 0)"

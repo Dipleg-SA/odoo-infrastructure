@@ -50,9 +50,9 @@ sale_con() {
 }
 
 # --- Resumen ---
-# El exit code es lo que consume el Makefile y el CI.
+# Exige al menos un ok: una suite que murió antes de la primera aserción tiene 0 fallas.
 
 resumen() {
   printf '\n%s ok · %s fallas\n' "$PASS" "$FALLO"
-  [ "$FALLO" -eq 0 ]
+  [ "$FALLO" -eq 0 ] && [ "$PASS" -gt 0 ]
 }

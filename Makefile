@@ -26,8 +26,8 @@ cert-renew:
 	scripts/cert.sh renew
 
 # --- Tests ---
-# El contrato de los tres entrypoints y addons.sh de punta a punta. No levantan
-# contenedores ni salen a la red: el estado de un deploy real es 'make verify'.
+# Los tres entrypoints, addons.sh y los derivadores de verify, cert y secrets. No
+# levantan contenedores ni salen a la red: el estado de un deploy real es 'make verify'.
 
 # Corre todos aunque uno falle, por el mismo motivo que verify.sh no usa -e.
 test:

@@ -10,7 +10,9 @@ El estilo de comentarios en archivos versionados de código y config es obligato
 
 ## Comandos
 
-Dos verificaciones distintas, y no se reemplazan: `make test` corre sin Docker levantado ni red, sobre lo que se puede afirmar leyendo el repositorio —el contrato de los tres entrypoints y `addons.sh` de punta a punta—; `make verify` dice en qué estado está un deploy real, y **eso** necesita el sistema corriendo.
+Dos verificaciones distintas, y no se reemplazan: `make test` corre sin Docker levantado ni red, sobre lo que se puede afirmar leyendo el repositorio; `make verify` dice en qué estado está un deploy real, y **eso** necesita el sistema corriendo.
+
+`tests/` cubre el contrato de los tres entrypoints (`docker compose config`), `addons.sh` de punta a punta contra repos git de verdad, y —con el stub de `tests/stubs/docker`, que registra cada invocación— los derivadores de `verify.sh`, `cert.sh` y los dos de secrets. Al tocar un script, la pregunta es si el test **falla** cuando se rompe lo que dice cubrir: mutá y comprobalo, que ya aparecieron aserciones que pasaban por el motivo equivocado.
 
 ```bash
 make test                   # tests/, sin levantar nada (~3 s)
