@@ -3,7 +3,7 @@
 # cuando la rama base deja de recibir parches: revisá su ventana de soporte al
 # actualizar el resto del stack. Releases y EOL: https://alpinelinux.org/releases/
 
-FROM alpine:3.20
+FROM alpine:3.24
 
 # --- dnsmasq ---
 # Corre como root: el 53 es puerto privilegiado y el contenedor usa el stack de

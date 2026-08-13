@@ -1,7 +1,7 @@
 # --- Imagen ---
 # Sin stage de build para addons: llegan por bind-mount. Solo dependencias Python y el entrypoint.
 
-FROM odoo:19.0-20260630
+FROM odoo:19.0-20260810
 
 COPY requirements.txt /tmp/requirements.txt
 

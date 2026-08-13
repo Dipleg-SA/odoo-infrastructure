@@ -62,7 +62,7 @@ services:
   # Único servicio con puerto publicado: UI administrativa, nivel 2 (loopback + túnel SSH).
 
   grafana:
-    image: grafana/grafana:13.1.2
+    image: grafana/grafana:13.1.3
     container_name: ${COMPOSE_PROJECT_NAME}-grafana
     networks:
       - observability

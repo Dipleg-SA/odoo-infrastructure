@@ -6,7 +6,7 @@
 # nadie escribiendo X-Forwarded-* confía en cabeceras que no existen.
 services:
   nginx:
-    image: nginx:1.29.3-alpine
+    image: nginx:1.31.3-alpine
     # Nombre derivado del proyecto: predecible y sin el sufijo -1 del autonaming,
     # pero sin colisionar si se levanta un segundo stack con otro nombre de proyecto.
     container_name: ${COMPOSE_PROJECT_NAME}-nginx

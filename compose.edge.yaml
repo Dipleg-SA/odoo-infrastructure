@@ -5,7 +5,7 @@
 # development. Lo de este archivo es lo que development no tiene.
 services:
   cloudflared:
-    image: cloudflare/cloudflared:2026.7.2
+    image: cloudflare/cloudflared:2026.8.0
     command: tunnel --metrics 0.0.0.0:2000 run
     container_name: ${COMPOSE_PROJECT_NAME}-cloudflared
     networks:
@@ -26,7 +26,7 @@ services:
   # dependa del ingreso — hoy el certificado se emite aunque el borde esté roto.
 
   certbot:
-    image: certbot/dns-cloudflare:v5.1.0
+    image: certbot/dns-cloudflare:v5.7.0
     container_name: ${COMPOSE_PROJECT_NAME}-certbot
     profiles: [cert]
     networks:
