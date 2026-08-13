@@ -97,11 +97,10 @@ Estos valores están duplicados por necesidad —hay formatos que no interpolan 
 
 El contexto histórico, los incidentes y las justificaciones largas van a `docs/`, **nunca inline** en el código.
 
-## Estado de las ramas
+## De dónde viene este repositorio
 
-- **`main`** — el deployment original, con `.specs/` (constitución R11, backlog y 7 specs de spec-flow).
-- **`producto`** — versión genérica y agnóstica, sin rastros del deployment original: sin IP pública, sin dominio, sin hardware, sin fechas. `PRINCIPLES.md` reemplaza a la constitución y `docs/roadmap.md` al roadmap de spec-flow.
+Este es el **producto**: la versión genérica y agnóstica del stack, con historia propia —raíz propia, sin ancestro común— y sin rastros de ningún deployment concreto. `PRINCIPLES.md` es la fuente de las reglas y `docs/roadmap.md` el plan por etapas.
 
-**`producto` no se pushea al `origin` existente**: ese remoto contiene el historial de `main`, con la identidad del deployment que esta rama elimina.
+El deployment original del que salió vive en otro repositorio, con su propia historia y su `.specs/` (constitución, backlog y specs de spec-flow). **Nada de ese repositorio se trae acá**: es el que tiene la IP pública, el dominio y el hardware que esta versión elimina.
 
-Al escribir en `producto`, cualquier valor que solo sirva a un deployment concreto —hostnames, IPs, cantidades de RAM, fechas, nombres de proveedores como ejemplo obligatorio— es un defecto, no un detalle.
+Al escribir acá, cualquier valor que solo sirva a un deployment concreto —hostnames, IPs, cantidades de RAM, fechas, nombres de proveedores como ejemplo obligatorio— es un defecto, no un detalle.
