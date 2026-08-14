@@ -19,7 +19,7 @@ make test                   # tests/, sin levantar nada (~3 s)
 make verify                 # estado del servidor entero, capa por capa
 make verify-<capa>          # host | edge | db | odoo | backups | observability
 make up / down / logs / ps
-make addons-sync            # rearma el árbol de addons desde config/odoo/addons.txt
+make addons-sync            # rearma el árbol de addons desde addons/addons.txt
 make odoo-install MODULES=x # -i explícito; MODULES es obligatorio
 make odoo-update MODULES=x  # -u explícito
 make cert-issue            # emisión inicial; nginx no arranca sin el archivo
@@ -59,7 +59,7 @@ Cosas que no se deducen leyendo un archivo solo:
 - **`docker/odoo/entrypoint.sh` genera config en runtime**. El `addons_path` sale de un glob sobre cuatro categorías en orden de precedencia (`enterprise > custom-addons > oca > third-party`), y `admin_passwd`, SMTP y credenciales se appendean al conf. `config/odoo/odoo.conf` es solo la base.
 - **PgBouncer corre en modo transacción**, lo que rompe `LISTEN/NOTIFY`. Por eso `server_wide_modules` incluye `bus_alt_connection`, que le da al bus su propia conexión directa. Sin ese módulo Odoo arranca igual y el chat en vivo deja de actualizarse.
 - **Instalar o actualizar módulos nunca va atado al arranque.** Es un one-off explícito del operador contra `postgres:5432`, no contra PgBouncer.
-- **`addons/` está gitignoreado entero.** El único artefacto versionado es el manifiesto `config/odoo/addons.txt`; `scripts/addons.sh` rearma el árbol desde ahí.
+- **`addons/` se gitignora por contenido, no entero.** Lo versionado es la plantilla `addons/addons.txt.example` y el esqueleto vacío de las cuatro categorías (`.gitkeep`). El manifiesto real, `addons/addons.txt`, es local a cada checkout —igual que `.env`, y por lo mismo: difiere de verdad entre producción, staging y development— y se bootstrapea con `cp`. Lo que `scripts/addons.sh` clona adentro de cada categoría, y los bare de `.repos/`, tampoco se versiona.
 
 ## Invariantes que viven en dos archivos
 

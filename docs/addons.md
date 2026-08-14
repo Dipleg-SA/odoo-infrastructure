@@ -16,6 +16,8 @@ Cada entorno es un checkout propio del repositorio, con su `.env`, y **un solo �
 
 `addons-sync` **solo actualiza si el worktree está parado en la rama declarada**. Es la regla que reemplaza al viejo árbol de desarrollo opt-in: en cuanto hacés `checkout -b feat/algo`, el script avisa y no toca nada. Es el único árbol con trabajo sin commitear, y un merge lo destruiría.
 
+**El manifiesto también es local a cada checkout**, no solo la rama: `addons/addons.txt` está gitignoreado, igual que `.env` (su plantilla, `addons/addons.txt.example`, sí se versiona). No es una limitación, es el modelo — un módulo de OCA o de terceros suele empezar adaptándose en development, sin que production lo vea todavía, y eso significa manifiestos con **contenido distinto**, no solo ramas distintas del mismo contenido.
+
 ## El ciclo
 
 ```
@@ -100,7 +102,7 @@ Instalar y actualizar **detienen el servicio** mientras corren: es un paso expl�
 
 ## Sumar un módulo
 
-1. Agregá una línea al manifiesto `config/odoo/addons.txt`: URL del repositorio y categoría (`custom-addons`, `oca`, `third-party` o `enterprise`).
+1. Agregá una línea al manifiesto `addons/addons.txt`: URL del repositorio y categoría (`custom-addons`, `oca`, `third-party` o `enterprise`). Si este checkout todavía no lo tiene, `cp addons/addons.txt.example addons/addons.txt` primero.
 2. `make addons-sync` — crea el clon bare y el worktree.
 3. Si el módulo declara dependencias de Python, sumalas a `docker/odoo/requirements.txt` y reconstruí la imagen. Es lo único, junto al entrypoint, que dispara un rebuild.
 4. `make odoo-install MODULES=<módulo>` cuando corresponda instalarlo.
@@ -133,3 +135,11 @@ El entrypoint arma el `addons_path` recorriendo las categorías en ese orden. La
 ## Módulos con licencia que prohíbe redistribuir
 
 Son la excepción al modelo. Su licencia no permite forkearlos a una organización propia, así que no tienen fork ni rama de staging: se consumen desde su origen y su categoría se puebla por otro camino.
+
+El caso típico es Odoo Enterprise sin acceso al repositorio privado de GitHub —la suscripción no siempre viene con esa invitación— pero con el ZIP que se baja desde el portal de la cuenta. `entrypoint.sh` arma el `addons_path` con un glob por categoría; no le importa si lo que hay adentro de `addons/enterprise/<módulo>/` llegó por `git worktree` o se descomprimió a mano. El manifiesto se queda sin línea `enterprise` —no hay URL que declarar— y el árbol se puebla así:
+
+```bash
+unzip -q odoo-enterprise.zip -d addons/enterprise/
+```
+
+Esa carpeta sigue gitignoreada por dentro, igual que cualquier otra categoría: el ZIP nunca se versiona. Actualizar una versión nueva es repetir el `unzip` encima y correr `make odoo-update` — no hay `addons-sync` ni worktree que avisen de un cambio de rama, porque no hay repositorio del que tirar.

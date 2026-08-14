@@ -58,7 +58,7 @@ ps:
 	docker compose ps --format "table {{.Name}}\t{{.Service}}\t{{.Status}}"
 
 # --- Addons ---
-# sync clona/actualiza los dos árboles desde config/odoo/addons.txt; puro host, sin contenedores.
+# sync clona/actualiza los dos árboles desde addons/addons.txt; puro host, sin contenedores.
 
 addons-sync:
 	scripts/addons.sh sync

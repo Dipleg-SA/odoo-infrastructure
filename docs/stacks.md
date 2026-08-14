@@ -52,7 +52,7 @@ Cada entorno tiene su **entrypoint** propio —un archivo raíz con su `include:
 | `config/postgres/postgresql.conf`           | sí             | sí                          | sí                          |
 | `config/pgbouncer/pgbouncer.ini`            | sí             | sí                          | sí                          |
 | `config/odoo/odoo.conf`                     | sí             | sí                          | sí                          |
-| `config/odoo/addons.txt` (manifiesto)       | sí             | sí                          | sí                          |
+| `addons/addons.txt.example` (plantilla)     | sí             | sí                          | sí                          |
 | `config/nginx/00-http` · `odoo.locations`   | sí             | sí                          | sí                          |
 | `config/nginx/server-tls` · `server-plain`  | `-tls`         | `-tls`                      | `-plain`, fijado en su entrypoint |
 | `config/certbot/wrapper.sh`                 | sí             | sí                          | no                          |
@@ -89,7 +89,8 @@ Vive fuera de git pero dentro del directorio del repositorio. **Esta tabla es la
 | `secrets/*`                               | Credenciales — 11 en producción, 8 en staging, 3 en development | Staging usaría las credenciales reales de Cloudflare y SMTP                  |
 | `state/textfile/`                         | Métricas de backup y de vencimiento del certificado | Un stack pisa las métricas del otro                                                     |
 | `state/meta/addons.txt`                   | Registro de addons del snapshot            | Ídem                                                                                             |
-| `addons/.repos/*.git` y `addons/<categoría>/` | Clon bare y worktrees, **un árbol por checkout** | Dos entornos materializando ramas distintas sobre el mismo árbol                          |
+| `addons/addons.txt`                       | El manifiesto real — a diferencia de su plantilla, no viaja versionado: difiere de contenido entre los tres, no solo de rama | Un módulo en adaptación en development se filtraría a producción |
+| `addons/.repos/*.git` y el contenido de `addons/<categoría>/` | Clon bare y worktrees, **un árbol por checkout** — la plantilla y el `.gitkeep` de cada categoría son la excepción versionada de esa misma carpeta | Dos entornos materializando ramas distintas sobre el mismo árbol |
 
 El estado de los certificados **no está en esta tabla**: vive en un volumen nombrado que escribe certbot, con alcance de proyecto, así que cae en el nivel 3 y no se comparte. Es lo que hace que cambiar de checkout no lo toque.
 

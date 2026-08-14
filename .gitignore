@@ -30,6 +30,21 @@ state/meta/*
 repos/
 
 # --- Addons ---
-# Bind-mount desde el host; el manifiesto versionado es config/odoo/addons.txt.
+# Bind-mount desde el host. El manifiesto es local a cada checkout —igual que
+# .env, difiere de verdad entre dev/staging/producción— y no se versiona;
+# solo su plantilla y el esqueleto de categorías sí.
 
-addons/
+addons/*
+!addons/addons.txt.example
+!addons/custom-addons/
+addons/custom-addons/*
+!addons/custom-addons/.gitkeep
+!addons/oca/
+addons/oca/*
+!addons/oca/.gitkeep
+!addons/third-party/
+addons/third-party/*
+!addons/third-party/.gitkeep
+!addons/enterprise/
+addons/enterprise/*
+!addons/enterprise/.gitkeep

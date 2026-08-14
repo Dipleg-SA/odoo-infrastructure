@@ -332,33 +332,44 @@ Los dos viven solo en la red `app`; desde afuera no hay más camino que Odoo.
 
 **Objetivo.** El árbol de módulos en disco y la imagen de Odoo construida. **La fase 6 no arranca sin esto**: el entrypoint aborta a propósito si el `addons_path` queda vacío — los addons llegan por bind-mount, así que su presencia ya no la garantiza la imagen.
 
-**A mano.** El token de la fase 1, que se pega en el bloque 2. Lo piden los repos privados del manifiesto; los forks públicos no.
+**A mano.** Primero, `addons/addons.txt` **no existe todavía** — es local a este checkout, igual que `.env`, y por la misma razón: a diferencia de `odoo.conf`, tu manifiesto real difiere de verdad entre producción, staging y development, así que no viaja versionado. Se bootstrapea desde su plantilla (bloque 1 de Comandos) y se completa con tus repos, uno por línea (`URL categoría`) — al menos el que provee `bus_alt_connection` (obligatorio, ver comentario del propio archivo) aunque no tengas módulos propios; si no tenés ninguno todavía, forkealo primero a tu organización.
+
+Sin al menos una línea el entrypoint de Odoo aborta al arrancar (fase 6), y `scripts/addons.sh sync` corta con error en vez de mentir con un árbol vacío — nombrando el mismo `cp` de acá si el archivo falta.
+
+Segundo, el token de la fase 1, que se pega en el bloque 3. Lo piden los repos privados del manifiesto; los forks públicos no.
 
 No es un secret de Compose y es la **única excepción escrita** al principio de secretos: el clonado ocurre en el host y ningún contenedor lo consume. Es de solo lectura porque el servidor nunca escribe en un repo de addons — todos los merges pasan por tu máquina.
 
 **Comandos.**
 
 ```bash
-echo "# 1 → Completá tu usuario y el host del remoto"
-GIT_USER='tu-usuario'; GIT_HOST='github.com'
+echo "# 1 → Bootstrapear el manifiesto desde su plantilla"
+cp addons/addons.txt.example addons/addons.txt
+${EDITOR:-vi} addons/addons.txt
 ```
 
 ```bash
-echo "# 2 → Token en el credential store del host (pegalo y Enter, no se muestra)"
+echo "# 2 → Completá tu usuario y el host HTTPS de los repos de addons — no un alias SSH propio"
+GIT_USER='tu-usuario'; GIT_HOST='github.com'
+echo "GIT_USER=$GIT_USER · GIT_HOST=$GIT_HOST"
+```
+
+```bash
+echo "# 3 → Token en el credential store del host (pegalo y Enter, no se muestra)"
 git config --global credential.helper store
 read -rs GIT_TOKEN && printf 'https://%s:%s@%s\n' "$GIT_USER" "$GIT_TOKEN" "$GIT_HOST" >> ~/.git-credentials \
   && chmod 600 ~/.git-credentials && echo "OK: credencial guardada"
 ```
 
 ```bash
-echo "# 3 → Clonar los repos del manifiesto y armar el árbol"
+echo "# 4 → Clonar los repos del manifiesto y armar el árbol"
 make addons-sync
 ```
 
-Lee `config/odoo/addons.txt` —el manifiesto versionado, URL más categoría— y deja un clon bare por módulo bajo `addons/.repos/` más un `git worktree` en `addons/<categoría>/<repo>`. La rama la decide `ADDONS_BRANCH` en `.env`, cuyo default es la versión del tag `FROM odoo:` del Dockerfile: en producción no hay nada que declarar. Todo `addons/` va gitignoreado — el manifiesto es lo único versionado, y con él se rearma el árbol entero desde cero. Sumar un módulo más adelante es una línea ahí y volver a correr esto.
+Lee `addons/addons.txt` —tu manifiesto, local a este checkout, URL más categoría— y deja un clon bare por módulo bajo `addons/.repos/` más un `git worktree` en `addons/<categoría>/<repo>`. La rama la decide `ADDONS_BRANCH` en `.env`, cuyo default es la versión del tag `FROM odoo:` del Dockerfile: en producción no hay nada que declarar. El resto de `addons/` va gitignoreado —el manifiesto real, lo clonado adentro de cada categoría, y `.repos/`— y solo la plantilla (`addons.txt.example`) y el esqueleto vacío de las cuatro categorías se versionan. Sumar un módulo más adelante es una línea en tu `addons.txt` y volver a correr esto.
 
 ```bash
-echo "# 4 → Construir la imagen de Odoo"
+echo "# 5 → Construir la imagen de Odoo"
 docker compose build odoo && echo "OK: imagen construida"
 ```
 
@@ -367,7 +378,7 @@ docker compose build odoo && echo "OK: imagen construida"
 **Verificación.**
 
 ```bash
-echo "# 5 → Estado de cada worktree"
+echo "# 6 → Estado de cada worktree"
 make addons
 ```
 

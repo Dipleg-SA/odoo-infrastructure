@@ -35,15 +35,15 @@ crear_addon() {
 
 crear_checkout() {
   local root="$TMP/$1" rama="$2"
-  mkdir -p "$root/scripts" "$root/config/odoo" "$root/docker/odoo"
+  mkdir -p "$root/scripts" "$root/addons" "$root/docker/odoo"
   cp "$REPO_ROOT/scripts/addons.sh" "$root/scripts/"
   echo "FROM odoo:19.0" > "$root/docker/odoo/Dockerfile"
-  : > "$root/config/odoo/addons.txt"
+  : > "$root/addons/addons.txt"
   [ -n "$rama" ] && echo "ADDONS_BRANCH=$rama" > "$root/.env"
   printf '%s' "$root"
 }
 
-declarar() { printf '%s\t%s\n' "$2" "$3" >> "$1/config/odoo/addons.txt"; }
+declarar() { printf '%s\t%s\n' "$2" "$3" >> "$1/addons/addons.txt"; }
 sync()     { (cd "$1" && ./scripts/addons.sh sync 2>&1); }
 estado()   { (cd "$1" && ./scripts/addons.sh status 2>&1); }
 sync_code(){ (cd "$1" && ./scripts/addons.sh sync >/dev/null 2>&1; echo $?); }

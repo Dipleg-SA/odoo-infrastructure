@@ -15,7 +15,7 @@ Qué comando correr en el día a día, una vez que el stack ya está deployado. 
 | `make secrets-check` | Chequea permisos/grupo de todo lo que hay bajo `secrets/` |
 | `make verify` | Verifica las seis capas y dice en qué estado está realmente el servidor. Exit `0` solo si no hay fallas |
 | `make verify-<capa>` | Solo esa capa — `host`, `edge`, `db`, `odoo`, `backups`, `observability` |
-| `make addons-sync` | Clona lo que falte y actualiza los dos árboles de addons desde `config/odoo/addons.txt`. Idempotente, puro host — no necesita contenedores levantados |
+| `make addons-sync` | Clona lo que falte y actualiza los dos árboles de addons desde `addons/addons.txt`. Idempotente, puro host — no necesita contenedores levantados |
 | `make addons` | Estado de cada worktree: entorno, categoría, repo, rama, commit corto, limpio/sucio. También funciona con el stack abajo |
 | `make odoo-install MODULES=x` | Instala el módulo `x` en la base (`-i x --stop-after-init`) y deja el servicio arriba |
 | `make odoo-update MODULES=x` | Actualiza el módulo `x` (`-u x --stop-after-init`) y deja el servicio arriba — un solo camino para cualquier cambio (código, vistas, datos) |

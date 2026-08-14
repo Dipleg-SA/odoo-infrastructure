@@ -12,7 +12,7 @@ cd "$(dirname "$0")/.."
 
 if [ -f .env ]; then . ./.env; fi
 
-MANIFEST="config/odoo/addons.txt"
+MANIFEST="addons/addons.txt"
 BARE_DIR="addons/.repos"
 
 # --- Rama de los addons ---
@@ -37,7 +37,11 @@ warn() { echo "addons.sh: aviso: $1" >&2; }
 # (consumida vía <(...)) solo mataría la subshell, en silencio, sin abortar el script.
 
 require_manifest() {
-  [ -f "$MANIFEST" ] || { echo "addons.sh: no existe $MANIFEST" >&2; exit 1; }
+  if [ ! -f "$MANIFEST" ]; then
+    echo "addons.sh: no existe $MANIFEST" >&2
+    echo "addons.sh: cp $MANIFEST.example $MANIFEST — y completalo con tus repos" >&2
+    exit 1
+  fi
 }
 
 manifest_entries() {
@@ -205,6 +209,8 @@ cmd_sync() {
     echo "addons.sh: sync terminó con errores — ver arriba" >&2
     exit 1
   fi
+
+  echo "OK: $(manifest_entries | wc -l | tr -d ' ') repositorio(s) sincronizado(s)"
 }
 
 # --- Estado de un worktree ---
