@@ -524,16 +524,20 @@ v_db() {
   # Solo lo corre el stack que respalda: los otros apuntan a la stanza de
   # producción, así que acá darían verde por un repositorio que no es suyo.
 
-  local info
+  local info detalle
   if ! declarado backup; then
     omitir "repositorio de pgBackRest alcanzable y cifrado" \
       "este stack no escribe backups — el repo es el de producción y lo verifica producción"
   else
     info=$(docker compose exec -T -u postgres postgres pgbackrest info 2>&1)
     case "$info" in
+      *"no valid backup"*)
+        omitir "repositorio de pgBackRest alcanzable y cifrado" \
+          "sin backups todavía — normal antes de la fase 7; el archive_command ya llega (ver 'wal archive min/max')" ;;
       *"status: error"*)
-        bad "repositorio de pgBackRest alcanzable y cifrado" \
-            "$(printf '%s' "$info" | grep -o '\[[A-Za-z]*Error\].*' | head -1)" ;;
+        detalle=$(printf '%s' "$info" | grep -o '\[[A-Za-z]*Error\].*' | head -1)
+        [ -n "$detalle" ] || detalle=$(printf '%s' "$info" | grep 'status: error' | head -1 | sed 's/^ *//')
+        bad "repositorio de pgBackRest alcanzable y cifrado" "$detalle" ;;
       *aes-256-cbc*) ok "repositorio de pgBackRest alcanzable y cifrado (aes-256-cbc)" ;;
       *) bad "repositorio de pgBackRest alcanzable y cifrado" \
              "pgbackrest info no reporta cipher: $(printf '%s' "$info" | head -1)" ;;
