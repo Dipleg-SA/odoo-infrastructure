@@ -90,6 +90,7 @@ openssl rand -hex 32
 ```bash
 echo "# 3 → Completá tu zona"
 ZONA='ejemplo.com'
+echo "ZONA=$ZONA"
 ```
 
 ```bash
@@ -99,17 +100,20 @@ dig +short NS "$ZONA"
 
 ```bash
 echo "# 5 → Token de zona DNS (pegalo y Enter, no se muestra)"
-read -rs CF_TOKEN && printf 'header = "Authorization: Bearer %s"\nurl = "https://api.cloudflare.com/client/v4/zones?name=%s"\n' "$CF_TOKEN" "$ZONA" \
-  | curl -s --config -
+read -rs CF_TOKEN && CF_RESP=$(printf 'header = "Authorization: Bearer %s"\nurl = "https://api.cloudflare.com/client/v4/zones?name=%s"\n' "$CF_TOKEN" "$ZONA" \
+  | curl -s --config -) \
+  && echo "$CF_RESP" \
+  && echo "$CF_RESP" | grep -q "\"name\":\"$ZONA\"" && echo "OK: token válido para $ZONA"
 ```
 
-El 5 devuelve `"name":"<tu zona>"`. Si no: `1000` = mal copiado · `9109` = le falta `Zone:Read` · `"result":[]` = apunta a otra zona.
+El 5 imprime el JSON crudo y, si matchea tu zona, un `OK` final. Sin `OK`: `1000` en el JSON = token mal copiado · `9109` = le falta `Zone:Read` · `"result":[]` = el token apunta a otra zona.
 
 Y que ZeptoMail manda de verdad — credencial, remitente verificado y saldo, en un solo tiro:
 
 ```bash
 echo "# 6 → Completá estos tres antes de seguir"
 ZM_USER='emailapikey'; ZM_FROM='remitente-verificado@tu-dominio'; ZM_TO='donde-querés-recibir@ejemplo'
+echo "ZM_USER=$ZM_USER · ZM_FROM=$ZM_FROM · ZM_TO=$ZM_TO"
 ```
 
 ```bash
@@ -136,7 +140,7 @@ Lo que no se puede probar todavía: el token del Tunnel (fase 3), R2 (fase 4) y 
 
 **A mano.** `secrets-init` deja **11 archivos**: 5 **generados** que no se tocan nunca —`postgres_password`, `pgbouncer_credentials`, `odoo_admin_password`, `grafana_admin_password`, `postgres_exporter_password`— y 6 con el marcador `CAMBIAR`, que se llenan con lo que juntaste en la fase 1 (columna *Dónde termina*). Tres detalles de formato:
 
-- `cloudflare_api_token`: 40 caracteres exactos, sin comillas y **sin salto de línea final** — `nano -L`.
+- `cloudflare_api_token`: sin comillas y **sin salto de línea final** — `nano -L`. Cloudflare emite dos formatos según cuándo lo creaste: 40 caracteres el viejo, `cfut_...` (~46) el nuevo — los dos son válidos, no importa cuál te tocó.
 - `pgbackrest_r2_credentials` y `restic_r2_credentials` ya vienen con su esqueleto INI. **La misma clave de R2 va en los dos**, en sintaxis distinta: al rotarla hay que tocar ambos.
 - Editor interactivo, nunca `echo >>`: así el token no queda en el historial.
 
@@ -158,6 +162,7 @@ Las dos primeras definen **qué stack es este checkout**, y son las mismas dos e
 ```bash
 echo "# 1 → Completá la URL de tu fork"
 REPO_URL='git@github.com:tu-organizacion/infrastructure-odoo.git'
+echo "REPO_URL=$REPO_URL"
 ```
 
 ```bash

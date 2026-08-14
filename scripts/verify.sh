@@ -282,7 +282,7 @@ v_host() {
   fi
   expuestos=$(printf '%s\n' "$ps_out" | grep '0\.0\.0\.0' | awk '{print $1}' | tr '\n' ' ')
   if [ -z "$expuestos" ]; then ok "ningún contenedor publica en 0.0.0.0"
-  else aviso "ningún contenedor publica en 0.0.0.0" "expuestos: $expuestos "; fi
+  else aviso "contenedores publicando en 0.0.0.0" "expuestos: $expuestos "; fi
 }
 
 # =====================================================================
@@ -390,18 +390,28 @@ v_edge() {
   # Valor y alcance de una sola vez, contra la API real. Lo consume certbot para
   # el desafío DNS-01: un token inválido no se nota hasta que el cert no renueva.
 
+  # /user/tokens/verify rechaza los tokens nuevos con prefijo cfut_ aunque
+  # sean válidos — se prueba contra /zones, lo mismo que usa certbot de verdad.
+
   local token resp
   if ! declarado certbot; then
     omitir "token de Cloudflare activo" "sin certbot en este stack — no hay desafío DNS-01 que firmar"
   elif token=$(cat secrets/cloudflare_api_token 2>/dev/null) && [ -n "$token" ]; then
-    resp=$(printf 'header = "Authorization: Bearer %s"\nurl = "https://api.cloudflare.com/client/v4/user/tokens/verify"\n' \
+    resp=$(printf 'header = "Authorization: Bearer %s"\nurl = "https://api.cloudflare.com/client/v4/zones"\n' \
       "$token" | curl -s -m 10 --config - 2>/dev/null)
-    case "$resp" in
-      *'"status":"active"'*) ok "token de Cloudflare activo" ;;
-      *1000*) bad "token de Cloudflare activo" "1000 Invalid API Token — el valor está mal pegado" ;;
-      *9109*) bad "token de Cloudflare activo" "9109 — el token no lee la zona; rehacerlo con la plantilla Edit zone DNS" ;;
-      *) bad "token de Cloudflare activo" "respuesta inesperada de la API" ;;
-    esac
+    if printf '%s' "$resp" | grep -q '"success":true'; then
+      if printf '%s' "$resp" | grep -q '"count":0'; then
+        bad "token de Cloudflare activo" "token válido pero sin zonas visibles — revisá el alcance (Zone Resources) del token"
+      else
+        ok "token de Cloudflare activo"
+      fi
+    elif printf '%s' "$resp" | grep -q '"code":1000'; then
+      bad "token de Cloudflare activo" "1000 Invalid API Token — el valor está mal pegado"
+    elif printf '%s' "$resp" | grep -q '"code":9109'; then
+      bad "token de Cloudflare activo" "9109 — el token no lee la zona; rehacerlo con la plantilla Edit zone DNS"
+    else
+      bad "token de Cloudflare activo" "respuesta inesperada de la API"
+    fi
   else
     omitir "token de Cloudflare activo" "secret ilegible — correr con sudo"
   fi
