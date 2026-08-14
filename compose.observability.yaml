@@ -67,7 +67,7 @@ services:
     networks:
       - observability
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3001:3000"
     # Corre 472:0, así que los grupos de los dos secrets llegan como suplementarios:
     # 472 el suyo propio, 101 el de odoo, dueño del secret de SMTP que reusa.
     group_add:

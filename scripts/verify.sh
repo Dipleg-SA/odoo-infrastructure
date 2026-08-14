@@ -839,12 +839,12 @@ v_observability() {
     omitir "las $esperadas reglas de alerting cargadas" "no se pudo leer el secret desde el contenedor"
   else
     codigo=$(curl -s -o /dev/null -w '%{http_code}' -m 10 -u "admin:$pass_gf" \
-      http://127.0.0.1:3000/api/v1/provisioning/alert-rules 2>/dev/null)
+      http://127.0.0.1:3001/api/v1/provisioning/alert-rules 2>/dev/null)
     if [ "$codigo" != "200" ]; then
       omitir "las $esperadas reglas de alerting cargadas" "la API respondió $codigo, no 200"
     else
       cargadas=$(curl -s -m 10 -u "admin:$pass_gf" \
-        http://127.0.0.1:3000/api/v1/provisioning/alert-rules 2>/dev/null \
+        http://127.0.0.1:3001/api/v1/provisioning/alert-rules 2>/dev/null \
         | grep -o '"uid":' | wc -l | tr -d ' ')
       if [ "${cargadas:-0}" -ge "$esperadas" ]; then
         ok "las $esperadas reglas de alerting cargadas"

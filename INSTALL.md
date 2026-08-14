@@ -569,15 +569,15 @@ Cubre los cuatro servicios, que ningún target de Prometheus esté caído, las t
 
 Eso último no es un detalle de implementación sino la razón de que la topología sea híbrida: si todo se empujara por el agente, la muerte de Alloy **no dispararía ninguna alerta** — las series simplemente dejarían de llegar, y un umbral sobre una serie ausente no alerta nada. Por eso Prometheus scrapea por pull todo lo que ya expone HTTP (`cloudflared`, Loki, Grafana, sí mismo **y el propio Alloy**), y el agente solo empuja lo que ningún pull alcanza.
 
-Grafana se abre por túnel SSH — el `3000` solo escucha en loopback:
+Grafana se abre por túnel SSH — el `3001` solo escucha en loopback:
 
 ```bash
 echo "# 4 → Túnel para ver Grafana en el navegador"
 SRV_ADMIN='ip-de-administracion-del-servidor'
-ssh -N -L 3000:127.0.0.1:3000 "<usuario>@$SRV_ADMIN"
+ssh -N -L 3001:127.0.0.1:3001 "<usuario>@$SRV_ADMIN"
 ```
 
-Con eso, `http://localhost:3000`. Usuario `admin`, contraseña en `secrets/grafana_admin_password`. Adentro tienen que estar los **5 dashboards** y las **7 reglas de alerta**, todas provisionadas y de solo lectura: se definen como archivos en `config/grafana/provisioning/`, no como estado clickeado que se perdería al recrear el contenedor.
+Con eso, `http://localhost:3001`. Usuario `admin`, contraseña en `secrets/grafana_admin_password`. Adentro tienen que estar los **5 dashboards** y las **7 reglas de alerta**, todas provisionadas y de solo lectura: se definen como archivos en `config/grafana/provisioning/`, no como estado clickeado que se perdería al recrear el contenedor.
 
 **Y que las alertas lleguen.** Todo lo anterior verifica que **disparan**; falta que **salgan**. Alertas → Contact points → `email-operador` → **Test**: tiene que llegar el mail a `ALERT_EMAIL_TO`. Si no llega, revisá en ese orden: saldo de créditos, remitente verificado, y `docker compose logs grafana | grep -i smtp`.
 
