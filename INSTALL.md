@@ -232,7 +232,13 @@ Cubre versión de Compose, arranque automático de Docker, `.env` sin claves vac
 | TLS → **Origin Server Name** | Tu `PUBLIC_HOSTNAME` completo — **el que se olvida** |
 | TLS → No TLS Verify | desactivado |
 
-Sin **Origin Server Name**, `cloudflared` valida el certificado contra el nombre `nginx`, que no es el del certificado, y el sitio entero da **502**. No se manifiesta acá: recién en la fase 6, con Odoo sirviendo tráfico real.
+**El campo Origin Server Name vacío no se ve vacío.** El dashboard le pone de placeholder la palabra `Null` en gris, que a simple vista se confunde con un valor ya cargado — sobre todo si volviste a este panel solo para tocar el campo Service después de corregir otra cosa, y no repasaste la tabla entera. Si no lo ves escrito en texto negro, no está seteado.
+
+Sin **Origin Server Name**, `cloudflared` cae al hostname del propio Service (`nginx`) para validar el certificado, que no es a quién se lo emitió Let's Encrypt, y el sitio entero da **502**. No se manifiesta acá: recién en la fase 6, con Odoo sirviendo tráfico real — y ningún `make verify-*` lo detecta antes, porque es config de Cloudflare, no de este repositorio. El error, en `docker compose logs cloudflared`, es inconfundible:
+
+```
+tls: failed to verify certificate: x509: certificate is valid for <tu PUBLIC_HOSTNAME>, not nginx
+```
 
 **Comandos.**
 
@@ -442,7 +448,13 @@ echo "# 5 → La cadena pública completa: tienen que salir LOS TRES headers"
 curl -sI "https://$PUBLIC_HOSTNAME/web/login" | grep -iE "^HTTP|^server:|^cf-ray:"
 ```
 
-Solo Cloudflare agrega `server:` y `cf-ray:`. Un `200` sin ellos significa que el pedido nunca salió a internet. Si en cambio da **502**, es el Origin Server Name de la fase 3: `cloudflared` está validando el certificado contra el nombre `nginx`.
+Solo Cloudflare agrega `server:` y `cf-ray:`. Un `200` sin ellos significa que el pedido nunca salió a internet. Si en cambio da **502**, confirmá el Origin Server Name de la fase 3 con:
+
+```bash
+docker compose logs cloudflared | grep "certificate is valid for"
+```
+
+`certificate is valid for <tu hostname>, not nginx` confirma la causa: el campo quedó vacío (o se vació sin querer) en Zero Trust.
 
 ```bash
 echo "# 6 → Rate-limit del login: diez 400 y después 503"
