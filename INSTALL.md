@@ -569,13 +569,15 @@ Cubre los cuatro servicios, que ningún target de Prometheus esté caído, las t
 
 Eso último no es un detalle de implementación sino la razón de que la topología sea híbrida: si todo se empujara por el agente, la muerte de Alloy **no dispararía ninguna alerta** — las series simplemente dejarían de llegar, y un umbral sobre una serie ausente no alerta nada. Por eso Prometheus scrapea por pull todo lo que ya expone HTTP (`cloudflared`, Loki, Grafana, sí mismo **y el propio Alloy**), y el agente solo empuja lo que ningún pull alcanza.
 
-Grafana se abre por túnel SSH — el `3001` solo escucha en loopback:
+Grafana se abre por túnel SSH — el `3001` solo escucha en loopback. **Este es el único bloque de la guía que no se corre en el servidor**: va en la máquina desde la que vas a abrir el navegador, y `SRV_ADMIN` tiene que resolver al servidor **desde ahí**. Ojo con el hostname del servidor: en el servidor mismo resuelve a loopback, y `dnsmasq` no lo sirve — solo sirve `PUBLIC_HOSTNAME`.
 
 ```bash
-echo "# 4 → Túnel para ver Grafana en el navegador"
+echo "# 4 → Túnel para ver Grafana — DESDE TU MÁQUINA, no desde el servidor"
 SRV_ADMIN='ip-de-administracion-del-servidor'
 ssh -N -L 3001:127.0.0.1:3001 "<usuario>@$SRV_ADMIN"
 ```
+
+Si responde `Permission denied (publickey)`, mirá a qué IP fue: `ssh -v … | grep 'Connecting to'`. Un `127.0.0.1` o `127.0.1.1` ahí significa que el comando se está corriendo en el servidor, contra sí mismo.
 
 Con eso, `http://localhost:3001`. Usuario `admin`, contraseña en `secrets/grafana_admin_password`. Adentro tienen que estar los **5 dashboards** y las **7 reglas de alerta**, todas provisionadas y de solo lectura: se definen como archivos en `config/grafana/provisioning/`, no como estado clickeado que se perdería al recrear el contenedor.
 
