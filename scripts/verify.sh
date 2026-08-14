@@ -732,7 +732,7 @@ v_backups() {
 
   sano backup
 
-  expect "repo de restic con snapshots" "odoo-prod" \
+  expect "repo de restic con snapshots" "$COMPOSE_PROJECT_NAME" \
     docker compose exec -T backup restic snapshots --latest 1
 
   expect "pgBackRest con un full" "full backup" \
