@@ -12,12 +12,17 @@ El estilo de comentarios en archivos versionados de código y config es obligato
 
 Dos verificaciones distintas, y no se reemplazan: `make test` corre sin Docker levantado ni red, sobre lo que se puede afirmar leyendo el repositorio; `make verify` dice en qué estado está un deploy real, y **eso** necesita el sistema corriendo.
 
-`tests/` cubre el contrato de los tres entrypoints (`docker compose config`), `addons.sh` de punta a punta contra repos git de verdad, y —con el stub de `tests/stubs/docker`, que registra cada invocación— los derivadores de `verify.sh`, `cert.sh` y los dos de secrets. Al tocar un script, la pregunta es si el test **falla** cuando se rompe lo que dice cubrir: mutá y comprobalo, que ya aparecieron aserciones que pasaban por el motivo equivocado.
+`tests/` cubre el contrato de los tres entrypoints (`docker compose config`), `addons.sh` de punta a punta contra repos git de verdad, y —con el stub de `tests/stubs/docker`, que registra cada invocación— los derivadores de `verify.sh`, `cert.sh`, `capa.sh` y los dos de secrets. Al tocar un script, la pregunta es si el test **falla** cuando se rompe lo que dice cubrir: mutá y comprobalo, que ya aparecieron aserciones que pasaban por el motivo equivocado.
+
+Los targets siguen una sola filosofía, `<capa>-<verbo>`, para las cinco capas con contenedores —`edge` (dnsmasq+nginx+cloudflared+certbot), `db`, `odoo`, `backups`, `observability`—; `host` es la única sin ciclo de vida (son chequeos de SO). `scripts/capa.sh` resuelve qué servicios de cada capa trae *este* stack contra la composición real, así que un `db-up` en development (sin `backups`/`observability`) no falla por una capa ausente. `up`/`down`/`logs`/`ps` sin prefijo siguen siendo el stack completo.
 
 ```bash
 make test                   # tests/, sin levantar nada (~3 s)
 make verify                 # estado del servidor entero, capa por capa
-make verify-<capa>          # host | edge | db | odoo | backups | observability
+make <capa>-verify          # host | edge | db | odoo | backups | observability
+make <capa>-up / down / restart / logs / ps   # edge | db | odoo | backups | observability
+make <capa>-nuke            # borra containers/imágenes/volúmenes DE ESA CAPA — tipear 'nuke' para confirmar
+make nuke                    # ídem, todo el stack + addons/ + state/ (nunca secrets/ ni .env)
 make up / down / logs / ps
 make addons-sync            # rearma el árbol de addons desde addons/addons.txt
 make odoo-install MODULES=x # -i explícito; MODULES es obligatorio
@@ -55,7 +60,7 @@ Para scripts, `bash -n scripts/<x>.sh` y después correrlos de verdad. **Correr 
 Cosas que no se deducen leyendo un archivo solo:
 
 - **pgBackRest no tiene contenedor propio**: vive dentro de la imagen de Postgres, porque `archive_command` lo ejecuta el proceso de la base.
-- **`archive_mode` lo fija el `-c` de `compose.db.yaml`, no `postgresql.conf`** —ese archivo es el mismo para los tres entornos—. Un stack sin la capa de backups apunta a la stanza de producción para restaurar: con el archivado prendido le empuja su propio WAL y contamina el repositorio real. `PG_ARCHIVE_MODE=off` en su `.env`, y `verify-db` espera el valor según las capas del stack.
+- **`archive_mode` lo fija el `-c` de `compose.db.yaml`, no `postgresql.conf`** —ese archivo es el mismo para los tres entornos—. Un stack sin la capa de backups apunta a la stanza de producción para restaurar: con el archivado prendido le empuja su propio WAL y contamina el repositorio real. `PG_ARCHIVE_MODE=off` en su `.env`, y `db-verify` espera el valor según las capas del stack.
 - **`docker/odoo/entrypoint.sh` genera config en runtime**. El `addons_path` sale de un glob sobre cuatro categorías en orden de precedencia (`enterprise > custom-addons > oca > third-party`), y `admin_passwd`, SMTP y credenciales se appendean al conf. `config/odoo/odoo.conf` es solo la base.
 - **PgBouncer corre en modo transacción**, lo que rompe `LISTEN/NOTIFY`. Por eso `server_wide_modules` incluye `bus_alt_connection`, que le da al bus su propia conexión directa. Sin ese módulo Odoo arranca igual y el chat en vivo deja de actualizarse.
 - **Instalar o actualizar módulos nunca va atado al arranque.** Es un one-off explícito del operador contra `postgres:5432`, no contra PgBouncer.

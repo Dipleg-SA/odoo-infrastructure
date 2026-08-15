@@ -21,7 +21,7 @@ Lo que este documento **da por hecho**. Nada de esto es responsabilidad del repo
 
 ## Cómo se recorre
 
-Es **lineal**, ordenado por dependencia técnica y no por número de spec. Cada fase termina en una **verificación** y no se avanza sin que pase; desde la 2 son `make verify-<capa>`, y el valor esperado de cada chequeo vive en `scripts/verify.sh`, no acá. Se interrumpe y se retoma: `make verify` dice dónde estabas.
+Es **lineal**, ordenado por dependencia técnica y no por número de spec. Cada fase termina en una **verificación** y no se avanza sin que pase; desde la 2 son `make <capa>-verify`, y el valor esperado de cada chequeo vive en `scripts/verify.sh`, no acá. Se interrumpe y se retoma: `make verify` dice dónde estabas.
 
 Los valores propios de tu deploy salen de `.env` o de una línea de asignación al principio del bloque. **Ningún comando lleva un valor de ejemplo adentro**: si hay algo que completar, está a la vista en su propia línea.
 
@@ -208,7 +208,7 @@ De acá en adelante los comandos usan esas variables en vez de valores literales
 
 ```bash
 echo "# 7 → Prerrequisitos del servidor y config del repo"
-make verify-host
+make host-verify
 ```
 
 Cubre versión de Compose, arranque automático de Docker, `.env` sin claves vacías, la identidad declarada del stack, permisos y GID de los 11 secrets, y la superficie publicada del host. Es también lo que valida los prerrequisitos que este documento da por hechos.
@@ -234,7 +234,7 @@ Cubre versión de Compose, arranque automático de Docker, `.env` sin claves vac
 
 **El campo Origin Server Name vacío no se ve vacío.** El dashboard le pone de placeholder la palabra `Null` en gris, que a simple vista se confunde con un valor ya cargado — sobre todo si volviste a este panel solo para tocar el campo Service después de corregir otra cosa, y no repasaste la tabla entera. Si no lo ves escrito en texto negro, no está seteado.
 
-Sin **Origin Server Name**, `cloudflared` cae al hostname del propio Service (`nginx`) para validar el certificado, que no es a quién se lo emitió Let's Encrypt, y el sitio entero da **502**. No se manifiesta acá: recién en la fase 6, con Odoo sirviendo tráfico real — y ningún `make verify-*` lo detecta antes, porque es config de Cloudflare, no de este repositorio. El error, en `docker compose logs cloudflared`, es inconfundible:
+Sin **Origin Server Name**, `cloudflared` cae al hostname del propio Service (`nginx`) para validar el certificado, que no es a quién se lo emitió Let's Encrypt, y el sitio entero da **502**. No se manifiesta acá: recién en la fase 6, con Odoo sirviendo tráfico real — y ningún `make <capa>-verify` lo detecta antes, porque es config de Cloudflare, no de este repositorio. El error, en `docker compose logs cloudflared`, es inconfundible:
 
 ```
 tls: failed to verify certificate: x509: certificate is valid for <tu PUBLIC_HOSTNAME>, not nginx
@@ -258,7 +258,7 @@ docker compose up -d cloudflared nginx dnsmasq
 
 ```bash
 echo "# 3 → Estado del borde"
-make verify-edge
+make edge-verify
 ```
 
 Cubre los tres servicios `healthy`, que la config renderizada no tenga variables sin sustituir, que el `server_name` sea tu hostname, que el `proxy_pass` vaya por variable con el resolver de Docker declarado, los días que le quedan al certificado, las conexiones registradas del Tunnel, el log de nginx sin errores, los binds (`80`/`443` en `${LOCAL_IP}`) y el token de Cloudflare contra la API.
@@ -284,7 +284,7 @@ nc -z -w2 "$SRV_PUB" 443 && echo "MAL: el router está reenviando el 443" || ech
 
 El `dig` **desde el propio servidor no sirve**: puede dar timeout por NAT sin que haya nada roto. Y devuelve la IP local, no una de Cloudflare — ese split-horizon es la razón por la que el chequeo público de la fase 6 exige headers de Cloudflare y no solo un `200`.
 
-nginx no publica ninguna UI: no hay dashboard que abrir. Su estado se lee del log, que sale en JSON a `docker compose logs nginx`, y de `make verify-edge`.
+nginx no publica ninguna UI: no hay dashboard que abrir. Su estado se lee del log, que sale en JSON a `docker compose logs nginx`, y de `make edge-verify`.
 
 ---
 
@@ -317,7 +317,7 @@ docker compose exec -T -u postgres postgres pgbackrest check && echo "OK: el arc
 
 ```bash
 echo "# 3 → Estado de la capa de datos"
-make verify-db
+make db-verify
 ```
 
 Cubre los dos servicios `healthy`, `archive_mode` y `archive_command`, la stanza cifrada en R2, que no haya WAL pendiente de archivar, los logs sin errores de permisos, que ninguno de los dos puertos esté publicado, y la **autenticación real a través de PgBouncer**.
@@ -390,7 +390,7 @@ make addons
 
 Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, todas en `limpio`. Un `(sin worktree)` o un `sucio` es un sync incompleto. Si un repo privado falló con `Repository not found` o `Authentication failed`, el token no tiene los permisos justos: alcanza con lectura de contenidos sobre tu organización, y si es de los que expiran, revisá también que no haya vencido.
 
-Es un chequeo visual, no un exit code: `make verify-odoo` lo vuelve a validar mecánicamente en la fase siguiente, junto con el resto de la aplicación.
+Es un chequeo visual, no un exit code: `make odoo-verify` lo vuelve a validar mecánicamente en la fase siguiente, junto con el resto de la aplicación.
 
 Este árbol es el de **este** checkout. Los otros entornos son checkouts propios, con su `.env` y su `ADDONS_BRANCH`; los arman las fases 10 y 11.
 
@@ -429,7 +429,7 @@ Detiene el servicio, corre el `-i` en un contenedor efímero y lo vuelve a levan
 
 ```bash
 echo "# 3 → Estado de la aplicación"
-make verify-odoo
+make odoo-verify
 ```
 
 Cubre el servicio `healthy`, los logs sin errores de permisos, Odoo respondiendo en su `:8069`, los worktrees limpios, las tres rutas en la config renderizada de nginx, el gestor de bases deshabilitado, los puertos sin publicar, y el **certificado**: emisor Let's Encrypt y con más de 21 días de vigencia.
@@ -514,7 +514,7 @@ El primero sale `full` y no `diff`: pgBackRest promueve solo cuando no hay un fu
 
 ```bash
 echo "# 4 → Estado de la capa de protección"
-make verify-backups
+make backups-verify
 ```
 
 Cubre el snapshot de restic, el full de pgBackRest, el registro de addons, los dos timers activos, el `OnFailure=` cableado con su unit plantilla instalada, y que ningún contenedor del perfil `restore` esté corriendo.
@@ -560,7 +560,7 @@ docker compose up -d prometheus loki grafana alloy
 
 ```bash
 echo "# 3 → Estado de la capa de observability"
-make verify-observability
+make observability-verify
 ```
 
 Cubre los cuatro servicios, que ningún target de Prometheus esté caído, las tres familias de métricas que empuja Alloy (host, contenedores y base), que Loki reciba logs por contenedor, los binds, y —cerrando el prerrequisito del principio— que la **rotación de logs del daemon** haya quedado efectivamente aplicada al contenedor de Odoo.
@@ -660,9 +660,9 @@ En `.env`, ocho claves. Las de R2 y la stanza son **las de producción**, porque
 | `PGBACKREST_STANZA` · `R2_ENDPOINT` · `R2_BUCKET` | Los mismos valores que producción: es su repositorio el que se restaura |
 | `ADDONS_BRANCH` | `<versión>-stag`, la rama de staging de los repos de addons |
 
-Lo que las capas ausentes necesitarían —SMTP, alertas, retenciones— **no está en la plantilla**, y `LOCAL_IP` tampoco: staging no publica puertos, entra solo por el túnel. Si copiás una clave de más desde el `.env` de producción, dejala con valor o borrala: `make verify-host` marca las vacías.
+Lo que las capas ausentes necesitarían —SMTP, alertas, retenciones— **no está en la plantilla**, y `LOCAL_IP` tampoco: staging no publica puertos, entra solo por el túnel. Si copiás una clave de más desde el `.env` de producción, dejala con valor o borrala: `make host-verify` marca las vacías.
 
-> **`PG_ARCHIVE_MODE=off` es la línea que protege los backups de producción.** Staging apunta a la stanza de producción para poder restaurar; con el archivado prendido su propio Postgres le empuja WAL a ese repositorio y lo contamina desde el entorno que existe para romper cosas. Lo verifica `make verify-db`, que en un stack sin capa de backups **exige** que esté apagado.
+> **`PG_ARCHIVE_MODE=off` es la línea que protege los backups de producción.** Staging apunta a la stanza de producción para poder restaurar; con el archivado prendido su propio Postgres le empuja WAL a ese repositorio y lo contamina desde el entorno que existe para romper cosas. Lo verifica `make db-verify`, que en un stack sin capa de backups **exige** que esté apagado.
 
 **Comandos.**
 

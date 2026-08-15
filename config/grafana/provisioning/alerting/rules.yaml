@@ -168,7 +168,7 @@ groups:
       # El umbral (108000 s = 30 h) es DELIBERADAMENTE menor que RESTIC_MAX_AGE
       # (36 h por default): la alerta avisa antes de que el contenedor se ponga
       # unhealthy. Los dos derivan de la cadencia del timer; si la cambiás, cambian
-      # los dos. verify-observability comprueba que este siga siendo el menor.
+      # los dos. observability-verify comprueba que este siga siendo el menor.
       - uid: backup-viejo
         title: Backup fallado o ausente
         condition: alerta

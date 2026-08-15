@@ -17,7 +17,7 @@
 # propia conexión directa a Postgres. El pooler corre en modo transacción, eso
 # rompe LISTEN/NOTIFY, y sin ese módulo el chat en tiempo real deja de andar —
 # sin error visible. Está nombrado en server_wide_modules de config/odoo/odoo.conf
-# y 'make verify-odoo' comprueba que exista en el árbol. Declará acá el repositorio
+# y 'make odoo-verify' comprueba que exista en el árbol. Declará acá el repositorio
 # que lo provee, forkeado a tu organización.
 
 # Ejemplos, descomentá y reemplazá por los tuyos:

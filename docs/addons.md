@@ -128,7 +128,7 @@ Si dos módulos comparten nombre técnico, gana el de la categoría que va prime
 enterprise  >  custom-addons  >  oca  >  third-party  >  core de Odoo
 ```
 
-El entrypoint arma el `addons_path` recorriendo las categorías en ese orden. La lista vive en dos lugares —el validador del manifiesto y el glob del entrypoint— y `make verify-odoo` comprueba que coincidan: si divergen, los módulos de la categoría que falte se clonarían sin llegar a cargarse nunca.
+El entrypoint arma el `addons_path` recorriendo las categorías en ese orden. La lista vive en dos lugares —el validador del manifiesto y el glob del entrypoint— y `make odoo-verify` comprueba que coincidan: si divergen, los módulos de la categoría que falte se clonarían sin llegar a cargarse nunca.
 
 **Advertencia:** Odoo no documenta la precedencia del `addons_path`. Este orden se apoya en la convención de los despliegues con módulos propietarios, no en una fuente normativa.
 

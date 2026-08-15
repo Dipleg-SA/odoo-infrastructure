@@ -230,7 +230,7 @@ Restore desde el repositorio remoto, de solo lectura. El propósito es doble y d
 
 Staging queda con datos reales de clientes, **y sin credenciales SMTP**. Un `-u` que dispare correo, o una tarea programada que venía en la base restaurada, mandaría mail de verdad a clientes de verdad desde el entorno que existe para romper cosas. Sin el secret, Odoo encola y falla al enviar: visible adentro, inofensivo afuera. Su entrypoint además vacía `SMTP_HOST`, porque si dependiera solo de `.env` un archivo copiado de producción alcanzaría para mandar.
 
-Y **no archiva WAL**. Apunta a la stanza de producción para poder restaurar, así que con `archive_mode` prendido le empujaría su propio WAL al repositorio del entorno real. Lo decide `PG_ARCHIVE_MODE` en el `-c` de `compose.db.yaml` y no `postgresql.conf`, que es el mismo archivo para los tres; `make verify-db` exige el valor que corresponde a las capas del stack, no uno fijo.
+Y **no archiva WAL**. Apunta a la stanza de producción para poder restaurar, así que con `archive_mode` prendido le empujaría su propio WAL al repositorio del entorno real. Lo decide `PG_ARCHIVE_MODE` en el `-c` de `compose.db.yaml` y no `postgresql.conf`, que es el mismo archivo para los tres; `make db-verify` exige el valor que corresponde a las capas del stack, no uno fijo.
 
 La anonimización se evaluó y se descartó por ahora: es un script que envejece mal, porque protege exactamente los campos que conocía el día que se escribió. Deja de ser opcional si alguna vez entra a staging alguien más que el operador.
 
@@ -242,7 +242,7 @@ Se descartó un exporter que parsee el log a métricas de Prometheus: es técnic
 
 **Al migrar, las alertas primero.** Una alerta mal migrada no falla ruidosa: simplemente no dispara nunca. Las dos que dependían de Traefik se rehicieron — la tasa de error a LogQL sobre el access log, y el vencimiento del certificado a una métrica que `cert.sh` escribe en `state/textfile/` por el mismo mecanismo que ya usaba `backup.sh`.
 
-Esa métrica mide **lo que certbot tiene en disco, no lo que nginx sirve**. El caso «renovó y nadie recargó» lo cubren el reload del propio script y el chequeo de `verify-odoo` contra el socket real, que es el único que abre una conexión TLS de verdad.
+Esa métrica mide **lo que certbot tiene en disco, no lo que nginx sirve**. El caso «renovó y nadie recargó» lo cubren el reload del propio script y el chequeo de `odoo-verify` contra el socket real, que es el único que abre una conexión TLS de verdad.
 
 ## Tooling
 
@@ -269,5 +269,5 @@ Son dos y no una, porque las capas son distintas: `require-backups` cuelga de `b
 Los otros tres arrastres se cerraron:
 
 - **Imágenes al día.** `alpine` 3.20 → 3.24, Odoo `19.0-20260630` → `19.0-20260810`, nginx `1.29.3` → `1.31.3` (misma rama mainline), Grafana 13.1.2 → 13.1.3, cloudflared 2026.7.2 → 2026.8.0 y certbot 5.1.0 → 5.7.0. Postgres 17.10, PgBouncer, restic, Prometheus, Loki y Alloy ya estaban en su último tag estable.
-- **`pgbackrest.conf` se quedó sin sección de stanza.** El nombre, `pg1-path` y `pg1-user` llegan por `PGBACKREST_*` desde `compose.db.yaml` y `compose.restore.yaml`, junto al `POSTGRES_USER` del que `pg1-user` tiene que ser copia. La invariante «el `[nombre]` del archivo tiene que coincidir con el `.env`» desapareció: ya no hay dos lados que puedan divergir. `verify-db` dejó de comparar cadenas y ahora lee el valor efectivo dentro del contenedor (`pgbackrest help archive-push pg1-path`).
+- **`pgbackrest.conf` se quedó sin sección de stanza.** El nombre, `pg1-path` y `pg1-user` llegan por `PGBACKREST_*` desde `compose.db.yaml` y `compose.restore.yaml`, junto al `POSTGRES_USER` del que `pg1-user` tiene que ser copia. La invariante «el `[nombre]` del archivo tiene que coincidir con el `.env`» desapareció: ya no hay dos lados que puedan divergir. `db-verify` dejó de comparar cadenas y ahora lee el valor efectivo dentro del contenedor (`pgbackrest help archive-push pg1-path`).
 - **Los umbrales de Grafana quedan literales**, porque no hay mecanismo: el provisioning de alerting no interpola nada. El detalle de lo que se probó está en `docs/architecture.md`.

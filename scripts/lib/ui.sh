@@ -1,0 +1,45 @@
+# --- Vocabulario visual ---
+# Símbolos y color para todo el repo; se degrada a texto plano si la salida no es una terminal.
+
+if [ -t 1 ]; then
+  UI_BOLD=$'\033[1m'; UI_CYAN=$'\033[36m'; UI_GREEN=$'\033[32m'
+  UI_RED=$'\033[31m'; UI_YELLOW=$'\033[33m'; UI_DIM=$'\033[2m'; UI_RESET=$'\033[0m'
+else
+  UI_BOLD=''; UI_CYAN=''; UI_GREEN=''; UI_RED=''; UI_YELLOW=''; UI_DIM=''; UI_RESET=''
+fi
+
+ui_title() { printf '\n%s%s%s\n' "$UI_BOLD" "$1" "$UI_RESET"; }
+ui_start() { printf '%s▶%s %s\n' "$UI_CYAN" "$UI_RESET" "$1"; }
+ui_ok()    { printf '%s✓%s %s\n' "$UI_GREEN" "$UI_RESET" "$1"; }
+ui_skip()  { printf '%s–%s %s\n' "$UI_DIM" "$UI_RESET" "$1"; }
+
+ui_bad() {
+  printf '%s✗%s %s\n' "$UI_RED" "$UI_RESET" "$1"
+  if [ -n "${2:-}" ]; then printf '  %s%s%s\n' "$UI_DIM" "$2" "$UI_RESET"; fi
+}
+
+ui_warn() {
+  printf '%s⚠%s %s\n' "$UI_YELLOW" "$UI_RESET" "$1"
+  if [ -n "${2:-}" ]; then printf '  %s%s%s\n' "$UI_DIM" "$2" "$UI_RESET"; fi
+}
+
+# --- Cierre por exit code ---
+# Corre el comando y marca ▶/✓/✗ según el exit code; el chequeo real es <capa>-verify.
+
+ui_run() {
+  local label="$1"; shift
+  ui_start "$label"
+  "$@"; local ec=$?
+  if [ "$ec" -eq 0 ]; then ui_ok "$label listo"
+  else ui_bad "$label falló" "exit $ec"; fi
+  return "$ec"
+}
+
+# --- Confirmación destructiva ---
+# Pide escribir 'nuke' literal, no Y/N; devuelve 1 sin tocar nada si no coincide.
+
+ui_confirm_nuke() {
+  local confirmacion
+  read -r -p "Escribí 'nuke' para confirmar: " confirmacion
+  [ "$confirmacion" = "nuke" ] || { ui_skip "cancelado"; return 1; }
+}

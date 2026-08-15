@@ -19,7 +19,7 @@ services:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       # Valores por deployment; el entorno pisa al archivo opción por opción.
       # Con default vacío: un stack que no archiva ni restaura no los declara. Que
-      # el que sí lo hace los tenga cargados lo exige verify-db, no la interpolación.
+      # el que sí lo hace los tenga cargados lo exige db-verify, no la interpolación.
       PGBACKREST_STANZA: ${PGBACKREST_STANZA:-}
       # Opciones del cluster acá y no en pgbackrest.conf: ahí vivirían dentro de una
       # sección [stanza] cuyo nombre repetiría el del .env. pg1-user = POSTGRES_USER.

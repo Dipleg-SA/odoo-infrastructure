@@ -4,6 +4,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+. scripts/lib/ui.sh
 
 # --- Umask ---
 # Lo que se cree acá nace 600; secrets-perms le pone 640 y el grupo consumidor.
@@ -24,24 +25,26 @@ DECLARADOS=$(docker compose --profile cert --profile restore config 2>/dev/null 
   | sed -n 's|^ *file: .*/secrets/\([a-z0-9_]*\)$|\1|p')
 
 if [ -z "$DECLARADOS" ]; then
-  echo "secrets-init: no se pudo leer los secrets de la composición — revisar COMPOSE_FILE en .env" >&2
+  ui_bad "no se pudo leer los secrets de la composición" "revisar COMPOSE_FILE en .env" >&2
   exit 1
 fi
+
+ui_start "secrets-init"
 
 # --- Helper ---
 # Escribe solo si el archivo no existe y este stack lo declara; stdin trae el contenido.
 
 nuevo() {
   if ! printf '%s\n' "$DECLARADOS" | grep -qx "$1"; then
-    echo "omitido (este stack no lo declara): secrets/$1"
+    ui_skip "omitido (este stack no lo declara): secrets/$1"
     return 1
   fi
   if [ -e "secrets/$1" ]; then
-    echo "skip (ya existe): secrets/$1"
+    ui_skip "skip (ya existe): secrets/$1"
     return 1
   fi
   cat > "secrets/$1"
-  echo "creado: secrets/$1"
+  ui_ok "creado: secrets/$1"
   creados+=("$1")
   return 0
 }
@@ -105,10 +108,10 @@ EOF
 echo
 pendientes=$(grep -rl "$MARK" secrets/ 2>/dev/null | sed 's|secrets/||' | sort || true)
 if [ -n "$pendientes" ]; then
-  echo "Falta cargar el valor real en:"
+  ui_warn "Falta cargar el valor real en:" ""
   printf '  %s\n' $pendientes
   echo
   echo "Después: sudo make secrets-perms && make secrets-check"
 else
-  echo "Todos los secrets tienen valor. Seguir con: sudo make secrets-perms"
+  ui_ok "Todos los secrets tienen valor. Seguir con: sudo make secrets-perms"
 fi

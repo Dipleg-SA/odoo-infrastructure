@@ -5,6 +5,7 @@ set -euo pipefail
 shopt -s nullglob
 
 cd "$(dirname "$0")/.."
+. scripts/lib/ui.sh
 
 # --- Entorno ---
 # El source va primero: si viniera después, una variable homónima en .env pisaría
@@ -161,6 +162,7 @@ sync_repo() {
 
 cmd_sync() {
   local url category invalid=0 viejo
+  ui_start "addons sync"
   require_manifest
 
   # --- Manifiesto sin entradas ---
@@ -206,11 +208,11 @@ cmd_sync() {
   done < <(manifest_entries)
 
   if [ "$FAILED" -ne 0 ]; then
-    echo "addons.sh: sync terminó con errores — ver arriba" >&2
+    ui_bad "addons sync terminó con errores" "ver arriba" >&2
     exit 1
   fi
 
-  echo "OK: $(manifest_entries | wc -l | tr -d ' ') repositorio(s) sincronizado(s)"
+  ui_ok "addons sync listo — $(manifest_entries | wc -l | tr -d ' ') repositorio(s) sincronizado(s)"
 }
 
 # --- Estado de un worktree ---

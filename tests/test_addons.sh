@@ -35,8 +35,9 @@ crear_addon() {
 
 crear_checkout() {
   local root="$TMP/$1" rama="$2"
-  mkdir -p "$root/scripts" "$root/addons" "$root/docker/odoo"
+  mkdir -p "$root/scripts/lib" "$root/addons" "$root/docker/odoo"
   cp "$REPO_ROOT/scripts/addons.sh" "$root/scripts/"
+  cp "$REPO_ROOT/scripts/lib/ui.sh" "$root/scripts/lib/"
   echo "FROM odoo:19.0" > "$root/docker/odoo/Dockerfile"
   : > "$root/addons/addons.txt"
   [ -n "$rama" ] && echo "ADDONS_BRANCH=$rama" > "$root/.env"

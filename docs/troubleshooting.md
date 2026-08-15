@@ -45,7 +45,7 @@ La causa más común en un deploy nuevo es que la sustitución de variables no c
 docker compose exec nginx grep -r '\${' /etc/nginx/conf.d/
 ```
 
-Cualquier resultado ahí es un `envsubst` que no sustituyó: revisá que la variable esté en `.env` y que `NGINX_ENVSUBST_FILTER` en `compose.proxy.yaml` la cubra. Lo chequea también `make verify-edge`.
+Cualquier resultado ahí es un `envsubst` que no sustituyó: revisá que la variable esté en `.env` y que `NGINX_ENVSUBST_FILTER` en `compose.proxy.yaml` la cubra. Lo chequea también `make edge-verify`.
 
 **`cloudflared` no conecta.** El token del Tunnel pegado en `secrets/cloudflare_tunnel_token` está mal copiado o expiró, o hay egress bloqueado hacia Cloudflare desde el servidor.
 
@@ -58,7 +58,7 @@ docker compose logs --tail=20 cloudflared | grep -o 'error="[^"]*"' | sort -u
 - **`x509: certificate is valid for <tu PUBLIC_HOSTNAME>, not nginx`** → el **Origin Server Name está vacío** en el Public Hostname del Tunnel. `cloudflared` valida el certificado contra el nombre del servicio (`nginx`), que no es el del certificado. Se arregla **solo en el dashboard** (Zero Trust → Networks → Tunnels → el Tunnel → Public Hostname → Additional application settings → TLS → Origin Server Name = `$PUBLIC_HOSTNAME`). `cloudflared` recarga solo, sin restart: confirmalo con `docker compose logs --tail=5 cloudflared | grep "Updated to new configuration"`, que debe mostrar `"originServerName":"<tu PUBLIC_HOSTNAME>"`.
 - **`x509: certificate signed by unknown authority`** → el certificado salió del entorno de staging de Let's Encrypt, que no es confiable para `cloudflared`. Revisá que `make cert-issue` no lleve `--staging` y reemití.
 
-**502 justo después de recrear Odoo, con nginx sano.** Es el caché de resolución de nginx: resuelve los upstream al arrancar y se queda con la IP vieja. El repositorio lo previene con `resolver 127.0.0.11 valid=10s` y `proxy_pass` a través de una variable, que es lo que obliga a reconsultar; si alguien reescribe la location con el nombre fijo (`proxy_pass http://odoo:8069`), el síntoma vuelve. Lo chequea `make verify-edge`. Mitigación inmediata:
+**502 justo después de recrear Odoo, con nginx sano.** Es el caché de resolución de nginx: resuelve los upstream al arrancar y se queda con la IP vieja. El repositorio lo previene con `resolver 127.0.0.11 valid=10s` y `proxy_pass` a través de una variable, que es lo que obliga a reconsultar; si alguien reescribe la location con el nombre fijo (`proxy_pass http://odoo:8069`), el síntoma vuelve. Lo chequea `make edge-verify`. Mitigación inmediata:
 
 ```bash
 docker compose exec nginx nginx -s reload
@@ -114,7 +114,7 @@ Let's Encrypt dejó de mandar avisos de vencimiento el 2025-06-04, así que la v
 
 ## Odoo core
 
-**El entrypoint falla al arrancar.** Causas típicas: GID incorrecto en `odoo_admin_password`/`zeptomail_smtp_password` — deben ser `101`, y se arregla con `sudo make secrets-perms && make secrets-check` (el mapa vive en `scripts/secrets-perms.sh`, no en el runbook); Postgres/PgBouncer todavía no están `healthy` cuando Odoo intenta conectar (confirmar que `make verify-db` pasa antes de arrancar Odoo); o el `addons_path` quedó **vacío** y el entrypoint aborta a propósito (`addons_path vacío — ¿corriste make addons-sync...?`), que Desde el paso a bind-mount, es la causa más frecuente: los addons llegan por bind-mount desde `addons/`, así que su presencia ya no la garantiza la imagen — se arregla con `make addons-sync`, y si eso falla por credencial, el PAT vive en `~/.git-credentials` del host (ver `docs/addons.md`).
+**El entrypoint falla al arrancar.** Causas típicas: GID incorrecto en `odoo_admin_password`/`zeptomail_smtp_password` — deben ser `101`, y se arregla con `sudo make secrets-perms && make secrets-check` (el mapa vive en `scripts/secrets-perms.sh`, no en el runbook); Postgres/PgBouncer todavía no están `healthy` cuando Odoo intenta conectar (confirmar que `make db-verify` pasa antes de arrancar Odoo); o el `addons_path` quedó **vacío** y el entrypoint aborta a propósito (`addons_path vacío — ¿corriste make addons-sync...?`), que Desde el paso a bind-mount, es la causa más frecuente: los addons llegan por bind-mount desde `addons/`, así que su presencia ya no la garantiza la imagen — se arregla con `make addons-sync`, y si eso falla por credencial, el PAT vive en `~/.git-credentials` del host (ver `docs/addons.md`).
 
 ## Backups y DR
 

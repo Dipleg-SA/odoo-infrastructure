@@ -7,6 +7,7 @@
 set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+. scripts/lib/ui.sh
 
 # --- Valores por deployment ---
 # Los lee de .env solo, para que ninguna verificación dependa de la shell del operador.
@@ -23,11 +24,11 @@ PASS=0; FALLO=0; AVISO=0
 # --- Salida ---
 # Un renglón por chequeo; el motivo del fallo va debajo, indentado.
 
-ok()     { printf '  ok      %s\n' "$1"; PASS=$((PASS+1)); }
-bad()    { printf '  FALLA   %s\n            %s\n' "$1" "$2"; FALLO=$((FALLO+1)); }
-aviso()  { printf '  aviso   %s\n            %s\n' "$1" "$2"; AVISO=$((AVISO+1)); }
-omitir() { printf '  --      %s (%s)\n' "$1" "$2"; }
-titulo() { printf '\n%s\n' "$1"; }
+ok()     { ui_ok "$1"; PASS=$((PASS+1)); }
+bad()    { ui_bad "$1" "$2"; FALLO=$((FALLO+1)); }
+aviso()  { ui_warn "$1" "$2"; AVISO=$((AVISO+1)); }
+omitir() { ui_skip "$1 ($2)"; }
+titulo() { ui_title "$1"; }
 
 # --- Helpers ---
 # expect corre el comando y exige que su salida contenga el patrón; vacio exige lo contrario.
@@ -897,7 +898,9 @@ v_observability() {
 # El exit code es lo que consume el operador: 0 = la capa está sana.
 
 resumen() {
-  printf '\n%s ok · %s fallas · %s avisos\n' "$PASS" "$FALLO" "$AVISO"
+  local linea="$PASS ok · $FALLO fallas · $AVISO avisos"
+  if [ "$FALLO" -eq 0 ]; then printf '\n%s✓%s %s\n' "$UI_GREEN" "$UI_RESET" "$linea"
+  else printf '\n%s✗%s %s\n' "$UI_RED" "$UI_RESET" "$linea"; fi
   [ "$FALLO" -eq 0 ]
 }
 

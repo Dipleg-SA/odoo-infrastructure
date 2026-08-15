@@ -149,7 +149,7 @@ Servidor nuevo, disco vacío. Todo el estado tiene que venir de R2.
 
 4. **Restaurar el filestore** desde el último snapshot (paso 5 del Escenario A, con `restic restore latest --target /`).
 
-5. **Recién ahora**, retomar `INSTALL.md` en la verificación de la fase «Datos» (`make verify-db`) y seguir con la fase «Aplicación» (addons, build y `up -d odoo`). El entrypoint encuentra la base ya inicializada y no la toca.
+5. **Recién ahora**, retomar `INSTALL.md` en la verificación de la fase «Datos» (`make db-verify`) y seguir con la fase «Aplicación» (addons, build y `up -d odoo`). El entrypoint encuentra la base ya inicializada y no la toca.
 
 6. Completar las fases «Protección» y «Observación», y el cierre. En Protección, `restic init` va a decir `config file already exists` — es lo correcto, el repo ya está; **no lo fuerces**.
 

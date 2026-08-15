@@ -17,7 +17,8 @@ PATH="$REPO_ROOT/tests/stubs:$PATH"
 
 crear_root() {
   local root="$TMP/$1"; shift
-  mkdir -p "$root/scripts" "$root/state/textfile" "$root/secrets"
+  mkdir -p "$root/scripts/lib" "$root/state/textfile" "$root/secrets"
+  cp "$REPO_ROOT/scripts/lib/ui.sh" "$root/scripts/lib/"
   for s in "$@"; do cp "$REPO_ROOT/scripts/$s" "$root/scripts/"; done
   printf 'PUBLIC_HOSTNAME=odoo.example.test\n' > "$root/.env"
   printf '%s' "$root"

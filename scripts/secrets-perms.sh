@@ -4,6 +4,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+. scripts/lib/ui.sh
 
 SECRETS_DIR="secrets"
 EXPECTED_PERMS="640"
@@ -44,7 +45,7 @@ get_stat() {
 # Sin secrets/ no hay nada que hacer; secrets-init lo crea.
 
 if [ ! -d "$SECRETS_DIR" ]; then
-  echo "secrets-perms: $SECRETS_DIR no existe — correr 'make secrets-init' primero" >&2
+  ui_bad "$SECRETS_DIR no existe" "correr 'make secrets-init' primero" >&2
   exit 1
 fi
 
@@ -55,28 +56,30 @@ MODE="${1:---check}"
 
 if [ "$MODE" = "--apply" ]; then
   if [ "$(id -u)" -ne 0 ]; then
-    echo "secrets-perms --apply: requiere root (chgrp a un GID del que no sos miembro)" >&2
-    echo "  sudo make secrets-perms" >&2
+    ui_bad "secrets-perms --apply requiere root" "chgrp a un GID del que no sos miembro — corré: sudo make secrets-perms" >&2
     exit 1
   fi
+  ui_start "secrets-perms --apply"
   for file in "$SECRETS_DIR"/*; do
     [ -f "$file" ] || continue
     chmod "$EXPECTED_PERMS" "$file"
     gid="$(expected_gid_for "$(basename "$file")")"
     [ -n "$gid" ] && chgrp "$gid" "$file"
-    echo "$(basename "$file"): $EXPECTED_PERMS${gid:+ / gid $gid}"
+    echo "  $(basename "$file"): $EXPECTED_PERMS${gid:+ / gid $gid}"
   done
+  ui_ok "secrets-perms --apply listo"
   exit 0
 fi
 
 if [ "$MODE" != "--check" ]; then
-  echo "uso: $(basename "$0") [--check|--apply]" >&2
+  ui_bad "uso: $(basename "$0") [--check|--apply]" "" >&2
   exit 2
 fi
 
 # --- Verificar ---
 # Permisos en todos, GID en los mapeados, y que no quede ningún marcador sin cargar.
 
+ui_start "secrets-perms --check"
 fail=0
 for file in "$SECRETS_DIR"/*; do
   [ -f "$file" ] || continue
@@ -85,17 +88,20 @@ for file in "$SECRETS_DIR"/*; do
   read -r actual_perms actual_gid <<< "$(get_stat "$file")"
 
   if [ "$actual_perms" != "$EXPECTED_PERMS" ]; then
-    echo "secrets-perms: $file — permisos $actual_perms, esperado $EXPECTED_PERMS" >&2
+    ui_bad "$file" "permisos $actual_perms, esperado $EXPECTED_PERMS" >&2
     fail=1
   fi
   if [ -n "$expected_gid" ] && [ "$actual_gid" != "$expected_gid" ]; then
-    echo "secrets-perms: $file — grupo $actual_gid, esperado $expected_gid" >&2
+    ui_bad "$file" "grupo $actual_gid, esperado $expected_gid" >&2
     fail=1
   fi
   if grep -q "$MARK" "$file" 2>/dev/null; then
-    echo "secrets-perms: $file — todavía tiene el marcador $MARK, falta el valor real" >&2
+    ui_bad "$file" "todavía tiene el marcador $MARK, falta el valor real" >&2
     fail=1
   fi
 done
+
+if [ "$fail" -eq 0 ]; then ui_ok "secrets-perms --check listo"
+else ui_bad "secrets-perms --check falló" "" >&2; fi
 
 exit "$fail"

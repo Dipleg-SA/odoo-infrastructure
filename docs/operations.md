@@ -14,7 +14,10 @@ Qué comando correr en el día a día, una vez que el stack ya está deployado. 
 | `make ps` | Estado de los servicios, en tabla |
 | `make secrets-check` | Chequea permisos/grupo de todo lo que hay bajo `secrets/` |
 | `make verify` | Verifica las seis capas y dice en qué estado está realmente el servidor. Exit `0` solo si no hay fallas |
-| `make verify-<capa>` | Solo esa capa — `host`, `edge`, `db`, `odoo`, `backups`, `observability` |
+| `make <capa>-verify` | Solo esa capa — `host`, `edge`, `db`, `odoo`, `backups`, `observability` |
+| `make <capa>-up` / `-down` / `-restart` / `-logs` / `-ps` | Ciclo de vida de una sola capa — `edge`, `db`, `odoo`, `backups`, `observability` (no `host`, que no tiene contenedores). `restart` es `docker compose restart`: reinicia los contenedores existentes sin recrearlos — no aplica un cambio de imagen o de compose, para eso hace falta `-down` y `-up` |
+| `make <capa>-nuke` | Borra containers, imágenes y volúmenes **de esa capa**. Pide tipear la palabra `nuke`, no un Y/N |
+| `make nuke` | Ídem, pero todo el stack — más `addons/.repos`, los árboles clonados bajo `addons/` y `state/*`. Nunca toca `secrets/` ni `.env` |
 | `make addons-sync` | Clona lo que falte y actualiza los dos árboles de addons desde `addons/addons.txt`. Idempotente, puro host — no necesita contenedores levantados |
 | `make addons` | Estado de cada worktree: entorno, categoría, repo, rama, commit corto, limpio/sucio. También funciona con el stack abajo |
 | `make odoo-install MODULES=x` | Instala el módulo `x` en la base (`-i x --stop-after-init`) y deja el servicio arriba |

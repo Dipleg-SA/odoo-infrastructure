@@ -5,6 +5,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+. scripts/lib/ui.sh
 
 if [ -f .env ]; then set -a; . ./.env; set +a; fi
 
@@ -12,7 +13,7 @@ MODE="${1:-daily}"
 
 # --- Retención del filestore ---
 # Política de cada deployment. La cobertura resultante (diarios + semanales*7 +
-# mensuales*30) tiene que caber dentro de BACKUP_RETENTION_DAYS; lo chequea verify-db.
+# mensuales*30) tiene que caber dentro de BACKUP_RETENTION_DAYS; lo chequea db-verify.
 
 KEEP_DAILY="${RESTIC_KEEP_DAILY:-7}"
 KEEP_WEEKLY="${RESTIC_KEEP_WEEKLY:-4}"
@@ -25,7 +26,7 @@ if command -v flock >/dev/null 2>&1; then
   exec 9<.
   flock -w 3600 9
 else
-  echo "aviso: flock no disponible (macOS) — corrida sin serializar" >&2
+  ui_warn "flock no disponible (macOS)" "corrida sin serializar" >&2
 fi
 
 pgb() { docker compose exec -T -u postgres postgres pgbackrest "$@"; }
@@ -54,18 +55,19 @@ marcar_exito() {
 
 registrar_addons() {
   local dir="state/meta" tmp
-  mkdir -p "$dir" 2>/dev/null || { echo "aviso: no se pudo crear $dir — backup sigue sin el registro de addons" >&2; return 0; }
-  tmp=$(mktemp "$dir/.addons.XXXXXX" 2>/dev/null) || { echo "aviso: no se pudo escribir el registro de addons" >&2; return 0; }
+  mkdir -p "$dir" 2>/dev/null || { ui_warn "no se pudo crear $dir" "backup sigue sin el registro de addons" >&2; return 0; }
+  tmp=$(mktemp "$dir/.addons.XXXXXX" 2>/dev/null) || { ui_warn "no se pudo escribir el registro de addons" "" >&2; return 0; }
   if scripts/addons.sh status 2>/dev/null | grep -E '^(enterprise|custom-addons|oca|third-party)[[:space:]]' > "$tmp"; then
     chmod 644 "$tmp"
     mv "$tmp" "$dir/addons.txt"
   else
-    echo "aviso: no se pudo generar el registro de addons" >&2
+    ui_warn "no se pudo generar el registro de addons" "" >&2
     rm -f "$tmp"
   fi
   return 0
 }
 
+ui_start "backup $MODE"
 case "$MODE" in
   daily)
     # --- Verificación previa ---
@@ -93,7 +95,8 @@ case "$MODE" in
     marcar_exito monthly
     ;;
   *)
-    echo "uso: $(basename "$0") [daily|monthly]" >&2
+    ui_bad "uso: $(basename "$0") [daily|monthly]" "" >&2
     exit 2
     ;;
 esac
+ui_ok "backup $MODE listo"
