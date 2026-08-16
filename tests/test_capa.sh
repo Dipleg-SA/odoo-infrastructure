@@ -28,6 +28,17 @@ services:
     image: pgbouncer
 EOF
 
+# Una segunda capa con compose real, para probar que 'all ps' agrupa más de una
+# y saltea las que no tienen compose.*.yaml en este fixture (edge/backups/observability).
+cat > "$ROOT/compose.odoo.yaml" <<'EOF'
+volumes:
+  odoo-data:
+
+services:
+  odoo:
+    image: odoo
+EOF
+
 llamadas() { cat "$STUB_DIR/llamadas" 2>/dev/null; }
 reset_stub() { : > "$STUB_DIR/llamadas"; rm -f "$STUB_DIR/servicios" "$STUB_DIR/salida"; }
 capa() { (cd "$ROOT" && ./scripts/capa.sh "$@" 2>&1); }
@@ -90,5 +101,49 @@ SALIDA=$(printf 'nuke\n' | capa db nuke)
 contiene "borra los containers de la capa" "compose rm -sf postgres pgbouncer" "$(llamadas)"
 contiene "borra el volumen dueño de db (pgdata)" "volume rm -f pgdata" "$(llamadas)"
 contiene "cierra con éxito"                      "db-nuke listo" "$SALIDA"
+
+# =====================================================================
+titulo "ps: la capa puntual usa la tabla compacta con sus propios servicios"
+# =====================================================================
+
+reset_stub
+printf 'postgres\npgbouncer\nodoo\n' > "$STUB_DIR/servicios"
+capa db ps >/dev/null 2>&1
+contiene "pasa los servicios de la capa y el formato compacto" \
+  "compose ps postgres pgbouncer --format table" "$(llamadas)"
+
+# =====================================================================
+titulo "ps agrupado: un título por capa presente, salteando las que faltan"
+# =====================================================================
+
+reset_stub
+printf 'postgres\npgbouncer\nodoo\n' > "$STUB_DIR/servicios"
+SALIDA=$(capa all ps)
+contiene    "muestra el título de db"                          "$(printf '\ndb\n')" "$SALIDA"
+contiene    "muestra el título de odoo"                        "$(printf '\nodoo\n')" "$SALIDA"
+no_contiene "saltea edge (sin compose.*.yaml en este fixture)" "$(printf '\nedge\n')" "$SALIDA"
+
+# =====================================================================
+titulo "ps agrupado: el servicio sin capa se lista igual, y la composición se resuelve una vez"
+# =====================================================================
+
+reset_stub
+printf 'postgres\npgbouncer\nrestore-db\n' > "$STUB_DIR/servicios"
+SALIDA=$(capa all ps)
+contiene "agrupa la capa db"                        "$(printf '\ndb\n')"    "$SALIDA"
+contiene "abre un grupo 'otros'"                    "$(printf '\notros\n')" "$SALIDA"
+contiene "lista restore-db con sus profiles"        "--profile restore ps restore-db" "$(llamadas)"
+igual    "consulta la composición una sola vez" "1" "$(llamadas | grep -c 'config --services')"
+
+# =====================================================================
+titulo "ps agrupado: si docker no responde, falla — no un éxito vacío"
+# =====================================================================
+
+reset_stub
+echo 1 > "$STUB_DIR/exit"
+SALIDA=$(capa all ps); CODIGO=$(capa_code all ps)
+rm -f "$STUB_DIR/exit"
+igual    "no se hace pasar por éxito" "1" "$CODIGO"
+contiene "y dice que falló"           "ps falló" "$SALIDA"
 
 resumen

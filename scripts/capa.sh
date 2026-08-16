@@ -38,6 +38,55 @@ servicios_de() {
   done
 }
 
+# --- Servicios de este stack ---
+# Resuelve la composición real una sola vez y la cachea: el costo es el mismo para todas las capas.
+
+cargar_servicios_stack() {
+  [ -n "${SERVICIOS_STACK+x}" ] && return 0
+  SERVICIOS_STACK=$(docker compose --profile cert --profile restore config --services 2>/dev/null)
+}
+
+# --- Presencia real ---
+# Qué subconjunto de la lista canónica declara ESTE stack — staging no trae dnsmasq, dev no trae backups.
+
+presentes_de() {
+  local p
+  p=$(printf '%s\n' "$SERVICIOS_STACK" | grep -Fxf <(printf '%s\n' $1) | tr '\n' ' ')
+  printf '%s' "${p% }"
+}
+
+# --- Capas con contenedores ---
+# host no entra: son chequeos de SO, sin ciclo de vida de Docker que listar.
+
+CAPAS="edge db odoo backups observability"
+
+# --- ps agrupado ---
+# Un título por capa (mismo estilo que 'make help') y su tabla debajo; los servicios sin capa van al final.
+
+ps_todas() {
+  local capa canon presentes otros cubiertos="" ec=0
+  cargar_servicios_stack
+  [ -n "$SERVICIOS_STACK" ] || { ui_bad "ps falló" "no se pudo resolver la composición (¿docker corriendo? ¿COMPOSE_FILE en .env?)"; return 1; }
+
+  for capa in $CAPAS; do
+    canon="$(servicios_de "$capa")"
+    presentes="$(presentes_de "$canon")"
+    [ -n "$presentes" ] || continue
+    cubiertos="$cubiertos $presentes"
+    ui_title "$capa"
+    docker compose ps $presentes --format "table {{.Name}}\t{{.Service}}\t{{.Status}}" | ui_color_status || ec=$?
+  done
+
+  # Lo que no es de ninguna capa (restore-*, bajo profiles) igual se lista: 'make ps' es el stack entero.
+  otros=$(printf '%s\n' "$SERVICIOS_STACK" | grep -Fxvf <(printf '%s\n' $cubiertos) | tr '\n' ' ')
+  otros="${otros% }"
+  [ -n "$otros" ] || return "$ec"
+
+  ui_title "otros"
+  docker compose --profile cert --profile restore ps $otros --format "table {{.Name}}\t{{.Service}}\t{{.Status}}" | ui_color_status || ec=$?
+  return "$ec"
+}
+
 # --- Nuke global ---
 # 'all' es un pseudo-capa que solo admite nuke: todo el stack, más lo transversal (addons/, state/).
 
@@ -53,10 +102,20 @@ nuke_global() {
 }
 
 if [ "$CAPA" = "all" ]; then
-  [ "$VERBO" = "nuke" ] || { ui_bad "la capa 'all' solo admite nuke" "usá 'make nuke', o 'make <capa>-$VERBO' para una capa puntual"; exit 2; }
-  ui_start "nuke"
-  if nuke_global; then ui_ok "nuke listo"
-  else ec=$?; ui_bad "nuke falló o se canceló" "exit $ec"; exit "$ec"; fi
+  case "$VERBO" in
+    ps)
+      ps_todas || exit $?
+      ;;
+    nuke)
+      ui_start "nuke"
+      if nuke_global; then ui_ok "nuke listo"
+      else ec=$?; ui_bad "nuke falló o se canceló" "exit $ec"; exit "$ec"; fi
+      ;;
+    *)
+      ui_bad "la capa 'all' solo admite ps o nuke" "usá 'make nuke', 'make ps', o 'make <capa>-$VERBO' para una capa puntual"
+      exit 2
+      ;;
+  esac
   exit 0
 fi
 
@@ -74,12 +133,8 @@ fi
 canon="$(servicios_de "$CAPA")"
 [ -n "$canon" ] || { ui_bad "capa desconocida" "$CAPA"; exit 2; }
 
-# --- Presencia real ---
-# Qué subconjunto de la lista canónica declara ESTE stack — staging no trae dnsmasq,
-# dev no trae backups/observability, y ninguna lista fija sabe eso de antemano.
-
-presentes=$(docker compose --profile cert --profile restore config --services 2>/dev/null | grep -Fxf <(printf '%s\n' $canon) | tr '\n' ' ')
-presentes="${presentes% }"
+cargar_servicios_stack
+presentes="$(presentes_de "$canon")"
 
 if [ -z "$presentes" ]; then
   ui_skip "la capa $CAPA no está en este stack (revisar COMPOSE_FILE en .env)"
@@ -120,7 +175,12 @@ case "$VERBO" in
   up)      ui_run "$CAPA-up" docker compose up -d $presentes ;;
   down)    ui_run "$CAPA-down" docker compose rm -sf $presentes ;;
   restart) ui_run "$CAPA-restart" docker compose restart $presentes ;;
-  ps)      ui_run "$CAPA-ps" docker compose ps $presentes ;;
+  ps)
+    ui_start "$CAPA-ps"
+    docker compose ps $presentes --format "table {{.Name}}\t{{.Service}}\t{{.Status}}" | ui_color_status
+    ec=$?
+    if [ "$ec" -eq 0 ]; then ui_ok "$CAPA-ps listo"; else ui_bad "$CAPA-ps falló" "exit $ec"; exit "$ec"; fi
+    ;;
   logs)
     ui_start "$CAPA-logs: siguiendo $presentes (Ctrl-C para salir)"
     exec docker compose logs -f $presentes

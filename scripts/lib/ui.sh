@@ -1,7 +1,8 @@
 # --- Vocabulario visual ---
-# Símbolos y color para todo el repo; se degrada a texto plano si la salida no es una terminal.
+# Símbolos y color para todo el repo; se degrada a texto plano si la salida no es una
+# terminal, o si NO_COLOR está seteada (no-color.org) aunque sí lo sea.
 
-if [ -t 1 ]; then
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
   UI_BOLD=$'\033[1m'; UI_CYAN=$'\033[36m'; UI_GREEN=$'\033[32m'
   UI_RED=$'\033[31m'; UI_YELLOW=$'\033[33m'; UI_DIM=$'\033[2m'; UI_RESET=$'\033[0m'
 else
@@ -25,14 +26,30 @@ ui_warn() {
 
 # --- Cierre por exit code ---
 # Corre el comando y marca ▶/✓/✗ según el exit code; el chequeo real es <capa>-verify.
+# La duración solo se muestra a partir de 1s, para no ensuciar los comandos instantáneos.
 
 ui_run() {
   local label="$1"; shift
+  local inicio fin dur sufijo=""
   ui_start "$label"
+  inicio=$(date +%s)
   "$@"; local ec=$?
-  if [ "$ec" -eq 0 ]; then ui_ok "$label listo"
-  else ui_bad "$label falló" "exit $ec"; fi
+  fin=$(date +%s); dur=$((fin - inicio))
+  [ "$dur" -ge 1 ] && sufijo=" (${dur}s)"
+  if [ "$ec" -eq 0 ]; then ui_ok "$label listo$sufijo"
+  else ui_bad "$label falló$sufijo" "exit $ec"; fi
   return "$ec"
+}
+
+# --- Color del estado en 'docker compose ps' ---
+# Verde sano, rojo caído, amarillo todo lo demás; el 't' corta tras el primer match para no repintar.
+
+ui_color_status() {
+  sed -E \
+    -e "s/(Up.*\(healthy\))\$/${UI_GREEN}\1${UI_RESET}/;t" \
+    -e "s/(Up.*\(unhealthy\))\$/${UI_RED}\1${UI_RESET}/;t" \
+    -e "s/((Exited|Restarting|Dead).*)\$/${UI_RED}\1${UI_RESET}/;t" \
+    -e "s/((Up|Created|Paused).*)\$/${UI_YELLOW}\1${UI_RESET}/;t"
 }
 
 # --- Confirmación destructiva ---

@@ -51,10 +51,14 @@ cert-renew: ## Renueva el certificado
 # levantan contenedores ni salen a la red: el estado de un deploy real es 'make verify'.
 
 test: ## Corre los tests del repo, sin Docker ni red
-	@. scripts/lib/ui.sh; estado=0; \
-	  for t in tests/test_*.sh; do bash "$$t" || estado=1; done; \
-	  if [ $$estado -eq 0 ]; then ui_ok "tests listos"; else ui_bad "tests fallaron" "ver arriba"; fi; \
-	  exit $$estado
+	@. scripts/lib/ui.sh; total=0; ok=0; \
+	  for t in tests/test_*.sh; do \
+	    total=$$((total+1)); \
+	    bash "$$t" && ok=$$((ok+1)); \
+	  done; \
+	  if [ "$$ok" -eq "$$total" ]; then ui_ok "tests listos — $$ok/$$total archivos ok"; \
+	  else ui_bad "tests fallaron" "$$ok/$$total archivos ok"; fi; \
+	  [ "$$ok" -eq "$$total" ]
 
 # --- Verificación del deploy ---
 # scripts/verify.sh es dueño único de qué se chequea y qué se espera; INSTALL.md solo
@@ -188,8 +192,8 @@ logs: ## Sigue los logs de todos los servicios
 	@. scripts/lib/ui.sh; ui_start "logs: siguiendo todo el stack (Ctrl-C para salir)"
 	@docker compose logs -f
 
-ps: ## Lista el estado de los contenedores
-	@. scripts/lib/ui.sh; ui_run "ps" docker compose ps --format "table {{.Name}}\t{{.Service}}\t{{.Status}}"
+ps: ## Lista el estado de los contenedores, agrupado por capa
+	scripts/capa.sh all ps
 
 # --- Nuke ---
 # El más destructivo del Makefile. Confirmación: tipear la palabra 'nuke', no Y/N.
@@ -243,9 +247,10 @@ odoo-update: require-modules ## Actualiza módulos — MODULES=nombre obligatori
 	  exit "$$estado"
 
 odoo-modules: ## Lista los módulos instalados en la base
-	@salida=$$(docker compose exec -T postgres psql -U odoo -d odoo -A -F "$$(printf '\t')" -c \
+	@salida=$$(docker compose exec -T postgres psql -U odoo -d odoo -A -F "$$(printf '\t')" --pset footer=off -c \
 	  "SELECT name, latest_version FROM ir_module_module WHERE state='installed' ORDER BY name") || exit $$?; \
-	  printf '%s\n' "$$salida" | column -t -s "$$(printf '\t')"
+	  printf '%s\n' "$$salida" | column -t -s "$$(printf '\t')" \
+	  | awk 'NR==1 {print; n=length($$0); s=""; for(i=0;i<n;i++) s=s "-"; print s; next} {print}'
 
 # --- Guardas de capa ---
 # Le preguntan a la composición, no a una variable: qué capas trae cada stack ya
