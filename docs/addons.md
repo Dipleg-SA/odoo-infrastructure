@@ -97,6 +97,8 @@ Es deliberado: si el servidor nunca escribe en un repositorio de módulos, nada 
 | `make odoo-install MODULES=x` | Instala el módulo `x` en la base y deja el servicio arriba |
 | `make odoo-update MODULES=x` | Actualiza el módulo `x` — un solo camino para cualquier tipo de cambio: código, vistas o datos |
 | `make odoo-modules` | Lista los módulos instalados y su versión, leídos de la base, que es la fuente de verdad |
+| `make pydeps-check` | Falla si `docker/odoo/requirements.txt` no cubre las `external_dependencies.python` que declaran los addons. Puro host, sin red — corre en `make test` |
+| `make pydeps-sync` | Pinea en `requirements.txt` lo que falte, resuelto contra la imagen base. Nunca reescribe un pin ya puesto — necesita Docker |
 
 Instalar y actualizar **detienen el servicio** mientras corren: es un paso explícito del operador, nunca algo que dispare el arranque del contenedor. Si el paso falla, el servicio se levanta igual y el comando reporta el error — no te deja producción abajo.
 
@@ -104,7 +106,7 @@ Instalar y actualizar **detienen el servicio** mientras corren: es un paso expl�
 
 1. Agregá una línea al manifiesto `addons/addons.txt`: URL del repositorio y categoría (`custom-addons`, `oca`, `third-party` o `enterprise`). Si este checkout todavía no lo tiene, `cp addons/addons.txt.example addons/addons.txt` primero.
 2. `make addons-sync` — crea el clon bare y el worktree.
-3. Si el módulo declara dependencias de Python, sumalas a `docker/odoo/requirements.txt` y reconstruí la imagen. Es lo único, junto al entrypoint, que dispara un rebuild.
+3. `make pydeps-sync` — si el módulo declara `external_dependencies.python`, lo pinea en `docker/odoo/requirements.txt` (versión resuelta contra la imagen base, no a mano) y reconstruí la imagen. Es lo único, junto al entrypoint, que dispara un rebuild. Pinea solo lo declarado directamente: las transitivas las resuelve `pip` en build time como siempre, no es un lockfile completo.
 4. `make odoo-install MODULES=<módulo>` cuando corresponda instalarlo.
 
 Los módulos de terceros se forkean primero a tu propia organización, con el original como segundo remote. No se agrega el repositorio ajeno directo al manifiesto: sin fork no se puede parchear un módulo sin salirse del modelo.

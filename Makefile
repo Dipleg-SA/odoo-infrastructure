@@ -1,7 +1,7 @@
 .PHONY: help up down logs ps nuke \
         cert-issue cert-renew secrets-init secrets-perms secrets-check \
         backup backup-full backup-check restore-up restore-down \
-        addons-sync addons odoo-install odoo-update odoo-modules \
+        addons-sync addons odoo-install odoo-update odoo-modules pydeps-check pydeps-sync \
         require-modules require-backups require-restore test verify host-verify \
         edge-up edge-down edge-restart edge-logs edge-ps edge-verify edge-nuke \
         db-up db-down db-restart db-logs db-ps db-verify db-nuke \
@@ -210,6 +210,16 @@ addons-sync: ## Clona/actualiza los addons desde addons/addons.txt
 
 addons: ## Muestra el estado de los addons
 	@. scripts/lib/ui.sh; ui_run "addons" scripts/addons.sh status
+
+# --- Dependencias Python de los addons ---
+# check es puro host (corre en 'make test'); sync necesita Docker para resolver
+# versión contra la imagen base. Ninguno de los dos rebuildea la imagen.
+
+pydeps-check: ## Verifica que requirements.txt cubra las external_dependencies declaradas
+	scripts/pydeps.sh check
+
+pydeps-sync: ## Pinea en requirements.txt lo que declaren los addons y todavía falte
+	scripts/pydeps.sh sync
 
 # --- Instalar/actualizar módulos ---
 # El one-off corre -i/-u directo contra postgres:5432, no PgBouncer. El up -d va
