@@ -30,12 +30,13 @@ state/meta/*
 repos/
 
 # --- Addons ---
-# Bind-mount desde el host. El manifiesto es local a cada checkout —igual que
-# .env, difiere de verdad entre dev/staging/producción— y no se versiona;
-# solo su plantilla y el esqueleto de categorías sí.
+# Bind-mount desde el host. El manifiesto y los pines Python son locales a cada
+# checkout —igual que .env, difieren de verdad entre dev/staging/producción— y no
+# se versionan; solo sus plantillas y el esqueleto de categorías sí.
 
 addons/*
 !addons/addons.txt.example
+!addons/requirements.txt.example
 !addons/custom-addons/
 addons/custom-addons/*
 !addons/custom-addons/.gitkeep

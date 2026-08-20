@@ -5,6 +5,10 @@ services:
   odoo:
     build:
       context: ./odoo
+      # El requirements.txt lo escribe pydeps-sync desde los manifiestos y no se
+      # versiona: vive con los addons, fuera del contexto de build.
+      additional_contexts:
+        addons: ../addons
     # Tag por proyecto: el nombre de imagen es global al daemon, así que un tag
     # fijo deja que el build de un stack pise la imagen que corre el otro.
     image: local/odoo:${COMPOSE_PROJECT_NAME}

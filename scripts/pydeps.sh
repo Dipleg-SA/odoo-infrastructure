@@ -9,7 +9,17 @@ shopt -s nullglob
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 . scripts/lib/ui.sh
 
-REQUIREMENTS="docker/odoo/requirements.txt"
+REQUIREMENTS="addons/requirements.txt"
+
+# --- Bootstrap desde la plantilla ---
+# No se versiona —es local al deployment, como addons.txt—, así que se copia una vez.
+
+require_requirements() {
+  if [ ! -f "$REQUIREMENTS" ]; then
+    ui_bad "no existe $REQUIREMENTS" "cp $REQUIREMENTS.example $REQUIREMENTS — y después 'make pydeps-sync'"
+    exit 1
+  fi
+}
 
 # --- Manifiestos ---
 # Una fila por __manifest__.py bajo cada categoría; el layout lo fija entrypoint.sh.
@@ -71,10 +81,11 @@ comparar_nombres() {
   ORPHANS=$(comm -13 <(printf '%s' "$declared") <(printf '%s' "$pinned"))
 }
 
-# --- check: sin red, sin Docker — corre en 'make test' ---
+# --- check: sin red, sin Docker ---
 # Falla si requirements.txt no cubre lo declarado en los manifiestos; avisa si sobran pines.
 
 cmd_check() {
+  require_requirements
   comparar_nombres
   if [ -n "$MISSING" ]; then
     ui_bad "pydeps check: faltan en $REQUIREMENTS" "$(tr '\n' ' ' <<<"$MISSING")"
@@ -91,6 +102,7 @@ cmd_check() {
 cmd_sync() {
   local missing image reporte resueltos pedidos resueltos_n
 
+  require_requirements
   comparar_nombres
   missing="$MISSING"
   if [ -z "$missing" ]; then

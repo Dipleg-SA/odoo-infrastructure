@@ -3,10 +3,13 @@
 
 FROM odoo:19.0-20260810
 
-COPY requirements.txt /tmp/requirements.txt
+# --- Pines de los addons ---
+# Contexto aparte porque son locales al deployment; el corchete los hace opcionales.
+
+COPY --from=addons requirements.tx[t] /tmp/
 
 USER root
-RUN pip install --no-cache-dir --break-system-packages -r /tmp/requirements.txt && rm /tmp/requirements.txt
+RUN if [ -s /tmp/requirements.txt ]; then pip install --no-cache-dir --break-system-packages -r /tmp/requirements.txt; fi && rm -f /tmp/requirements.txt
 
 COPY entrypoint.sh /usr/local/bin/odoo-entrypoint.sh
 RUN chmod +x /usr/local/bin/odoo-entrypoint.sh

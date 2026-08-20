@@ -19,7 +19,7 @@ crear_checkout() {
   cp "$REPO_ROOT/scripts/lib/ui.sh" "$root/scripts/lib/"
   echo "FROM odoo:19.0-20260810" > "$root/docker/odoo/Dockerfile"
   echo "for category in enterprise custom-addons oca third-party; do" > "$root/docker/odoo/entrypoint.sh"
-  : > "$root/docker/odoo/requirements.txt"
+  : > "$root/addons/requirements.txt"
   printf '%s' "$root"
 }
 
@@ -38,7 +38,7 @@ declarar_modulo() {
   fi
 }
 
-pinear() { printf '%s\n' "$2" >> "$1/docker/odoo/requirements.txt"; }
+pinear() { printf '%s\n' "$2" >> "$1/addons/requirements.txt"; }
 
 check()      { (cd "$1" && ./scripts/pydeps.sh check 2>&1); }
 check_code() { (cd "$1" && ./scripts/pydeps.sh check >/dev/null 2>&1; echo $?); }
@@ -121,7 +121,7 @@ igual "sale con 0" "0" "$(sync_code "$ROOT" "$STUB")"
 contiene "invocó la imagen del Dockerfile" "odoo:19.0-20260810" "$(cat "$STUB/llamadas")"
 contiene "y le pidió el paquete que faltaba" "phonenumbers" "$(cat "$STUB/llamadas")"
 igual "quedó pineado con la versión resuelta" "0" \
-  "$(grep -qx 'phonenumbers==8.13.42' "$ROOT/docker/odoo/requirements.txt"; echo $?)"
+  "$(grep -qx 'phonenumbers==8.13.42' "$ROOT/addons/requirements.txt"; echo $?)"
 rm -rf "$STUB"
 
 # =====================================================================
@@ -140,9 +140,26 @@ sync_code "$ROOT" "$STUB" >/dev/null
 no_contiene "no le pidió a Docker resolver lo ya pineado" "requests" \
   "$(grep -o 'requests' "$STUB/llamadas" || true)"
 igual "el pin viejo de requests sigue intacto" "0" \
-  "$(grep -qx 'requests==2.28.0' "$ROOT/docker/odoo/requirements.txt"; echo $?)"
+  "$(grep -qx 'requests==2.28.0' "$ROOT/addons/requirements.txt"; echo $?)"
 igual "y el nuevo de phonenumbers se agregó" "0" \
-  "$(grep -qx 'phonenumbers==8.13.42' "$ROOT/docker/odoo/requirements.txt"; echo $?)"
+  "$(grep -qx 'phonenumbers==8.13.42' "$ROOT/addons/requirements.txt"; echo $?)"
+rm -rf "$STUB"
+
+# =====================================================================
+titulo "falta el archivo — aborta y dice cómo bootstrapearlo"
+# =====================================================================
+
+# No se versiona: un checkout nuevo tiene la plantilla y no el archivo. Sin este
+# corte, check leería cero pines y diría que está todo cubierto.
+ROOT=$(crear_checkout caso8)
+rm -f "$ROOT/addons/requirements.txt"
+declarar_modulo "$ROOT" custom-addons mi_modulo phonenumbers
+STUB=$(mktemp -d)
+
+igual "check sale con 1" "1" "$(check_code "$ROOT")"
+contiene "y nombra el cp" "cp addons/requirements.txt.example addons/requirements.txt" "$(check "$ROOT")"
+igual "sync sale con 1" "1" "$(sync_code "$ROOT" "$STUB")"
+igual "y no invocó Docker" "1" "$([ -f "$STUB/llamadas" ]; echo $?)"
 rm -rf "$STUB"
 
 resumen

@@ -321,8 +321,9 @@ Segundo, el token de la fase 1, que se pega abajo. Lo piden los repos privados d
 ### Comandos
 
 ```bash
-echo "# 1 → Bootstrapear el manifiesto desde su plantilla"
+echo "# 1 → Bootstrapear el manifiesto y los pines desde sus plantillas"
 cp addons/addons.txt.example addons/addons.txt
+cp addons/requirements.txt.example addons/requirements.txt
 ${EDITOR:-vi} addons/addons.txt
 ```
 
@@ -348,7 +349,7 @@ echo "# 5 → Construir la imagen de Odoo"
 docker compose build odoo && echo "OK: imagen construida"
 ```
 
-**El build no clona nada.** Instala las dependencias Python de `docker/odoo/requirements.txt` (ver `make pydeps-check`/`pydeps-sync`) y copia el entrypoint, nada más. La consecuencia buscada: desplegar un cambio de módulo no vuelve a requerir un rebuild.
+**El build no clona nada.** Instala las dependencias Python de `addons/requirements.txt` si el archivo existe —lo escribe `make pydeps-sync`, no se versiona— y copia el entrypoint, nada más. La consecuencia buscada: desplegar un cambio de módulo no vuelve a requerir un rebuild.
 
 ### Verificación
 

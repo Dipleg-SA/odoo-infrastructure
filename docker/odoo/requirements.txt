@@ -1,3 +1,0 @@
-# --- Pines de dependencias Python ---
-# Lo escribe 'make pydeps-sync' desde external_dependencies de los manifiestos — no
-# editar a mano. Cambiarlo es lo único, junto al entrypoint, que dispara un rebuild.

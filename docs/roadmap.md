@@ -194,7 +194,7 @@ infrastructure-odoo/
 │   ├── compose.observability.yaml     capa · prometheus + loki + grafana + alloy
 │   │
 │   ├── dnsmasq/Dockerfile
-│   ├── odoo/{Dockerfile, entrypoint.sh, requirements.txt}
+│   ├── odoo/{Dockerfile, entrypoint.sh}
 │   └── postgres/Dockerfile
 │
 ├── docs/
@@ -215,7 +215,7 @@ infrastructure-odoo/
 └── state/{meta,textfile}/.gitkeep
 ```
 
-No versionado, y propio de cada checkout: `.env`, `secrets/`, `addons/<categoría>/<repo>`, `addons/.repos/*.git`, y `state/*` salvo los `.gitkeep`.
+No versionado, y propio de cada checkout: `.env`, `secrets/`, `addons/addons.txt`, `addons/requirements.txt`, `addons/<categoría>/<repo>`, `addons/.repos/*.git`, y `state/*` salvo los `.gitkeep`.
 
 ## Layout de deployment
 
