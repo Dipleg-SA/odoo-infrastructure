@@ -74,7 +74,7 @@ nuevo grafana_admin_password < <(genpass) || true
 
 # --- Password del rol de monitoreo de Postgres ---
 # Rol propio de solo lectura (pg_monitor): el agente que tiene el socket de Docker
-# y los logs no porta la credencial de la aplicación. El rol se crea en INSTALL.md.
+# y los logs no porta la credencial de la aplicación. El rol se crea en levantar-produccion.md.
 
 nuevo postgres_exporter_password < <(genpass) || true
 

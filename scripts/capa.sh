@@ -156,18 +156,65 @@ volumenes_de_capa() {
   done
 }
 
+# --- Nombre declarado → nombre real ---
+# Compose prefija con el proyecto: 'pgdata' en el archivo es 'production_pgdata' en Docker.
+# El mapa sale de la composición resuelta, que ya aplicó prefijo, 'name:' explícito y 'external'.
+
+cargar_mapa_volumenes() {
+  [ -n "${MAPA_VOLUMENES+x}" ] && return 0
+  MAPA_VOLUMENES=$(docker compose config 2>/dev/null | awk '
+    /^volumes:/ {enbloque=1; next}
+    enbloque && /^[a-zA-Z]/ {enbloque=0}
+    enbloque && /^  [a-zA-Z0-9_.-]+:/ {decl=$1; sub(/:$/,"",decl); next}
+    enbloque && decl != "" && /^    name:/ {print decl, $2; decl=""}
+  ')
+}
+
+nombres_reales() {
+  local decl real
+  for decl in $1; do
+    real=$(printf '%s\n' "$MAPA_VOLUMENES" | awk -v d="$decl" '$1==d {print $2; exit}')
+    [ -n "$real" ] && printf '%s\n' "$real"
+  done
+}
+
+# --- Nuke de una capa ---
+# Borra por nombre real: 'docker volume rm -f' sobre un nombre inexistente sale con 0 en
+# silencio, así que usar el declarado dejaría los datos en disco y reportaría éxito igual.
+
 nuke_capa() {
-  local vols imgs
-  vols=$(volumenes_de_capa "$CAPA" | tr '\n' ' '); vols="${vols% }"
-  echo "Se van a borrar de la capa $CAPA: containers ($presentes), imágenes, y volúmenes (${vols:-ninguno})."
+  local decl reales="" imgs err
+  decl=$(volumenes_de_capa "$CAPA" | tr '\n' ' '); decl="${decl% }"
+
+  if [ -n "$decl" ]; then
+    cargar_mapa_volumenes
+    reales=$(nombres_reales "$decl" | tr '\n' ' '); reales="${reales% }"
+    if [ -z "$reales" ]; then
+      ui_bad "no se pudo resolver el nombre real de los volúmenes ($decl)" \
+             "¿docker responde? sin eso el nuke borraría los containers y dejaría los datos"
+      return 1
+    fi
+  fi
+
+  echo "Se van a borrar de la capa $CAPA: containers ($presentes), imágenes, y volúmenes (${reales:-ninguno})."
   echo "addons/ y state/ NO se tocan acá — eso es 'make nuke' (global), no un nuke por capa."
   ui_confirm_nuke || return 1
 
   imgs=$(docker compose images -q $presentes 2>/dev/null | sort -u | tr '\n' ' '); imgs="${imgs% }"
 
   docker compose rm -sf $presentes || return $?
-  if [ -n "$vols" ]; then docker volume rm -f $vols || return $?; fi
-  if [ -n "$imgs" ]; then docker rmi -f $imgs || return $?; fi
+  if [ -n "$reales" ]; then docker volume rm -f $reales || return $?; fi
+
+  # --- Imágenes: aviso, nunca fallo ---
+  # Una imagen compartida con otra capa (restore-db comparte la de postgres) no se puede
+  # borrar mientras la otra corra. Es reconstruible con un build: no vuelve fallido a un
+  # nuke que ya borró lo irrecuperable, que es lo que el exit code tiene que reportar.
+
+  if [ -n "$imgs" ]; then
+    if ! err=$(docker rmi -f $imgs 2>&1); then
+      ui_warn "alguna imagen quedó sin borrar (¿en uso por otra capa?)" "$(printf '%s' "$err" | head -1)"
+    fi
+  fi
   return 0
 }
 

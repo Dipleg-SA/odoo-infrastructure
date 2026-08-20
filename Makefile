@@ -61,8 +61,8 @@ test: ## Corre los tests del repo, sin Docker ni red
 	  [ "$$ok" -eq "$$total" ]
 
 # --- Verificación del deploy ---
-# scripts/verify.sh es dueño único de qué se chequea y qué se espera; INSTALL.md solo
-# nombra el target. verify (sin sufijo) dice en qué estado está el servidor entero.
+# scripts/verify.sh es dueño único de qué se chequea y qué se espera; docs/runbooks/
+# solo nombra el target. verify (sin sufijo) dice en qué estado está el servidor entero.
 
 verify: ## Verifica el deploy completo — o <capa>-verify: host|edge|db|odoo|backups|observability
 	scripts/verify.sh all
@@ -275,7 +275,7 @@ require-restore:
 	  { ui_bad "este stack no incluye la capa de restore" "revisar COMPOSE_FILE en .env" >&2; exit 2; }
 
 # --- Backups ---
-# El restore no es un target — necesita un timestamp/snapshot según el incidente; ver docs/restore.md.
+# El restore no es un target — necesita un timestamp/snapshot según el incidente; ver docs/runbooks/backup-restore/.
 # backup.sh ya imprime su propio ▶/✓/✗: el target no lo duplica.
 
 backup: require-backups ## Corre el backup diario

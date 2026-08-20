@@ -14,8 +14,14 @@ case "$*" in
   *"ps -q"*)             archivo=ps-q ;;
   *" ps "*)              archivo=ps ;;
   *" port "*)            archivo=port ;;
+  *"images -q"*)         archivo=imagenes ;;
+  rmi*)                  archivo=rmi ;;
   *)                     archivo=salida ;;
 esac
 
 [ -f "$STUB_DIR/$archivo" ] && cat "$STUB_DIR/$archivo"
+
+# Exit code: el global ($STUB_DIR/exit), o uno propio del subcomando si el caso lo
+# preparó — hace falta para fallar UN paso de una secuencia y no la secuencia entera.
+[ -f "$STUB_DIR/exit-$archivo" ] && exit "$(cat "$STUB_DIR/exit-$archivo")"
 exit "$(cat "$STUB_DIR/exit" 2>/dev/null || echo 0)"

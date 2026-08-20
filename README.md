@@ -26,7 +26,7 @@ cp .env.prod.example .env   # o .env.stag.example / .env.dev.example
 make secrets-init
 ```
 
-El recorrido completo —qué cuentas hacen falta, en qué orden se levanta cada capa y cómo se verifica— está en [`INSTALL.md`](INSTALL.md). Son once fases, cada una con su verificación ejecutable.
+El recorrido completo —qué cuentas hacen falta, en qué orden se levanta cada capa y cómo se verifica— está en [`docs/runbooks/entorno/levantar-produccion.md`](docs/runbooks/entorno/levantar-produccion.md). Nueve fases, cada una con su verificación ejecutable.
 
 ```bash
 make verify     # en qué estado está el servidor
@@ -37,13 +37,17 @@ make up         # levantar todo
 
 | Documento | Responde |
 |---|---|
-| [`INSTALL.md`](INSTALL.md) | ¿Cómo lo pongo en marcha por primera vez? |
 | [`PRINCIPLES.md`](PRINCIPLES.md) | ¿Qué reglas sigue este stack, y por qué? |
 | [`docs/architecture.md`](docs/architecture.md) | ¿Por qué esta herramienta y no otra? |
-| [`docs/operations.md`](docs/operations.md) | ¿Qué comando corro en el día a día? |
-| [`docs/addons.md`](docs/addons.md) | ¿Cómo llega un módulo a cada entorno? |
-| [`docs/restore.md`](docs/restore.md) | ¿Cómo recupero la base y los adjuntos? |
-| [`docs/troubleshooting.md`](docs/troubleshooting.md) | Se rompió algo, ¿qué hago? |
+| [`docs/stacks.md`](docs/stacks.md) | ¿Qué comparte cada entorno, y qué se decidió para staging/development? |
+| [`docs/roadmap.md`](docs/roadmap.md) | ¿Cómo se llegó hasta acá, por etapas? |
+| [`docs/runbooks/entorno/`](docs/runbooks/entorno/) | ¿Cómo levanto producción, staging o desarrollo? |
+| [`docs/runbooks/modulos/`](docs/runbooks/modulos/) | ¿Cómo creo o modifico un módulo? |
+| [`docs/runbooks/validacion/`](docs/runbooks/validacion/) | ¿Cómo confirmo que un cambio anduvo? |
+| [`docs/runbooks/backup-restore/`](docs/runbooks/backup-restore/) | ¿Cómo hago o recupero un backup? |
+| [`docs/runbooks/operacion/`](docs/runbooks/operacion/) | ¿Cómo opero una capa del stack en el día a día? |
+| [`docs/runbooks/credenciales/`](docs/runbooks/credenciales/) | ¿Cómo roto una credencial? |
+| [`docs/runbooks/troubleshooting/`](docs/runbooks/troubleshooting/) | Se rompió algo, ¿qué hago? |
 
 ## Cómo está pensado
 

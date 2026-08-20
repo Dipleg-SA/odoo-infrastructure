@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Verificación del deploy, una capa por subcomando. Dueño único de qué se chequea
-# y de qué se espera: INSTALL.md nombra el comando, los valores viven acá.
+# y de qué se espera: docs/runbooks/ nombra el comando, los valores viven acá.
 
 # Sin -e a propósito: un verificador que aborta en el primer fallo esconde el resto
 # del diagnóstico, que es justo para lo que se lo corre.
@@ -300,7 +300,7 @@ v_edge() {
 
   if declarado dnsmasq; then
     omitir "la LAN usa dnsmasq como resolver" \
-      "no verificable desde el servidor — correr el chequeo 4b de INSTALL.md en un equipo de la LAN"
+      "no verificable desde el servidor — correr el chequeo de docs/runbooks/entorno/levantar-produccion.md fase 3 en un equipo de la LAN"
   fi
 
   # --- Config renderizada ---

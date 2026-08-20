@@ -31,6 +31,13 @@ Lo que fija el número no es una preferencia: **la ventana de la base tiene que 
 
 **La capa es exclusiva de producción.** Los entornos no productivos no la incluyen. No es una simplificación: comparten el repositorio remoto, la stanza y los archivos de estado del host, así que la corrida de un entorno descartable escribiría la marca de éxito que apaga la alerta del entorno real. Y no hay nada que proteger — un stack que se destruye después de usarse no acumula datos.
 
+| Qué | Herramienta | Dónde | Se restaura con |
+|---|---|---|---|
+| Base de datos (cluster completo) | pgBackRest | R2, prefijo `pgbackrest/` | servicio `restore-db` (misma imagen que `postgres`, uid 999) |
+| Filestore (adjuntos) | restic | R2, prefijo `restic/` | servicio `restore-files` (uid 100:101, monta `odoo-data` rw) |
+
+**pgBackRest restaura el cluster entero**, no una base suelta: no existe "restaurar solo la tabla X" ni "solo la base `odoo`". Y **los dos servicios de restore duermen** (`entrypoint: sleep infinity`) — levantarlos no restaura nada, son contenedores donde el operador ejecuta los comandos a mano; están fuera de `make up` por `profiles: [restore]`.
+
 ### Consistencia entre base y filestore
 
 Los adjuntos viven partidos: la fila en la base, el archivo en el filestore. **Un restore desalineado es la falla silenciosa de este sistema** — la base arranca sana y el problema aparece meses después, cuando alguien abre un documento viejo.

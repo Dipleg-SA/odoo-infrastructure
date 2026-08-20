@@ -84,7 +84,7 @@ Estos valores están duplicados por necesidad —hay formatos que no interpolan 
 - **Los secretos son archivos, nunca variables de entorno** — una env var queda visible en `docker inspect`. Compose fuera de Swarm **ignora `uid`/`gid`/`mode`** de los secrets de archivo, así que un `600` root-owned deja sin lectura a cualquier contenedor no-root. El mapa de GIDs esperados es dueño único de `scripts/secrets-perms.sh`; verificá el usuario real de la imagen, muchas corren distroless.
 - **Parametrizá por `.env` solo lo que se usa dentro de un `compose.*.yaml`.** Cuando el valor vive en el archivo de config propio de una herramienta, tiene que llegar por el mecanismo que *esa herramienta* ofrezca: Compose no interpola dentro de archivos bind-mounted. Loki necesita `-config.expand-env=true` **y** un bloque `environment:`, porque expande desde su propio entorno. nginx sustituye con `envsubst` sobre `/etc/nginx/templates`, y `NGINX_ENVSUBST_FILTER` acota qué variables entran — sin él, una env var homónima de una de nginx (`$host`, `$status`) se la come la sustitución.
 - **Nunca archivos `.example` paralelos** a un config: son una copia que se desincroniza. Si el valor no se puede parametrizar, se elimina o se versiona literal.
-- **`scripts/verify.sh` es dueño único de qué se chequea y qué se espera.** `INSTALL.md` nombra el comando; los valores esperados no se duplican en la documentación.
+- **`scripts/verify.sh` es dueño único de qué se chequea y qué se espera.** `docs/runbooks/` nombra el comando; los valores esperados no se duplican en la documentación.
 - `docker compose port` devuelve `invalid IP:0` con exit 0 para un puerto **no** publicado — no cadena vacía.
 - `alloy validate` solo valida sintaxis: acepta constantes inexistentes con exit 0. Para probar que una referencia resuelve hay que ejecutar Alloy y leer su API.
 - `dockerd` no arranca si `daemon.json` tiene claves desconocidas, incluidos comentarios simulados.
@@ -94,11 +94,10 @@ Estos valores están duplicados por necesidad —hay formatos que no interpolan 
 | Archivo | Contenido |
 |---|---|
 | `PRINCIPLES.md` | las reglas del stack, en imperativo, con el mecanismo que las implementa |
-| `INSTALL.md` | puesta en marcha; cuatro bloques por fase (Objetivo · A mano · Comandos · Verificación) |
 | `docs/architecture.md` | por qué esta herramienta y no otra, y qué se descartó |
 | `docs/stacks.md` | qué comparte cada entorno y las decisiones tomadas para staging y development |
 | `docs/roadmap.md` | plan de implementación por etapas |
-| `docs/operations.md` · `restore.md` · `troubleshooting.md` · `addons.md` | operación |
+| `docs/runbooks/` | manual de procedimientos: un archivo por procedimiento, genérico. Dos plantillas — Cuándo se usa · Objetivo · A mano · Comandos · Verificación para lo deliberado; Síntoma · Diagnóstico · Fix para troubleshooting. Subcarpetas: `entorno/` · `modulos/` · `validacion/` · `backup-restore/` · `operacion/` · `credenciales/` · `troubleshooting/{edge,datos,odoo,backups-y-dr,observability}/` |
 
 El contexto histórico, los incidentes y las justificaciones largas van a `docs/`, **nunca inline** en el código.
 

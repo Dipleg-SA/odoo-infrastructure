@@ -262,7 +262,7 @@ Son dos y no una, porque las capas son distintas: `require-backups` cuelga de `b
 
 # Parte III — Pendientes
 
-**El resolver de la LAN no lo decide este repositorio.** `dnsmasq` resuelve el hostname para quien le pregunte, pero quién le pregunta lo reparte el DHCP del router. El chequeo que parecía cubrirlo usaba `dig … @servidor`, que prueba que dnsmasq contesta y no que alguien lo use: hoy es un prerrequisito escrito de `INSTALL.md`, un `dig` sin `@` desde un equipo de la LAN, y un `omitir` explícito en `verify.sh` que dice que desde el servidor no se puede verificar. **Sigue sin haber mecanismo**, porque no hay ninguno del lado del stack — lo que hay es que dejó de dar verde por accidente.
+**El resolver de la LAN no lo decide este repositorio.** `dnsmasq` resuelve el hostname para quien le pregunte, pero quién le pregunta lo reparte el DHCP del router. El chequeo que parecía cubrirlo usaba `dig … @servidor`, que prueba que dnsmasq contesta y no que alguien lo use: hoy es un prerrequisito escrito en `docs/runbooks/entorno/levantar-produccion.md`, un `dig` sin `@` desde un equipo de la LAN, y un `omitir` explícito en `verify.sh` que dice que desde el servidor no se puede verificar. **Sigue sin haber mecanismo**, porque no hay ninguno del lado del stack — lo que hay es que dejó de dar verde por accidente.
 
 **El workflow de CI sigue sin poder existir.** Hay 105 chequeos de `make test` más `bash -n` y shellcheck listos para correr en cada push, y ningún lugar donde correrlos: esta rama no tiene remoto propio, y el `origin` actual guarda la identidad del deployment que la rama elimina. Es una decisión pendiente sobre dónde vive el repositorio, no trabajo técnico pendiente.
 
