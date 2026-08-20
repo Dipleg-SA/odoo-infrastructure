@@ -18,6 +18,7 @@ crear_checkout() {
   cp "$REPO_ROOT/scripts/pydeps.sh" "$root/scripts/"
   cp "$REPO_ROOT/scripts/lib/ui.sh" "$root/scripts/lib/"
   echo "FROM odoo:19.0-20260810" > "$root/docker/odoo/Dockerfile"
+  echo "for category in enterprise custom-addons oca third-party; do" > "$root/docker/odoo/entrypoint.sh"
   : > "$root/docker/odoo/requirements.txt"
   printf '%s' "$root"
 }

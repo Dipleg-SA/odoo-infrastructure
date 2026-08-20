@@ -16,7 +16,7 @@ REQUIREMENTS="docker/odoo/requirements.txt"
 
 manifest_files() {
   local category
-  for category in enterprise custom-addons oca third-party; do
+  for category in $(sed -n 's/^for category in \(.*\); do/\1/p' docker/odoo/entrypoint.sh); do
     find "addons/$category" -name __manifest__.py 2>/dev/null || true
   done
 }
@@ -60,34 +60,39 @@ pinned_names() {
   grep -vE '^[[:space:]]*(#|$)' "$REQUIREMENTS" | sed -E 's/^([A-Za-z0-9._-]+).*/\1/' | norm | sort -u
 }
 
-missing_names() { comm -23 <(declared_names) <(pinned_names); }
-orphan_names()  { comm -13 <(declared_names) <(pinned_names); }
+# --- Comparación declarado vs pineado ---
+# Un solo cómputo de cada lado; deja MISSING/ORPHANS para no recalcularlos una segunda vez.
+
+comparar_nombres() {
+  local declared pinned
+  declared=$(declared_names) || true
+  pinned=$(pinned_names) || true
+  MISSING=$(comm -23 <(printf '%s' "$declared") <(printf '%s' "$pinned"))
+  ORPHANS=$(comm -13 <(printf '%s' "$declared") <(printf '%s' "$pinned"))
+}
 
 # --- check: sin red, sin Docker — corre en 'make test' ---
+# Falla si requirements.txt no cubre lo declarado en los manifiestos; avisa si sobran pines.
 
 cmd_check() {
-  local missing orphans
-  missing=$(missing_names)
-  if [ -n "$missing" ]; then
-    ui_bad "pydeps check: faltan en $REQUIREMENTS" "$(tr '\n' ' ' <<<"$missing")"
+  comparar_nombres
+  if [ -n "$MISSING" ]; then
+    ui_bad "pydeps check: faltan en $REQUIREMENTS" "$(tr '\n' ' ' <<<"$MISSING")"
     return 1
   fi
   ui_ok "pydeps check: $REQUIREMENTS cubre lo que declaran los addons"
-  orphans=$(orphan_names)
-  [ -n "$orphans" ] && ui_warn "pineados de más, ningún addon los declara" "$(tr '\n' ' ' <<<"$orphans")"
+  [ -n "$ORPHANS" ] && ui_warn "pineados de más, ningún addon los declara" "$(tr '\n' ' ' <<<"$ORPHANS")"
   return 0
 }
 
 # --- sync: resuelve contra la imagen base y pinea lo que falte ---
-# --no-deps a propósito: pinea solo lo que un addon declara. Las transitivas las
-# resuelve pip en build time como siempre — un lockfile completo (con transitivas
-# congeladas) pediría pip-tools o poetry, dependencia nueva por una precisión
-# que hoy nadie pidió.
+# --no-deps a propósito: pinea solo lo declarado, las transitivas las resuelve pip en build time.
 
 cmd_sync() {
-  local missing image reporte orphans resueltos pedidos resueltos_n
+  local missing image reporte resueltos pedidos resueltos_n
 
-  missing=$(missing_names)
+  comparar_nombres
+  missing="$MISSING"
   if [ -z "$missing" ]; then
     ui_ok "pydeps sync: nada nuevo que pinear"
   else
@@ -95,9 +100,8 @@ cmd_sync() {
     pedidos=$(wc -l <<<"$missing" | tr -d ' ')
     ui_start "pydeps sync: resolviendo $pedidos paquete(s) contra $image"
 
-    # --ignore-installed: sin esto, un paquete que ya viene del sistema operativo de
-    # la imagen base (ej. vía apt) queda "already satisfied" y el reporte lo omite —
-    # se pinea igual, porque un bump de la imagen base puede dejar de traerlo.
+    # --- --ignore-installed ---
+    # Sin esto, un paquete que ya trae la imagen base (vía apt) queda "satisfied" y no se pinea.
 
     if ! reporte=$(docker run --rm "$image" \
         pip install --break-system-packages --dry-run --quiet --no-deps --ignore-installed \
@@ -124,8 +128,7 @@ for item in data["install"]:
     fi
   fi
 
-  orphans=$(orphan_names)
-  [ -n "$orphans" ] && ui_warn "pineados de más, ningún addon los declara" "$(tr '\n' ' ' <<<"$orphans")"
+  [ -n "$ORPHANS" ] && ui_warn "pineados de más, ningún addon los declara" "$(tr '\n' ' ' <<<"$ORPHANS")"
   return 0
 }
 

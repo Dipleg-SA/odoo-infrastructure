@@ -14,7 +14,7 @@ El servidor está sano — alguien borró registros, una migración salió mal �
 
 Base y filestore restaurados a un timestamp elegido, consistentes entre sí, con el archivado de WAL funcionando de nuevo al terminar.
 
-## Antes de tocar nada
+## A mano
 
 Tres datos, en este orden:
 
@@ -92,7 +92,7 @@ El `--target /` es correcto, no un error de tipeo: restic guarda rutas absolutas
 docker compose up -d
 ```
 
-## Verificación post-restore
+## Verificación
 
 Las tres, no una. Cada una cubre una falla que las otras no ven:
 
@@ -104,7 +104,7 @@ Las tres, no una. Cada una cubre una falla que las otras no ven:
    ```
    Salida esperada: `referenciados: N | faltantes: 0`, exit `0`. Cada línea `FALTA:` es un adjunto roto — si aparecen, el snapshot de restic elegido es **anterior** al punto de la base.
 
-## Después de un restore real
+### Después de un restore real
 
 1. **Sacar un backup full inmediatamente** (`make backup-full`, ver [realizar-backup](realizar-backup.md)): una promoción tras PITR abre una timeline nueva en Postgres, y el punto de partida limpio para todo lo que viene es una full sobre la timeline actual.
 2. **Confirmar que el archivado volvió a andar:**

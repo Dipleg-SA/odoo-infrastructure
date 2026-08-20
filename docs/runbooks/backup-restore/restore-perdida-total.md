@@ -14,7 +14,7 @@ Servidor nuevo, disco vacío. Todo el estado tiene que venir de R2. Para un erro
 
 El servidor reconstruido desde cero, con la base y el filestore al último punto disponible en R2, y el archivado funcionando de nuevo al terminar.
 
-## Antes de tocar nada
+## A mano
 
 **La trampa de este escenario:** si seguís [levantar-produccion](../entorno/levantar-produccion.md) de punta a punta, el entrypoint de Odoo inicializa una base nueva (`-i base`) en la fase Aplicación y te encontrás restaurando sobre un cluster que ya no está vacío. **El restore va antes de arrancar Odoo.**
 
@@ -55,7 +55,7 @@ El `--target /` es correcto: restic guarda rutas absolutas, el snapshot contiene
 
 **6. Completar las fases Protección y Observación, y el cierre.** En Protección, `restic init` va a decir `config file already exists` — es lo correcto, el repo ya está; **no lo fuerces**.
 
-## Verificación post-restore
+## Verificación
 
 Las tres, no una. Cada una cubre una falla que las otras no ven:
 
@@ -67,7 +67,7 @@ Las tres, no una. Cada una cubre una falla que las otras no ven:
    ```
    Salida esperada: `referenciados: N | faltantes: 0`, exit `0`.
 
-## Después de un restore real
+### Después de un restore real
 
 1. **Sacar un backup full inmediatamente** (`make backup-full`, ver [realizar-backup](realizar-backup.md)).
 2. **Confirmar que el archivado volvió a andar:**

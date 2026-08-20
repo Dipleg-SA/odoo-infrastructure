@@ -23,20 +23,25 @@ compose_de() {
   esac
 }
 
-# --- Servicios canónicos por capa ---
-# Deriva de compose_de(): lee el bloque 'services:' del/los compose.*.yaml de la capa.
+# --- Bloque de nivel superior ---
+# Nombres bajo una clave YAML de nivel superior ('services:' o 'volumes:') de un compose.
 
-servicios_de() {
-  local capa="$1" f
-  for f in $(compose_de "$capa"); do
+bloque_yaml() {
+  local clave="$1" f; shift
+  for f in "$@"; do
     [ -f "$f" ] || continue
-    awk '
-      /^services:/ {enbloque=1; next}
+    awk -v clave="$clave:" '
+      $0==clave {enbloque=1; next}
       enbloque && /^[a-zA-Z]/ {enbloque=0}
       enbloque && /^  [a-zA-Z0-9_.-]+:/ {sub(/:.*/,""); sub(/^  /,""); print}
     ' "$f"
   done
 }
+
+# --- Servicios canónicos por capa ---
+# Deriva de compose_de(): lee el bloque 'services:' del/los compose.*.yaml de la capa.
+
+servicios_de() { bloque_yaml services $(compose_de "$1"); }
 
 # --- Servicios de este stack ---
 # Resuelve la composición real una sola vez y la cachea: el costo es el mismo para todas las capas.
@@ -144,21 +149,10 @@ fi
 # --- Volúmenes dueños de la capa ---
 # Lee 'volumes:' de compose_de(); un servicio que solo MONTA un volumen ajeno no lo vuelve dueño.
 
-volumenes_de_capa() {
-  local capa="$1" f
-  for f in $(compose_de "$capa"); do
-    [ -f "$f" ] || continue
-    awk '
-      /^volumes:/ {enbloque=1; next}
-      enbloque && /^[a-zA-Z]/ {enbloque=0}
-      enbloque && /^  [a-zA-Z0-9_.-]+:/ {sub(/:.*/,""); sub(/^  /,""); print}
-    ' "$f"
-  done
-}
+volumenes_de_capa() { bloque_yaml volumes $(compose_de "$1"); }
 
 # --- Nombre declarado → nombre real ---
-# Compose prefija con el proyecto: 'pgdata' en el archivo es 'production_pgdata' en Docker.
-# El mapa sale de la composición resuelta, que ya aplicó prefijo, 'name:' explícito y 'external'.
+# Compose prefija con el proyecto ('pgdata' → 'production_pgdata'); el mapa sale ya resuelto.
 
 cargar_mapa_volumenes() {
   [ -n "${MAPA_VOLUMENES+x}" ] && return 0
@@ -206,9 +200,7 @@ nuke_capa() {
   if [ -n "$reales" ]; then docker volume rm -f $reales || return $?; fi
 
   # --- Imágenes: aviso, nunca fallo ---
-  # Una imagen compartida con otra capa (restore-db comparte la de postgres) no se puede
-  # borrar mientras la otra corra. Es reconstruible con un build: no vuelve fallido a un
-  # nuke que ya borró lo irrecuperable, que es lo que el exit code tiene que reportar.
+  # Una imagen compartida (restore-db/postgres) puede seguir en uso; es reconstruible, no amerita fallar.
 
   if [ -n "$imgs" ]; then
     if ! err=$(docker rmi -f $imgs 2>&1); then

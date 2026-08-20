@@ -10,17 +10,29 @@ Un segundo stack con su propio hostname, su propio certificado y su propio túne
 
 Lleva proxy, borde, datos, aplicación y restore. **No lleva backups, observabilidad ni `dnsmasq`**: los tres son exclusivos de producción, y el `53` en `network_mode: host` no admite un segundo de ninguna forma.
 
-## A mano
+## Prerrequisitos del servidor
+
+Ya resueltos por producción, en el mismo host: la versión de Docker Engine/Compose y su arranque automático, y la rotación de logs del daemon —aplicada antes del primer contenedor de producción, así que cualquier contenedor nuevo, incluidos los de este stack, ya nace con ella—. No hay nada que instalar o reconfigurar a nivel de sistema operativo para levantar un segundo stack. Ver [levantar-producción § Prerrequisitos del servidor](levantar-produccion.md#prerrequisitos-del-servidor) si este es el primer stack que se levanta en el servidor.
+
+---
+
+## Fase 1 — Repositorio
+
+### Objetivo
+
+El repo clonado en su propio directorio, con `.env` y los 8 secrets de este entrypoint cargados y validados. Nada levantado todavía.
+
+### A mano
 
 Un **Tunnel propio** en Zero Trust, no el de producción: el token es el que distingue a los dos stacks. Mismos campos que la fase 3 de [levantar-produccion](levantar-produccion.md), con el hostname de staging en Subdomain y en **Origin Server Name**, y `https://nginx:443` como Service.
 
-Los 8 secrets se reparten en tres grupos, y solo el último es trabajo nuevo:
+Los 8 secrets se reparten en tres grupos, y solo el del Tunnel es trabajo nuevo de esta fase:
 
 | Grupo | Cuáles | De dónde salen |
 |---|---|---|
 | Generados | `postgres_password` · `pgbouncer_credentials` · `odoo_admin_password` | `secrets-init` los saca de `openssl`; no se tocan |
 | Copiados de producción | `restic_password` · `pgbackrest_r2_credentials` · `restic_r2_credentials` | Abren **su** repositorio: sin los mismos valores no hay nada que restaurar |
-| De Cloudflare | `cloudflare_api_token` · `cloudflare_tunnel_token` | El API token puede ser el mismo de producción — es la misma zona. El del Tunnel es el del Tunnel nuevo |
+| De Cloudflare | `cloudflare_api_token` · `cloudflare_tunnel_token` | El API token puede ser el mismo de producción — es la misma zona. El del Tunnel es el del Tunnel creado arriba |
 
 En `.env`, ocho claves. Las de R2 y la stanza son **las de producción**, porque de ahí lee:
 
@@ -37,7 +49,7 @@ Lo que las capas ausentes necesitarían —SMTP, alertas, retenciones— no est�
 
 > **`PG_ARCHIVE_MODE=off` es la línea que protege los backups de producción.** Staging apunta a la stanza de producción para poder restaurar; con el archivado prendido su propio Postgres le empuja WAL a ese repositorio y lo contamina desde el entorno que existe para romper cosas. Lo verifica `make db-verify`, que en un stack sin capa de backups **exige** que esté apagado.
 
-## Comandos
+### Comandos
 
 ```bash
 echo "# 1 → Clonar en su propio directorio, fijado al último tag"
@@ -68,15 +80,36 @@ sudo make secrets-perms
 set -a; . ./.env; set +a
 ```
 
+### Verificación
+
 ```bash
-echo "# 5 → Certificado propio y árbol de addons de la rama -stag"
+echo "# 5 → Prerrequisitos de host y config de este checkout"
+make host-verify
+```
+
+Repite los chequeos de host —ya deberían pasar, es el mismo servidor— y agrega los propios de este checkout: `.env` sin claves vacías, la identidad declarada del stack, y permisos y GID de los 8 secrets.
+
+---
+
+## Fase 2 — Borde y datos
+
+### Objetivo
+
+El certificado propio de staging emitido, y la base y el filestore sembrados desde el repositorio de backups de producción — el mismo restore que exige el simulacro semestral. El Tunnel ya quedó configurado en la fase 1; nginx y cloudflared todavía no arrancan — recién en la fase 4.
+
+### A mano
+
+Ninguno — el Tunnel se crea y configura en la fase 1, antes de `secrets-init`.
+
+### Comandos
+
+```bash
+echo "# 1 → Emitir el certificado propio (one-off; nginx todavía no existe)"
 make cert-issue
-make addons-sync
-docker compose build
 ```
 
 ```bash
-echo "# 6 → Sembrar la base desde el repositorio de producción"
+echo "# 2 → Sembrar la base desde el repositorio de producción"
 make restore-up
 docker compose exec restore-db pgbackrest restore --archive-mode=off
 make restore-down
@@ -85,7 +118,7 @@ make restore-down
 `--archive-mode=off` **no es opcional**: sin él el cluster restaurado hereda el `archive_command` del backup y empieza a empujar WAL a la stanza de producción.
 
 ```bash
-echo "# 7 → Sembrar el filestore, del snapshot más nuevo que la base"
+echo "# 3 → Sembrar el filestore, del snapshot más nuevo que la base"
 make restore-up
 docker compose exec restore-files restic restore latest --target / --include /data/odoo
 make restore-down
@@ -93,15 +126,62 @@ make restore-down
 
 `--include /data/odoo` acota el restore a lo único que este contenedor monta. El orden importa y es el inverso al del backup: un filestore más nuevo que la base deja archivos huérfanos, inofensivos; uno más viejo deja filas apuntando a archivos que no existen.
 
+### Verificación
+
+Ninguna aislada: nginx y cloudflared no están levantados todavía, y los dos restores fallan con exit distinto de cero si no llegaron a buen puerto. La confirmación integral —certificado vigente, `archive_mode` apagado— es parte de la fase 4.
+
+---
+
+## Fase 3 — Addons
+
+### Objetivo
+
+El árbol de módulos de la rama `-stag` en disco y la imagen de Odoo construida.
+
+### A mano
+
+Ninguno.
+
+### Comandos
+
 ```bash
-echo "# 8 → Levantar el stack completo"
+echo "# 1 → Árbol de addons y build de la imagen"
+make addons-sync
+docker compose build
+```
+
+### Verificación
+
+```bash
+echo "# 2 → Estado de cada worktree"
+make addons
+```
+
+Encabeza con la rama declarada (`<versión>-stag`) y sigue con una fila por repo del manifiesto, todas en `limpio`.
+
+---
+
+## Fase 4 — Aplicación
+
+### Objetivo
+
+El stack completo convergido con un solo `make up`, y verificado capa por capa.
+
+### A mano
+
+Ninguno.
+
+### Comandos
+
+```bash
+echo "# 1 → Levantar el stack completo"
 make up
 ```
 
-## Verificación
+### Verificación
 
 ```bash
-echo "# 9 → Estado de las capas que este stack sí tiene"
+echo "# 2 → Estado de las capas que este stack sí tiene"
 make verify
 ```
 

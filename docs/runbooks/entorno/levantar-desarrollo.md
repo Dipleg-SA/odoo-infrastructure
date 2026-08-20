@@ -10,9 +10,17 @@ Odoo sirviendo por nginx en loopback, sin túnel, sin certificados, sin backups,
 
 nginx está presente aunque no haya TLS — es lo que hace honesto al `proxy_mode = True` de `odoo.conf`: sin nadie escribiendo `X-Forwarded-*`, Odoo confía en cabeceras que no existen, y esa diferencia con producción aparece justo en lo que es difícil de reproducir.
 
-## A mano
+---
 
-Nada. Dos decisiones, las dos en `.env`:
+## Fase 1 — Repositorio
+
+### Objetivo
+
+Checkout propio por feature, con `.env` y los 3 secrets generados y con permisos. Nada levantado todavía.
+
+### A mano
+
+Nada que pegar. En `.env`, estas claves (`COMPOSE_FILE` ya viene puesto):
 
 | Clave | Valor |
 |---|---|
@@ -26,7 +34,7 @@ Nada. Dos decisiones, las dos en `.env`:
 
 `NGINX_MODE` no se declara: `compose.dev.yaml` fija la plantilla sin TLS en el entrypoint.
 
-## Comandos
+### Comandos
 
 ```bash
 echo "# 1 → Un directorio por feature, con su nombre adentro"
@@ -37,7 +45,7 @@ git clone "$REPO_URL" ~/odoo-development-$FEATURE && cd ~/odoo-development-$FEAT
 Acá **no** se fija a un tag: el checkout de desarrollo sigue la rama en la que estás trabajando. El `HEAD` detached es un guard-rail del servidor, donde nadie debería estar corrigiendo código.
 
 ```bash
-echo "# 2 → Config: las cinco claves de la tabla; COMPOSE_FILE ya viene puesto"
+echo "# 2 → Config: las claves de la tabla; COMPOSE_FILE ya viene puesto"
 cp .env.dev.example .env
 ${EDITOR:-vi} .env
 ```
@@ -53,25 +61,69 @@ sudo make secrets-perms
 `secrets-init` no imprime ningún pendiente: los tres salen de `openssl`.
 
 ```bash
-echo "# 4 → Árbol de addons de tu rama, e imagen"
+echo "# 4 → Cargar .env en la shell"
 set -a; . ./.env; set +a
+```
+
+### Verificación
+
+Ninguna aislada: los tres secrets se generan solos y no hay ninguna cuenta externa que confirmar todavía. Se verifica en conjunto en la fase 3.
+
+---
+
+## Fase 2 — Addons
+
+### Objetivo
+
+El árbol de addons de tu rama en disco y la imagen de Odoo construida.
+
+### A mano
+
+Ninguno. Si todavía no declaraste ningún repo propio en `addons/addons.txt`, ver [crear-fork](../modulos/crear-fork.md).
+
+### Comandos
+
+```bash
+echo "# 1 → Árbol de addons y build de la imagen"
 make addons-sync
 docker compose build
 ```
 
-Si todavía no declaraste ningún repo propio en `addons/addons.txt`, ver [crear-fork](../modulos/crear-fork.md).
+### Verificación
 
 ```bash
-echo "# 5 → Levantar"
+echo "# 2 → Estado de cada worktree"
+make addons
+```
+
+Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, todas en `limpio`.
+
+---
+
+## Fase 3 — Aplicación
+
+### Objetivo
+
+Odoo sirviendo por nginx en loopback, con el aislamiento entre checkouts comprobado.
+
+### A mano
+
+Ninguno.
+
+### Comandos
+
+```bash
+echo "# 1 → Levantar"
 make up
 ```
 
 La base arranca vacía: el entrypoint detecta que no está inicializada y corre `-i base` contra `postgres:5432`, no contra PgBouncer. La primera vez tarda.
 
-## Verificación
+### Verificación
 
 ```bash
-echo "# 6 → Estado, y el sitio por el proxy"
+echo "# 2 → Estado, y el sitio por el proxy"
+set -a; . ./.env; set +a    # por si esta es una shell nueva desde la fase 1
 make verify
 curl -s -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:${HTTP_PORT:-8080}/web/login"
 ```
@@ -81,7 +133,7 @@ Tiene que dar `200`. `make verify` omite el certificado, el `server_name` y el 4
 El aislamiento entre checkouts se comprueba una sola vez, con dos clonados:
 
 ```bash
-echo "# 7 → Desde el segundo checkout, con el primero levantado"
+echo "# 3 → Desde el segundo checkout, con el primero levantado"
 docker volume ls --format '{{.Name}}' | grep '^development-'
 ```
 
