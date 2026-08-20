@@ -41,7 +41,7 @@ services:
       # Solo lectura: el único camino de escritura es el servicio de restore.
       - odoo-data:/data/odoo:ro
       # Registro de addons del snapshot; lo escribe backup.sh en el host.
-      - ./state/meta:/data/meta:ro
+      - ../state/meta:/data/meta:ro
     # Verifica repo alcanzable Y frescura: cubre tanto "el backup falló" como
     # "el backup nunca corrió", que el OnFailure= por definición no puede ver.
     healthcheck:

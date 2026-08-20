@@ -29,7 +29,7 @@ docker compose run --rm \
 Tres partes, y ninguna es opcional:
 
 - **`--entrypoint odoo`** — sin él, `docker/odoo/entrypoint.sh` intercepta cualquier argumento asumiendo que es un flag de instalación (`-i`/`-u`) y le antepone `-c/-d/--db_host`, que rompe el `scaffold` (no toca la base).
-- **`-v "$PWD/addons:/scaffold"`** — el servicio monta `./addons` en `/mnt/extra-addons` **read-only** (`compose.odoo.yaml`), a propósito: en operación normal Odoo nunca escribe en los addons. Scaffoldear ahí falla con `OSError: [Errno 30] Read-only file system`. Este segundo mount del mismo directorio, en modo escritura, es solo para este comando.
+- **`-v "$PWD/addons:/scaffold"`** — el servicio monta `./addons` en `/mnt/extra-addons` **read-only** (`docker/compose.odoo.yaml`), a propósito: en operación normal Odoo nunca escribe en los addons. Scaffoldear ahí falla con `OSError: [Errno 30] Read-only file system`. Este segundo mount del mismo directorio, en modo escritura, es solo para este comando.
 - **`-u "$(id -u):$(id -g)"`** — sin él, los archivos quedan con el owner del usuario del contenedor y no vas a poder commitearlos desde el host sin `chown`.
 
 ```bash

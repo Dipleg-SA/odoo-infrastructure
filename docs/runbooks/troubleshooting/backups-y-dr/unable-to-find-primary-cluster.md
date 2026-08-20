@@ -10,4 +10,4 @@ pgBackRest se conecta a la base como rol `postgres`, que en este cluster no exis
 
 ## Fix
 
-El rol correcto llega por `PGBACKREST_PG1_USER` desde `compose.db.yaml`; si el error aparece, es que esa variable no está en el entorno del contenedor. Revisar la config antes de reintentar.
+El rol correcto llega por `PGBACKREST_PG1_USER` desde `docker/compose.db.yaml`; si el error aparece, es que esa variable no está en el entorno del contenedor. Revisar la config antes de reintentar.

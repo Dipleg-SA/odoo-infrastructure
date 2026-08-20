@@ -2,7 +2,7 @@
 
 Un **stack** acá es una combinación de tres cosas: un checkout del repositorio, un nombre de proyecto de Compose, y un conjunto de capas incluidas. Cambiar cualquiera de las tres da un stack distinto.
 
-El repositorio implementa hoy **los tres**: cada uno tiene su entrypoint —`compose.yaml`, `compose.staging.yaml`, `compose.dev.yaml`— y nginx reemplazó a Traefik en el borde. La **Parte I** describe qué se comparte entre stacks y qué colisiona si se levanta un segundo. La **Parte II** recoge las decisiones tomadas para staging y development, y es lo que esos dos entrypoints implementan.
+El repositorio implementa hoy **los tres**: cada uno tiene su entrypoint —`docker/compose.yaml`, `docker/compose.staging.yaml`, `docker/compose.dev.yaml`— y nginx reemplazó a Traefik en el borde. La **Parte I** describe qué se comparte entre stacks y qué colisiona si se levanta un segundo. La **Parte II** recoge las decisiones tomadas para staging y development, y es lo que esos dos entrypoints implementan.
 
 ## Los tres stacks
 
@@ -11,7 +11,7 @@ El repositorio implementa hoy **los tres**: cada uno tiene su entrypoint —`com
 | Dónde corre        | Servidor                | Servidor                | Máquina del operador    |
 | Checkout           | propio                  | propio                  | uno por feature         |
 | Nombre de proyecto | `production`            | `staging`               | `development-<feature>` |
-| Entrypoint         | `compose.yaml`          | `compose.staging.yaml`  | `compose.dev.yaml`      |
+| Entrypoint         | `docker/compose.yaml`          | `docker/compose.staging.yaml`  | `docker/compose.dev.yaml`      |
 | Rama de addons     | default del Dockerfile  | `<versión>-stag`        | `feat/*`                |
 | Proxy              | nginx con TLS           | nginx con TLS           | nginx sin TLS           |
 | Túnel y certbot    | sí                      | sí                      | no                      |
@@ -35,20 +35,20 @@ No todo se comparte del mismo modo. El nivel decide si dos stacks conviven o se 
 
 Todo lo que está en git es el mismo archivo para todo stack que salga de ese commit, tenga su propio directorio o no. Cambiarlo para uno lo cambia para todos.
 
-Cada entorno tiene su **entrypoint** propio —un archivo raíz con su `include:`, sus `secrets:` y los ajustes que le hace a una capa compartida—, así que la columna dice qué capas y qué archivos de config alcanza cada uno.
+Cada entorno tiene su **entrypoint** propio —un archivo bajo `docker/` con su `include:`, sus `secrets:` y los ajustes que le hace a una capa compartida—, así que la columna dice qué capas y qué archivos de config alcanza cada uno.
 
 | Archivo                                     | Producción     | Staging                     | Development                 |
 |---------------------------------------------|----------------|-----------------------------|-----------------------------|
-| entrypoint                                  | `compose.yaml` | `compose.staging.yaml`      | `compose.dev.yaml`          |
+| entrypoint                                  | `docker/compose.yaml` | `docker/compose.staging.yaml`      | `docker/compose.dev.yaml`          |
 | plantilla de `.env`                         | `.env.prod.example` | `.env.stag.example`    | `.env.dev.example`          |
-| `compose.proxy.yaml`                        | sí             | sí, sin publicar puertos    | sí, solo el 80 en loopback  |
-| `compose.dns.yaml`                          | sí             | no                          | no                          |
-| `compose.edge.yaml`                         | sí             | sí                          | no                          |
-| `compose.db.yaml`                           | sí             | sí, sin archivar WAL        | sí, sin archivar WAL        |
-| `compose.odoo.yaml`                         | sí             | sí, sin credencial SMTP     | sí, sin credencial SMTP     |
-| `compose.restore.yaml`                      | sí             | sí                          | no                          |
-| `compose.backups.yaml`                      | sí             | no                          | no                          |
-| `compose.observability.yaml`                | sí             | no                          | no                          |
+| `docker/compose.proxy.yaml`                        | sí             | sí, sin publicar puertos    | sí, solo el 80 en loopback  |
+| `docker/compose.dns.yaml`                          | sí             | no                          | no                          |
+| `docker/compose.edge.yaml`                         | sí             | sí                          | no                          |
+| `docker/compose.db.yaml`                           | sí             | sí, sin archivar WAL        | sí, sin archivar WAL        |
+| `docker/compose.odoo.yaml`                         | sí             | sí, sin credencial SMTP     | sí, sin credencial SMTP     |
+| `docker/compose.restore.yaml`                      | sí             | sí                          | no                          |
+| `docker/compose.backups.yaml`                      | sí             | no                          | no                          |
+| `docker/compose.observability.yaml`                | sí             | no                          | no                          |
 | `config/postgres/postgresql.conf`           | sí             | sí                          | sí                          |
 | `config/pgbouncer/pgbouncer.ini`            | sí             | sí                          | sí                          |
 | `config/odoo/odoo.conf`                     | sí             | sí                          | sí                          |
@@ -106,7 +106,7 @@ Compose les antepone el nombre del proyecto, así que dos stacks con nombres dis
 - **Hostnames de `backup` y `alloy`.** Derivados del proyecto: restic agrupa la retención por `(host, paths)` y Alloy etiqueta cada métrica con `instance`. Fijos, dos stacks caerían en el mismo grupo de retención y emitirían series idénticas.
 - **Tags de imagen.** `local/<servicio>:${COMPOSE_PROJECT_NAME}` (ver [Imágenes](#imágenes)). El nombre de una imagen es global al daemon: con un tag fijo, el `build` de un stack pisaba la imagen que corre el otro sin fallar ni avisar.
 
-El nombre de proyecto tiene tres fuentes, en orden de precedencia: la variable `COMPOSE_PROJECT_NAME` del entorno, el `name:` del archivo, y —si no hay ninguno de los dos— **el nombre del directorio**. Verificado, incluida la interpolación de `${COMPOSE_PROJECT_NAME}` a partir de cualquiera de las tres. Ningún `compose.*.yaml` declara `name:`: el nombre se declara en `.env`, y cambiarlo renombra también volúmenes, imágenes y el grupo de retención de restic, así que **no es una edición, es una migración**.
+El nombre de proyecto tiene tres fuentes, en orden de precedencia: la variable `COMPOSE_PROJECT_NAME` del entorno, el `name:` del archivo, y —si no hay ninguno de los dos— **el nombre del directorio que contiene el compose elegido**, que desde que viven bajo `docker/` es siempre `docker`. Verificado, incluida la interpolación de `${COMPOSE_PROJECT_NAME}` a partir de cualquiera de las tres. Ningún `docker/compose.*.yaml` declara `name:`: el nombre se declara en `.env`, y cambiarlo renombra también volúmenes, imágenes y el grupo de retención de restic, así que **no es una edición, es una migración**.
 
 ## 4. Recursos globales al host o al daemon — compartidos siempre
 
@@ -144,7 +144,7 @@ Tres tipos de checkout en directorios separados: **producción** y **staging** e
 
 El aislamiento por directorio se eligió sobre un checkout compartido porque toda la tabla del nivel 2 deja de ser un riesgo: un error en staging no puede alcanzar las credenciales ni el `state/` de producción, y no depende de que nadie se equivoque de terminal.
 
-**El nombre del stack se declara en `.env`, al lado de `COMPOSE_FILE`. Sin excepciones.** Ningún `compose.*.yaml` declara `name:`: la identidad de un stack sale del mismo archivo que dice qué capas incluye, en los tres entornos y con un solo mecanismo que aprender.
+**El nombre del stack se declara en `.env`, al lado de `COMPOSE_FILE`. Sin excepciones.** Ningún `docker/compose.*.yaml` declara `name:`: la identidad de un stack sale del mismo archivo que dice qué capas incluye, en los tres entornos y con un solo mecanismo que aprender.
 
 ```
 /srv/odoo-production            COMPOSE_PROJECT_NAME=production
@@ -153,7 +153,7 @@ El aislamiento por directorio se eligió sobre un checkout compartido porque tod
 ~/odoo-development-accountant   COMPOSE_PROJECT_NAME=development-accountant
 ```
 
-El modo de falla está medido y es benigno: si la variable falta o queda vacía, Compose cae al **nombre del directorio**, que ya es único por checkout. Olvidarla no produce un volumen compartido, produce un nombre más feo. El único caso peligroso es copiar un `.env` de un checkout a otro, y contra eso no hay mecanismo que ayude.
+El modo de falla está medido y **dejó de ser benigno** cuando los compose se mudaron a `docker/`: si la variable falta o queda vacía, Compose ya no cae al nombre del checkout sino al del directorio del compose, `docker`, igual en toda máquina. Dos checkouts sin la variable comparten nombre —y volúmenes—. Por eso `verify.sh` la chequea, y por eso las tres plantillas la traen puesta. El otro caso peligroso sigue siendo copiar un `.env` de un checkout a otro, y contra eso no hay mecanismo que ayude.
 
 Se descartó declarar `name:` en cada entrypoint. Con un literal compartido entre dos checkouts de development, los dos resuelven al **mismo** volumen `development_pgdata`: no colisionan al arrancar, porque corre uno a la vez, se pisan los datos en silencio — precisamente lo que un entorno por feature viene a evitar.
 
@@ -161,13 +161,13 @@ Renombrar el proyecto renombra sus volúmenes, y Docker no sabe renombrar un vol
 
 ## Composición
 
-Un **entrypoint por entorno**: un archivo raíz con su propio `include:`, y el `.env` de cada checkout eligiendo cuál con `COMPOSE_FILE`. Verificado: `docker compose` respeta `COMPOSE_FILE` y `COMPOSE_PROJECT_NAME` desde `.env` sin ningún flag, así que **ningún target del Makefile cambia por esto**.
+Un **entrypoint por entorno**: un archivo con su propio `include:`, y el `.env` de cada checkout eligiendo cuál con `COMPOSE_FILE`. Verificado: `docker compose` respeta `COMPOSE_FILE` y `COMPOSE_PROJECT_NAME` desde `.env` sin ningún flag, así que **ningún target del Makefile cambia por esto**.
 
 | Entrypoint             | Capas que incluye                                            | Secrets |
 |------------------------|--------------------------------------------------------------|---------|
-| `compose.yaml`         | dns, proxy, borde, datos, aplicación, backups, restore, observabilidad | 11 |
-| `compose.staging.yaml` | proxy, borde, datos, aplicación, restore                     | 8       |
-| `compose.dev.yaml`     | proxy, datos, aplicación                                     | 3       |
+| `docker/compose.yaml`         | dns, proxy, borde, datos, aplicación, backups, restore, observabilidad | 11 |
+| `docker/compose.staging.yaml` | proxy, borde, datos, aplicación, restore                     | 8       |
+| `docker/compose.dev.yaml`     | proxy, datos, aplicación                                     | 3       |
 
 Cada entrypoint declara **solo los secrets que sus capas usan**. Compose falla al arrancar si un `file:` declarado no existe, así que declarar los once en dev obligaría a fabricar ocho archivos inertes. Los tres de development son de los que `secrets-init.sh` genera con `openssl`: **cero trabajo manual por checkout**.
 
@@ -175,9 +175,9 @@ Se eligió el entrypoint por entorno sobre un módulo de override porque **Compo
 
 Tres capas salieron por extracción de archivos que ya existían:
 
-- **`compose.proxy.yaml`** — nginx, los tres entornos. Sale de `compose.edge.yaml` porque development quiere el proxy —para que `proxy_mode` no mienta— pero no el túnel ni los certificados. Lo que queda en `compose.edge.yaml` es `cloudflared` y `certbot`.
-- **`compose.dns.yaml`** — dnsmasq, solo producción. Sale de `compose.edge.yaml` porque el `:53` en `network_mode: host` no se puede duplicar y staging no necesita sobrevivir a una caída de internet.
-- **`compose.restore.yaml`** — `restore-db` y `restore-files`, producción y staging. Sale de `compose.backups.yaml`: esos dos servicios solo leen del repositorio remoto, así que llevarlos a staging no rompe la regla de que la capa de backups es exclusiva de producción.
+- **`docker/compose.proxy.yaml`** — nginx, los tres entornos. Sale de `docker/compose.edge.yaml` porque development quiere el proxy —para que `proxy_mode` no mienta— pero no el túnel ni los certificados. Lo que queda en `docker/compose.edge.yaml` es `cloudflared` y `certbot`.
+- **`docker/compose.dns.yaml`** — dnsmasq, solo producción. Sale de `docker/compose.edge.yaml` porque el `:53` en `network_mode: host` no se puede duplicar y staging no necesita sobrevivir a una caída de internet.
+- **`docker/compose.restore.yaml`** — `restore-db` y `restore-files`, producción y staging. Sale de `docker/compose.backups.yaml`: esos dos servicios solo leen del repositorio remoto, así que llevarlos a staging no rompe la regla de que la capa de backups es exclusiva de producción.
 
 Staging no publica ningún puerto — `ports: !reset []`, verificado en Compose v5.1.4: borra el bloque entero de un servicio traído por `include:`, sin tocar el archivo compartido ni parametrizar nada. No lo necesita: `cloudflared` alcanza al proxy **por la red `edge`, por nombre de contenedor**, no por puertos publicados.
 
@@ -230,7 +230,7 @@ Restore desde el repositorio remoto, de solo lectura. El propósito es doble y d
 
 Staging queda con datos reales de clientes, **y sin credenciales SMTP**. Un `-u` que dispare correo, o una tarea programada que venía en la base restaurada, mandaría mail de verdad a clientes de verdad desde el entorno que existe para romper cosas. Sin el secret, Odoo encola y falla al enviar: visible adentro, inofensivo afuera. Su entrypoint además vacía `SMTP_HOST`, porque si dependiera solo de `.env` un archivo copiado de producción alcanzaría para mandar.
 
-Y **no archiva WAL**. Apunta a la stanza de producción para poder restaurar, así que con `archive_mode` prendido le empujaría su propio WAL al repositorio del entorno real. Lo decide `PG_ARCHIVE_MODE` en el `-c` de `compose.db.yaml` y no `postgresql.conf`, que es el mismo archivo para los tres; `make db-verify` exige el valor que corresponde a las capas del stack, no uno fijo.
+Y **no archiva WAL**. Apunta a la stanza de producción para poder restaurar, así que con `archive_mode` prendido le empujaría su propio WAL al repositorio del entorno real. Lo decide `PG_ARCHIVE_MODE` en el `-c` de `docker/compose.db.yaml` y no `postgresql.conf`, que es el mismo archivo para los tres; `make db-verify` exige el valor que corresponde a las capas del stack, no uno fijo.
 
 La anonimización se evaluó y se descartó por ahora: es un script que envejece mal, porque protege exactamente los campos que conocía el día que se escribió. Deja de ser opcional si alguna vez entra a staging alguien más que el operador.
 
@@ -269,5 +269,5 @@ Son dos y no una, porque las capas son distintas: `require-backups` cuelga de `b
 Los otros tres arrastres se cerraron:
 
 - **Imágenes al día.** `alpine` 3.20 → 3.24, Odoo `19.0-20260630` → `19.0-20260810`, nginx `1.29.3` → `1.31.3` (misma rama mainline), Grafana 13.1.2 → 13.1.3, cloudflared 2026.7.2 → 2026.8.0 y certbot 5.1.0 → 5.7.0. Postgres 17.10, PgBouncer, restic, Prometheus, Loki y Alloy ya estaban en su último tag estable.
-- **`pgbackrest.conf` se quedó sin sección de stanza.** El nombre, `pg1-path` y `pg1-user` llegan por `PGBACKREST_*` desde `compose.db.yaml` y `compose.restore.yaml`, junto al `POSTGRES_USER` del que `pg1-user` tiene que ser copia. La invariante «el `[nombre]` del archivo tiene que coincidir con el `.env`» desapareció: ya no hay dos lados que puedan divergir. `db-verify` dejó de comparar cadenas y ahora lee el valor efectivo dentro del contenedor (`pgbackrest help archive-push pg1-path`).
+- **`pgbackrest.conf` se quedó sin sección de stanza.** El nombre, `pg1-path` y `pg1-user` llegan por `PGBACKREST_*` desde `docker/compose.db.yaml` y `docker/compose.restore.yaml`, junto al `POSTGRES_USER` del que `pg1-user` tiene que ser copia. La invariante «el `[nombre]` del archivo tiene que coincidir con el `.env`» desapareció: ya no hay dos lados que puedan divergir. `db-verify` dejó de comparar cadenas y ahora lee el valor efectivo dentro del contenedor (`pgbackrest help archive-push pg1-path`).
 - **Los umbrales de Grafana quedan literales**, porque no hay mecanismo: el provisioning de alerting no interpola nada. El detalle de lo que se probó está en `docs/architecture.md`.

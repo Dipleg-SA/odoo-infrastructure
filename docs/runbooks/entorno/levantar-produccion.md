@@ -14,10 +14,10 @@ Once servicios corriendo, verificados capa por capa, con el certificado real, lo
 
 | Requisito | Por qué |
 |---|---|
-| Docker Engine y Compose ≥ 2.20, habilitados al arranque | Lo exige la directiva `include:` de `compose.yaml`; sin arranque automático el stack no vuelve tras un reinicio |
+| Docker Engine y Compose ≥ 2.20, habilitados al arranque | Lo exige la directiva `include:` de `docker/compose.yaml`; sin arranque automático el stack no vuelve tras un reinicio |
 | Rotación de logs del daemon, configurada **antes** del primer contenedor | Solo aplica a contenedores creados después de reiniciar el daemon. Hacerlo más tarde obliga a recrear los once (`config/docker/daemon.json`) |
 
-**El firewall del host no protege a los contenedores.** Docker publica por DNAT e inserta sus reglas antes de las cadenas del firewall: un `deny` no alcanza a un puerto publicado por un contenedor. El aislamiento de cada servicio es la IP a la que se publica, y eso ya está resuelto en los `compose.*.yaml`.
+**El firewall del host no protege a los contenedores.** Docker publica por DNAT e inserta sus reglas antes de las cadenas del firewall: un `deny` no alcanza a un puerto publicado por un contenedor. El aislamiento de cada servicio es la IP a la que se publica, y eso ya está resuelto en los `docker/compose.*.yaml`.
 
 `make host-verify` (fase 2, más abajo) valida estos dos prerrequisitos junto con el resto de la config del repo.
 
@@ -126,7 +126,7 @@ En `.env`, seis claves que la fase 1 no cubre. Las otras cuatro (`R2_ENDPOINT`, 
 | Clave | Valor |
 |---|---|
 | `COMPOSE_PROJECT_NAME` | Nombre del stack: `production` acá. Gobierna contenedores, volúmenes, redes y tags de imagen |
-| `COMPOSE_FILE` | `compose.yaml` para producción |
+| `COMPOSE_FILE` | `docker/compose.yaml` para producción |
 | `PUBLIC_HOSTNAME` | El hostname público de esta instancia, el mismo que va a servir el Tunnel |
 | `LOCAL_IP` | La IP LAN del servidor — real y de una interfaz existente: `dnsmasq` bindea exactamente ahí y si no, queda `unhealthy` |
 | `PGBACKREST_STANZA` | Nombre de la stanza, estable — cambiarlo deja huérfanos los backups viejos |

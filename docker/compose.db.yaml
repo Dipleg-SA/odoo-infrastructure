@@ -5,7 +5,7 @@ services:
   postgres:
     # Imagen propia = postgres:17.10 + pgbackrest: archive_command lo
     # ejecuta el proceso de la base, así que el binario tiene que vivir acá.
-    build: ./docker/postgres
+    build: ./postgres
     # Tag por proyecto: el nombre de imagen es global al daemon, así que un tag
     # fijo deja que el build de un stack pise la imagen que corre el otro.
     image: local/postgres:${COMPOSE_PROJECT_NAME}
@@ -36,8 +36,8 @@ services:
         target: /etc/pgbackrest/conf.d/r2.conf
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./config/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
-      - ./config/pgbackrest/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
+      - ../config/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ../config/pgbackrest/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
     # --- Archivado de WAL ---
     # Acá y no en postgresql.conf, que es el mismo para los tres: un stack sin backups lo pone en off.
 
@@ -61,7 +61,7 @@ services:
     secrets:
       - pgbouncer_credentials
     volumes:
-      - ./config/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ../config/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
     healthcheck:
       test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-p", "6432"]
     restart: unless-stopped

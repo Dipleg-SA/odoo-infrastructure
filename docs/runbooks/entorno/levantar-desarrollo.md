@@ -25,14 +25,14 @@ Nada que pegar. En `.env`, estas claves (`COMPOSE_FILE` ya viene puesto):
 | Clave | Valor |
 |---|---|
 | `COMPOSE_PROJECT_NAME` | `development-<feature>`, **único por checkout** |
-| `COMPOSE_FILE` | `compose.dev.yaml` |
+| `COMPOSE_FILE` | `docker/compose.dev.yaml` |
 | `PG_ARCHIVE_MODE` | `off` |
 | `HTTP_PORT` | El puerto de loopback, distinto por checkout si vas a alternar |
 | `ADDONS_BRANCH` | Tu rama de trabajo |
 
-> **El nombre del proyecto es el único aislamiento entre dos checkouts de desarrollo.** De él salen los volúmenes: dos que lo compartan resuelven al mismo `pgdata`, y como corre uno a la vez no colisionan al arrancar — **se pisan los datos en silencio**. Si falta la clave, Compose usa el nombre del directorio, que ya es único; el caso peligroso es copiar el `.env` de un checkout a otro.
+> **El nombre del proyecto es el único aislamiento entre dos checkouts de desarrollo.** De él salen los volúmenes: dos que lo compartan resuelven al mismo `pgdata`, y como corre uno a la vez no colisionan al arrancar — **se pisan los datos en silencio**. Si falta la clave, Compose cae al directorio del compose elegido —`docker`, el mismo en todos los checkouts—, así que olvidarla es exactamente el caso peligroso; el otro es copiar el `.env` de un checkout a otro.
 
-`NGINX_MODE` no se declara: `compose.dev.yaml` fija la plantilla sin TLS en el entrypoint.
+`NGINX_MODE` no se declara: `docker/compose.dev.yaml` fija la plantilla sin TLS en el entrypoint.
 
 ### Comandos
 

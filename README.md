@@ -8,16 +8,16 @@ Once servicios en ocho módulos de Compose, uno por capa: reverse proxy con TLS 
 
 | Capa | Servicios | Módulo |
 |---|---|---|
-| DNS local | `dnsmasq` | `compose.dns.yaml` |
-| Proxy | `nginx` | `compose.proxy.yaml` |
-| Borde | `cloudflared` · `certbot` | `compose.edge.yaml` |
-| Datos | `postgres` · `pgbouncer` | `compose.db.yaml` |
-| Aplicación | `odoo` | `compose.odoo.yaml` |
-| Protección | `backup` (restic) + pgBackRest embebido en Postgres | `compose.backups.yaml` |
-| Restore | `restore-db` · `restore-files`, bajo `profiles` | `compose.restore.yaml` |
-| Observación | `prometheus` · `loki` · `grafana` · `alloy` | `compose.observability.yaml` |
+| DNS local | `dnsmasq` | `docker/compose.dns.yaml` |
+| Proxy | `nginx` | `docker/compose.proxy.yaml` |
+| Borde | `cloudflared` · `certbot` | `docker/compose.edge.yaml` |
+| Datos | `postgres` · `pgbouncer` | `docker/compose.db.yaml` |
+| Aplicación | `odoo` | `docker/compose.odoo.yaml` |
+| Protección | `backup` (restic) + pgBackRest embebido en Postgres | `docker/compose.backups.yaml` |
+| Restore | `restore-db` · `restore-files`, bajo `profiles` | `docker/compose.restore.yaml` |
+| Observación | `prometheus` · `loki` · `grafana` · `alloy` | `docker/compose.observability.yaml` |
 
-`compose.yaml` no es monolítico: declara las redes y los secretos compartidos y suma un módulo por capa con `include:`. Tampoco declara el nombre del stack — eso vive en `.env`, junto a `COMPOSE_FILE`, que es lo que elige qué capas se levantan.
+`docker/compose.yaml` no es monolítico: declara las redes y los secretos compartidos y suma un módulo por capa con `include:`. Tampoco declara el nombre del stack — eso vive en `.env`, junto a `COMPOSE_FILE`, que es lo que elige qué capas se levantan.
 
 ## Empezar
 

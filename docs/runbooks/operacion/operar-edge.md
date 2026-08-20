@@ -21,7 +21,7 @@ make edge-ps
 make edge-verify
 ```
 
-`scripts/capa.sh` resuelve qué servicios de la capa trae *este* stack contra la composición real: producción lleva `dnsmasq`+`nginx`+`cloudflared`, staging lleva `nginx`+`cloudflared` (sin `dnsmasq`, exclusivo de producción — el `53` en `network_mode: host` no admite un segundo), y development solo `nginx` sin TLS (su entrypoint ni siquiera incluye `compose.edge.yaml`, así que no tiene túnel ni certbot).
+`scripts/capa.sh` resuelve qué servicios de la capa trae *este* stack contra la composición real: producción lleva `dnsmasq`+`nginx`+`cloudflared`, staging lleva `nginx`+`cloudflared` (sin `dnsmasq`, exclusivo de producción — el `53` en `network_mode: host` no admite un segundo), y development solo `nginx` sin TLS (su entrypoint ni siquiera incluye `docker/compose.edge.yaml`, así que no tiene túnel ni certbot).
 
 `edge-restart` **no** reemite el certificado ni aplica un cambio de imagen o de compose — para eso hace falta `edge-down` + `edge-up`. Si el cambio es solo en la config montada de nginx (`config/nginx/`), alcanza con recargar en caliente en vez de reiniciar el contenedor entero:
 

@@ -39,7 +39,7 @@ En `.env`, ocho claves. Las de R2 y la stanza son **las de producción**, porque
 | Clave | Valor |
 |---|---|
 | `COMPOSE_PROJECT_NAME` | `staging` |
-| `COMPOSE_FILE` | `compose.staging.yaml` |
+| `COMPOSE_FILE` | `docker/compose.staging.yaml` |
 | `PG_ARCHIVE_MODE` | `off` — la que no se puede olvidar, ver abajo |
 | `PUBLIC_HOSTNAME` | El hostname de staging, distinto del de producción |
 | `PGBACKREST_STANZA` · `R2_ENDPOINT` · `R2_BUCKET` | Los mismos valores que producción: es su repositorio el que se restaura |

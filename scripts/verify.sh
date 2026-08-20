@@ -189,7 +189,7 @@ v_host() {
   titulo "host"
 
   # --- Compose ---
-  # La directiva include: de compose.yaml exige v2.20 o superior.
+  # La directiva include: de docker/compose.yaml exige v2.20 o superior.
 
   local v mayor menor
   v=$(docker compose version --short 2>/dev/null)
@@ -237,16 +237,19 @@ v_host() {
   fi
 
   # --- Identidad del stack ---
-  # Sin COMPOSE_PROJECT_NAME el proyecto sale del nombre del directorio. No rompe
-  # nada, pero el stack —y sus volúmenes— pasan a llamarse según dónde se clonó.
+  # Un nombre vacío es una composición que no resuelve, no un nombre que falta: sin
+  # COMPOSE_PROJECT_NAME el proyecto sale del directorio del compose, siempre 'docker'.
 
   local proyecto
   proyecto=$(docker compose config 2>/dev/null | sed -n 's/^name: //p' | head -1)
-  if grep -qE '^COMPOSE_PROJECT_NAME=.+' .env 2>/dev/null; then
-    ok "identidad declarada en .env (proyecto: ${proyecto:-?}, capas: ${COMPOSE_FILE:-compose.yaml})"
+  if [ -z "$proyecto" ]; then
+    bad "la composición resuelve" \
+        "COMPOSE_FILE=${COMPOSE_FILE:-sin declarar} no resuelve — ningún target del Makefile va a andar"
+  elif grep -qE '^COMPOSE_PROJECT_NAME=.+' .env 2>/dev/null; then
+    ok "identidad declarada en .env (proyecto: $proyecto, capas: ${COMPOSE_FILE:-sin declarar})"
   else
     aviso "identidad declarada en .env" \
-          "falta COMPOSE_PROJECT_NAME — el proyecto sale del directorio: ${proyecto:-?}"
+          "falta COMPOSE_PROJECT_NAME — el proyecto sale del directorio del compose: $proyecto"
   fi
 
   # --- Secrets ---
@@ -370,7 +373,7 @@ v_edge() {
 
   # --- Binds ---
   # Nivel 3 (LAN): el acceso local esquiva el túnel y necesita llegar al proxy. La
-  # dirección esperada es la misma que arma el ports: de compose.proxy.yaml.
+  # dirección esperada es la misma que arma el ports: de docker/compose.proxy.yaml.
 
   # El esperado no se declara acá: lo lee bind_es de la composición resuelta, que es
   # la única que sabe qué cadena de defaults aplicó el entrypoint de ESTE stack.
@@ -379,7 +382,7 @@ v_edge() {
   bind_es nginx 443
 
   # --- Bind caído al default ---
-  # El loopback de compose.proxy.yaml es una red de contención, no una configuración:
+  # El loopback de docker/compose.proxy.yaml es una red de contención, no una configuración:
   # sin LOCAL_IP el proxy deja de atender la LAN y el esperado cae con él, en verde.
 
   if bind_declarado nginx 443 >/dev/null && [ -z "${HTTP_BIND:-}${HTTPS_BIND:-}${LOCAL_IP:-}" ]; then
@@ -507,7 +510,7 @@ v_db() {
   local pmax pcpus
   pmax=$(sed -n 's/^process-max[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' \
          config/pgbackrest/pgbackrest.conf | head -1)
-  pcpus=$(sed -n '/^  postgres:/,/^  [a-z]/p' compose.db.yaml | sed -n 's/.*cpus: "\([0-9.]*\)".*/\1/p' | head -1)
+  pcpus=$(sed -n '/^  postgres:/,/^  [a-z]/p' docker/compose.db.yaml | sed -n 's/.*cpus: "\([0-9.]*\)".*/\1/p' | head -1)
   if ! declarado backup && ! declarado restore-db; then
     omitir "process-max dentro de los cpus de postgres" "este stack no corre pgBackRest"
   elif [ -z "$pmax" ] || [ -z "$pcpus" ]; then

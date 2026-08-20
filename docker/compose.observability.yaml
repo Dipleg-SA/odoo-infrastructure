@@ -17,7 +17,7 @@ services:
       - edge
     volumes:
       - prometheus-data:/prometheus
-      - ./config/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - ../config/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
     # --- Techos y receptor de push ---
     # Techo por tiempo Y por tamaño: el segundo es el fusible si la cardinalidad supera lo estimado.
     # Repetir los dos flags de path es obligatorio: pasar command: pisa los defaults de la imagen.
@@ -44,7 +44,7 @@ services:
       - observability
     volumes:
       - loki-data:/loki
-      - ./config/loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - ../config/loki/loki.yaml:/etc/loki/loki.yaml:ro
     # La expansión la hace Loki desde SU entorno, no Compose sobre el archivo: sin
     # este environment la variable no existe adentro y siempre gana el default.
     environment:
@@ -86,9 +86,9 @@ services:
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./config/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
-      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ../config/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ../config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../config/grafana/dashboards:/var/lib/grafana/dashboards:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/api/health || exit 1"]
     restart: unless-stopped
@@ -121,8 +121,8 @@ services:
     # host real, no el namespace del contenedor; sin esto miden el contenedor mismo.
 
     volumes:
-      - ./config/alloy/config.alloy:/etc/alloy/config.alloy:ro
-      - ./state/textfile:/textfile:ro
+      - ../config/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - ../state/textfile:/textfile:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # containerd: sin esto cAdvisor no enumera contenedores y emite series anónimas.
       - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro

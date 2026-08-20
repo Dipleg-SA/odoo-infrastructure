@@ -20,4 +20,4 @@ docker compose exec nginx grep -r '\${' /etc/nginx/conf.d/
 
 ## Fix
 
-Cualquier resultado en el grep es un `envsubst` que no sustituyó: revisá que la variable esté en `.env` y que `NGINX_ENVSUBST_FILTER` en `compose.proxy.yaml` la cubra. Lo chequea también `make edge-verify`.
+Cualquier resultado en el grep es un `envsubst` que no sustituyó: revisá que la variable esté en `.env` y que `NGINX_ENVSUBST_FILTER` en `docker/compose.proxy.yaml` la cubra. Lo chequea también `make edge-verify`.

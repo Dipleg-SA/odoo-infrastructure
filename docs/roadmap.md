@@ -6,7 +6,7 @@ El principio de ordenamiento es uno solo: **producción está corriendo y no se 
 
 ## Dos decisiones ya tomadas
 
-**El nombre del stack se declara en `.env`, al lado de `COMPOSE_FILE`. Sin excepciones.** Ningún `compose.*.yaml` declara `name:`: la identidad de un stack sale del mismo archivo que dice qué capas incluye, en los tres entornos y con un solo mecanismo que aprender.
+**El nombre del stack se declara en `.env`, al lado de `COMPOSE_FILE`. Sin excepciones.** Ningún `docker/compose.*.yaml` declara `name:`: la identidad de un stack sale del mismo archivo que dice qué capas incluye, en los tres entornos y con un solo mecanismo que aprender.
 
 ```
 /srv/odoo-production            COMPOSE_PROJECT_NAME=production
@@ -15,7 +15,7 @@ El principio de ordenamiento es uno solo: **producción está corriendo y no se 
 ~/odoo-development-accountant   COMPOSE_PROJECT_NAME=development-accountant
 ```
 
-El modo de falla está medido y es benigno: si la variable falta o queda vacía, Compose cae al **nombre del directorio**, que ya es único por checkout. Olvidarla no produce un volumen compartido, produce un nombre más feo. El único caso peligroso es copiar un `.env` de un checkout a otro, y contra eso no hay mecanismo que ayude.
+El modo de falla está medido y **dejó de ser benigno** cuando los compose se mudaron a `docker/`: si la variable falta o queda vacía, Compose ya no cae al nombre del checkout sino al del directorio del compose, `docker`, igual en toda máquina. Dos checkouts sin la variable comparten nombre —y volúmenes—. Por eso `verify.sh` la chequea, y por eso las tres plantillas la traen puesta. El otro caso peligroso sigue siendo copiar un `.env` de un checkout a otro, y contra eso no hay mecanismo que ayude.
 
 Se descartó declarar `name:` en cada entrypoint. Con un literal compartido entre dos checkouts de development, los dos resuelven al **mismo** volumen `development_pgdata`: no colisionan al arrancar, porque corre uno a la vez, se pisan los datos en silencio.
 
@@ -44,7 +44,7 @@ Cuatro cambios independientes entre sí. Ninguno cambia lo que corre.
 - `ADDONS_BRANCH` reemplaza a `ODOO_BRANCH`; default leído del `FROM` del Dockerfile; el chequeo de `verify.sh` pasa de igualdad a prefijo.
 - `addons.sh` a un árbol por checkout: se van `entornos()`, `ensure_dev_worktree()` y el bootstrap de la rama `-stag`.
 - Dos guardas en el `Makefile`: `require-backups` sobre `backup`, `backup-full` y `backup-check`; `require-restore` sobre `restore-up` y `restore-down`. Son capas distintas — staging **sí** lleva restore —, así que una sola guarda le prohibiría a staging justo lo que tiene que hacer.
-- Extraer `compose.dns.yaml` de `compose.edge.yaml`, y `compose.restore.yaml` de `compose.backups.yaml`.
+- Extraer `docker/compose.dns.yaml` de `docker/compose.edge.yaml`, y `docker/compose.restore.yaml` de `docker/compose.backups.yaml`.
 
 **Verificación.** Es la que hace segura toda la etapa: la config resuelta tiene que ser idéntica antes y después.
 
@@ -60,10 +60,10 @@ Si no cambió la config resuelta, producción no puede haber cambiado.
 
 ## Etapa 2 — Nombre de proyecto e imágenes
 
-- `name: infrastructure-odoo` **sale de `compose.yaml`** y no se reemplaza: el nombre pasa a vivir en `.env`, como en los otros dos entornos.
+- `name: infrastructure-odoo` **sale de `docker/compose.yaml`** y no se reemplaza: el nombre pasa a vivir en `.env`, como en los otros dos entornos.
 - `.env.example` gana `COMPOSE_PROJECT_NAME` y `COMPOSE_FILE`, juntos y arriba: son los dos valores que definen qué stack es este checkout.
-- Tags `local/<servicio>:${COMPOSE_PROJECT_NAME}` en `compose.db.yaml`, `compose.odoo.yaml`, `compose.dns.yaml` y en `restore-db`.
-- `verify.sh` chequea que `COMPOSE_PROJECT_NAME` esté declarado en `.env`. No es fatal que falte —Compose cae al nombre del directorio— pero un stack cuyo nombre depende de dónde se clonó es un stack que no sabés cómo se llama hasta correrlo.
+- Tags `local/<servicio>:${COMPOSE_PROJECT_NAME}` en `docker/compose.db.yaml`, `docker/compose.odoo.yaml`, `docker/compose.dns.yaml` y en `restore-db`.
+- `verify.sh` chequea que `COMPOSE_PROJECT_NAME` esté declarado en `.env`. Con los compose bajo `docker/`, el fallback de Compose es el literal `docker` en toda máquina: dos checkouts sin la variable comparten nombre y volúmenes.
 
 **Verificación.** `docker compose config` muestra los tags nuevos y el proyecto nuevo.
 
@@ -81,12 +81,12 @@ La capa de borde se parte en dos, porque development no lleva túnel ni certific
 
 | Módulo | Servicios | Quién lo incluye |
 |---|---|---|
-| `compose.proxy.yaml` | `nginx` | producción, staging, development |
-| `compose.edge.yaml` | `cloudflared` · `certbot` | producción, staging |
+| `docker/compose.proxy.yaml` | `nginx` | producción, staging, development |
+| `docker/compose.edge.yaml` | `cloudflared` · `certbot` | producción, staging |
 
 - `config/nginx/` con las plantillas `envsubst` de la imagen oficial. `config/traefik/` se borra.
 - `resolver 127.0.0.11 valid=10s` y `proxy_pass` a través de una variable, desde la primera línea: sin eso nginx cachea la IP de Odoo al arrancar y devuelve 502 tras cada recreación.
-- Las labels de Traefik salen de `compose.odoo.yaml`; el ruteo pasa a ser archivo, no descubrimiento.
+- Las labels de Traefik salen de `docker/compose.odoo.yaml`; el ruteo pasa a ser archivo, no descubrimiento.
 - `scripts/cert-renew.sh` y las units `odoo-cert-renew.{service,timer}`, con el mismo `OnFailure=` que los backups. `cert-renew.sh` escribe la métrica de vencimiento en `state/textfile/`.
 - `prometheus.yaml` pierde el job `traefik`. Las dos reglas de Grafana se migran: tasa de error a LogQL sobre el access log, vencimiento de certificado a la métrica de textfile.
 - `scripts/config-init.sh` y su target del Makefile se borran: existían solo para pre-crear `acme.json`, y el estado de certbot vive en un volumen nombrado.
@@ -100,8 +100,8 @@ La capa de borde se parte en dos, porque development no lleva túnel ni certific
 
 El primer stack nuevo, y el primero que corre nginx de verdad: con TLS, con túnel y con tráfico. Es el ensayo del cutover de producción.
 
-- Checkout, `.env` con `COMPOSE_PROJECT_NAME=staging` y `COMPOSE_FILE=compose.staging.yaml`, `secrets-init.sh` más los tres valores que van a mano, túnel y hostname en Cloudflare.
-- `compose.staging.yaml` con su `include:` —proxy, edge, datos, aplicación, restore—, sus 8 secrets y `ports: !reset []`.
+- Checkout, `.env` con `COMPOSE_PROJECT_NAME=staging` y `COMPOSE_FILE=docker/compose.staging.yaml`, `secrets-init.sh` más los tres valores que van a mano, túnel y hostname en Cloudflare.
+- `docker/compose.staging.yaml` con su `include:` —proxy, edge, datos, aplicación, restore—, sus 8 secrets y `ports: !reset []`.
 - Siembra por restore desde el repositorio remoto, que es a la vez el primer simulacro completo.
 - `integrity-check.sh` adaptado para no depender del servicio `backup`.
 
@@ -119,7 +119,7 @@ git fetch --tags && git checkout "$(git describe --tags --abbrev=0)"
 docker compose up -d
 ```
 
-**Rollback:** `git checkout <tag anterior> && docker compose up -d`. Vuelve `compose.edge.yaml` con Traefik y `config/traefik/` completo, y `acme.json` nunca se fue del disco porque está gitignoreado. El estado de certbot tampoco se pierde: vive en un volumen nombrado que un checkout no toca.
+**Rollback:** `git checkout <tag anterior> && docker compose up -d`. Vuelve `docker/compose.edge.yaml` con Traefik y `config/traefik/` completo, y `acme.json` nunca se fue del disco porque está gitignoreado. El estado de certbot tampoco se pierde: vive en un volumen nombrado que un checkout no toca.
 
 Esto es lo que compra fijar el checkout a un tag en vez de seguir una rama: el rollback del borde entero es un comando, y no depende de que nadie se haya acordado de no borrar un archivo.
 
@@ -127,7 +127,7 @@ Esto es lo que compra fijar el checkout a un tag en vez de seguir una rama: el r
 
 ## Etapa 6 — Development
 
-- `compose.dev.yaml`: borde, datos, aplicación. nginx sin TLS, publicando en loopback.
+- `docker/compose.dev.yaml`: borde, datos, aplicación. nginx sin TLS, publicando en loopback.
 - `.env.example` con el caso de development: `COMPOSE_FILE`, nombre de proyecto único por checkout, `ADDONS_BRANCH`.
 
 **Verificación.** Dos checkouts clonados, uno levantado, y comprobar que el otro tiene sus propios volúmenes — que es el modo de falla de reusar el nombre de proyecto.
@@ -135,7 +135,7 @@ Esto es lo que compra fijar el checkout a un tag en vez de seguir una rama: el r
 ## Etapa 7 — Documentación
 
 - `docs/runbooks/entorno/levantar-staging.md` y `levantar-desarrollo.md`, hoy esqueletos vacíos.
-- `PRINCIPLES.md`: convención del árbol de addons, capa de borde, y `compose.staging.yaml`/`compose.dev.yaml` como entrypoints en vez de módulos excluidos del `include:`.
+- `PRINCIPLES.md`: convención del árbol de addons, capa de borde, y `docker/compose.staging.yaml`/`docker/compose.dev.yaml` como entrypoints en vez de módulos excluidos del `include:`.
 - `docs/stacks.md`: la Parte I pasa a describir el estado nuevo y la Parte II deja de ser futuro.
 
 ---
@@ -152,19 +152,6 @@ infrastructure-odoo/
 ├── Makefile
 ├── PRINCIPLES.md
 ├── README.md
-│
-├── compose.yaml                    entrypoint · producción
-├── compose.staging.yaml            entrypoint · staging               ← nuevo
-├── compose.dev.yaml                entrypoint · development           ← nuevo
-│
-├── compose.dns.yaml                capa · dnsmasq                     ← extraído de edge
-├── compose.proxy.yaml              capa · nginx                       ← extraído de edge
-├── compose.edge.yaml               capa · cloudflared + certbot
-├── compose.db.yaml                 capa · postgres + pgbouncer
-├── compose.odoo.yaml               capa · odoo
-├── compose.backups.yaml            capa · restic
-├── compose.restore.yaml            capa · restore-db + restore-files  ← extraído de backups
-├── compose.observability.yaml      capa · prometheus + loki + grafana + alloy
 │
 ├── config/
 │   ├── nginx/                                                         ← reemplaza traefik/
@@ -193,6 +180,19 @@ infrastructure-odoo/
 │       └── odoo-cert-renew.{service,timer}                            ← nuevo
 │
 ├── docker/
+│   ├── compose.yaml                   entrypoint · producción
+│   ├── compose.staging.yaml           entrypoint · staging               ← nuevo
+│   ├── compose.dev.yaml               entrypoint · development           ← nuevo
+│   │
+│   ├── compose.dns.yaml               capa · dnsmasq                     ← extraído de edge
+│   ├── compose.proxy.yaml             capa · nginx                       ← extraído de edge
+│   ├── compose.edge.yaml              capa · cloudflared + certbot
+│   ├── compose.db.yaml                capa · postgres + pgbouncer
+│   ├── compose.odoo.yaml              capa · odoo
+│   ├── compose.backups.yaml           capa · restic
+│   ├── compose.restore.yaml           capa · restore-db + restore-files  ← extraído de backups
+│   ├── compose.observability.yaml     capa · prometheus + loki + grafana + alloy
+│   │
 │   ├── dnsmasq/Dockerfile
 │   ├── odoo/{Dockerfile, entrypoint.sh, requirements.txt}
 │   └── postgres/Dockerfile
@@ -224,19 +224,19 @@ Las dos primeras líneas del `.env` de cada checkout son las que definen el stac
 ```
 SERVIDOR
   /srv/odoo-production/           COMPOSE_PROJECT_NAME=production
-                                  COMPOSE_FILE=compose.yaml
+                                  COMPOSE_FILE=docker/compose.yaml
                                   11 secrets · systemd: backups + cert-renew
 
   /srv/odoo-staging/              COMPOSE_PROJECT_NAME=staging
-                                  COMPOSE_FILE=compose.staging.yaml
+                                  COMPOSE_FILE=docker/compose.staging.yaml
                                   8 secrets · systemd: cert-renew
 
 MÁQUINA DEL OPERADOR
   ~/odoo-development-sale/        COMPOSE_PROJECT_NAME=development-sale
-                                  COMPOSE_FILE=compose.dev.yaml
+                                  COMPOSE_FILE=docker/compose.dev.yaml
 
   ~/odoo-development-accountant/  COMPOSE_PROJECT_NAME=development-accountant
-                                  COMPOSE_FILE=compose.dev.yaml
+                                  COMPOSE_FILE=docker/compose.dev.yaml
 
                                   3 secrets, todos generados · sin systemd
 ```

@@ -9,7 +9,7 @@
 # red, no este archivo. Sin ese paso dnsmasq queda sano y sin consultarlo nadie.
 services:
   dnsmasq:
-    build: ./docker/dnsmasq
+    build: ./dnsmasq
     # Tag por proyecto: el nombre de imagen es global al daemon, así que un tag
     # fijo deja que el build de un stack pise la imagen que corre el otro.
     image: local/dnsmasq:${COMPOSE_PROJECT_NAME}

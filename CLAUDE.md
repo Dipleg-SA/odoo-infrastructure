@@ -32,7 +32,7 @@ make backup / backup-full / backup-check
 make secrets-init / secrets-perms / secrets-check
 ```
 
-Al tocar un `compose.*.yaml`, la verificación más fuerte es que **la config resuelta no cambie**:
+Al tocar un `docker/compose.*.yaml`, la verificación más fuerte es que **la config resuelta no cambie**:
 
 ```bash
 docker compose config > /tmp/antes.yaml
@@ -44,23 +44,23 @@ Para scripts, `bash -n scripts/<x>.sh` y después correrlos de verdad. **Correr 
 
 ## Arquitectura
 
-**Un entrypoint por entorno**, cada uno solo redes, secrets y un `include:` por capa: `compose.yaml` (producción, 11 secrets), `compose.staging.yaml` (8 — sin backups, sin observabilidad, sin dnsmasq) y `compose.dev.yaml` (3, todos generados — solo proxy, datos y aplicación). Cuál se usa lo dice `COMPOSE_FILE` en `.env`. Los dos que no son producción sacan el correo saliente con `SMTP_HOST: ""`, para que un `.env` copiado no alcance para mandar mail real. El nombre del stack no se declara ahí: sale de `COMPOSE_PROJECT_NAME` en `.env`, y de él derivan `container_name`, volúmenes, redes y **tags de imagen**. Nunca un archivo monolítico, nunca `compose.override.yaml` — ese nombre dispara el autoload implícito de Compose.
+**Un entrypoint por entorno**, cada uno solo redes, secrets y un `include:` por capa: `docker/compose.yaml` (producción, 11 secrets), `docker/compose.staging.yaml` (8 — sin backups, sin observabilidad, sin dnsmasq) y `docker/compose.dev.yaml` (3, todos generados — solo proxy, datos y aplicación). Cuál se usa lo dice `COMPOSE_FILE` en `.env`. Los dos que no son producción sacan el correo saliente con `SMTP_HOST: ""`, para que un `.env` copiado no alcance para mandar mail real. El nombre del stack no se declara ahí: sale de `COMPOSE_PROJECT_NAME` en `.env`, y de él derivan `container_name`, volúmenes, redes y **tags de imagen**. Nunca un archivo monolítico, nunca `compose.override.yaml` — ese nombre dispara el autoload implícito de Compose.
 
 | Capa | Servicios | Módulo |
 |---|---|---|
-| DNS local | `dnsmasq` | `compose.dns.yaml` |
-| Proxy | `nginx` | `compose.proxy.yaml` |
-| Borde | `cloudflared` · `certbot` | `compose.edge.yaml` |
-| Datos | `postgres` · `pgbouncer` | `compose.db.yaml` |
-| Aplicación | `odoo` | `compose.odoo.yaml` |
-| Protección | `backup` (restic) + pgBackRest dentro de Postgres | `compose.backups.yaml` |
-| Restore | `restore-db` · `restore-files`, bajo `profiles` | `compose.restore.yaml` |
-| Observación | `prometheus` · `loki` · `grafana` · `alloy` | `compose.observability.yaml` |
+| DNS local | `dnsmasq` | `docker/compose.dns.yaml` |
+| Proxy | `nginx` | `docker/compose.proxy.yaml` |
+| Borde | `cloudflared` · `certbot` | `docker/compose.edge.yaml` |
+| Datos | `postgres` · `pgbouncer` | `docker/compose.db.yaml` |
+| Aplicación | `odoo` | `docker/compose.odoo.yaml` |
+| Protección | `backup` (restic) + pgBackRest dentro de Postgres | `docker/compose.backups.yaml` |
+| Restore | `restore-db` · `restore-files`, bajo `profiles` | `docker/compose.restore.yaml` |
+| Observación | `prometheus` · `loki` · `grafana` · `alloy` | `docker/compose.observability.yaml` |
 
 Cosas que no se deducen leyendo un archivo solo:
 
 - **pgBackRest no tiene contenedor propio**: vive dentro de la imagen de Postgres, porque `archive_command` lo ejecuta el proceso de la base.
-- **`archive_mode` lo fija el `-c` de `compose.db.yaml`, no `postgresql.conf`** —ese archivo es el mismo para los tres entornos—. Un stack sin la capa de backups apunta a la stanza de producción para restaurar: con el archivado prendido le empuja su propio WAL y contamina el repositorio real. `PG_ARCHIVE_MODE=off` en su `.env`, y `db-verify` espera el valor según las capas del stack.
+- **`archive_mode` lo fija el `-c` de `docker/compose.db.yaml`, no `postgresql.conf`** —ese archivo es el mismo para los tres entornos—. Un stack sin la capa de backups apunta a la stanza de producción para restaurar: con el archivado prendido le empuja su propio WAL y contamina el repositorio real. `PG_ARCHIVE_MODE=off` en su `.env`, y `db-verify` espera el valor según las capas del stack.
 - **`docker/odoo/entrypoint.sh` genera config en runtime**. El `addons_path` sale de un glob sobre cuatro categorías en orden de precedencia (`enterprise > custom-addons > oca > third-party`), y `admin_passwd`, SMTP y credenciales se appendean al conf. `config/odoo/odoo.conf` es solo la base.
 - **PgBouncer corre en modo transacción**, lo que rompe `LISTEN/NOTIFY`. Por eso `server_wide_modules` incluye `bus_alt_connection`, que le da al bus su propia conexión directa. Sin ese módulo Odoo arranca igual y el chat en vivo deja de actualizarse.
 - **Instalar o actualizar módulos nunca va atado al arranque.** Es un one-off explícito del operador contra `postgres:5432`, no contra PgBouncer.
@@ -82,7 +82,8 @@ Estos valores están duplicados por necesidad —hay formatos que no interpolan 
 
 - **El acceso lo define el `ports:`, no el firewall.** Docker publica por DNAT e inserta sus reglas antes de las cadenas del firewall. Cuatro niveles, nunca `0.0.0.0`. Ese criterio **no habla de los binds internos del contenedor**: un proceso que escucha en `0.0.0.0` sin `ports:` no expone nada al host, y a veces es necesario.
 - **Los secretos son archivos, nunca variables de entorno** — una env var queda visible en `docker inspect`. Compose fuera de Swarm **ignora `uid`/`gid`/`mode`** de los secrets de archivo, así que un `600` root-owned deja sin lectura a cualquier contenedor no-root. El mapa de GIDs esperados es dueño único de `scripts/secrets-perms.sh`; verificá el usuario real de la imagen, muchas corren distroless.
-- **Parametrizá por `.env` solo lo que se usa dentro de un `compose.*.yaml`.** Cuando el valor vive en el archivo de config propio de una herramienta, tiene que llegar por el mecanismo que *esa herramienta* ofrezca: Compose no interpola dentro de archivos bind-mounted. Loki necesita `-config.expand-env=true` **y** un bloque `environment:`, porque expande desde su propio entorno. nginx sustituye con `envsubst` sobre `/etc/nginx/templates`, y `NGINX_ENVSUBST_FILTER` acota qué variables entran — sin él, una env var homónima de una de nginx (`$host`, `$status`) se la come la sustitución.
+- **Parametrizá por `.env` solo lo que se usa dentro de un `docker/compose.*.yaml`.** Cuando el valor vive en el archivo de config propio de una herramienta, tiene que llegar por el mecanismo que *esa herramienta* ofrezca: Compose no interpola dentro de archivos bind-mounted. Loki necesita `-config.expand-env=true` **y** un bloque `environment:`, porque expande desde su propio entorno. nginx sustituye con `envsubst` sobre `/etc/nginx/templates`, y `NGINX_ENVSUBST_FILTER` acota qué variables entran — sin él, una env var homónima de una de nginx (`$host`, `$status`) se la come la sustitución.
+- **Los compose viven en `docker/`, el `.env` en la raíz.** Compose lee `.env` del directorio donde se corre el comando, no del que contiene el archivo elegido, así que `COMPOSE_FILE=docker/compose.yaml` alcanza y ningún comando lleva `-f`. Dos consecuencias: toda ruta relativa de un compose sale con `../` (`../config/…`, `../secrets/…`) porque el directorio de proyecto pasa a ser `docker/`, y sin `COMPOSE_PROJECT_NAME` el fallback del nombre de proyecto es el literal `docker`, igual en toda máquina — dos checkouts sin la variable comparten volúmenes.
 - **Nunca archivos `.example` paralelos** a un config: son una copia que se desincroniza. Si el valor no se puede parametrizar, se elimina o se versiona literal.
 - **`scripts/verify.sh` es dueño único de qué se chequea y qué se espera.** `docs/runbooks/` nombra el comando; los valores esperados no se duplican en la documentación.
 - `docker compose port` devuelve `invalid IP:0` con exit 0 para un puerto **no** publicado — no cadena vacía.
@@ -97,7 +98,7 @@ Estos valores están duplicados por necesidad —hay formatos que no interpolan 
 | `docs/architecture.md` | por qué esta herramienta y no otra, y qué se descartó |
 | `docs/stacks.md` | qué comparte cada entorno y las decisiones tomadas para staging y development |
 | `docs/roadmap.md` | plan de implementación por etapas |
-| `docs/runbooks/` | manual de procedimientos: un archivo por procedimiento, genérico. Dos plantillas — Cuándo se usa · Objetivo · A mano · Comandos · Verificación para lo deliberado; Síntoma · Diagnóstico · Fix para troubleshooting. Subcarpetas: `entorno/` · `modulos/` · `validacion/` · `backup-restore/` · `operacion/` · `credenciales/` · `troubleshooting/{edge,datos,odoo,backups-y-dr,observability}/` |
+| `docs/runbooks/` | manual de procedimientos: un archivo por procedimiento, genérico. Dos plantillas — Cuándo se usa · Objetivo · A mano · Comandos · Verificación para lo deliberado; Síntoma · Diagnóstico · Fix para troubleshooting. Subcarpetas: `entorno/` · `modulos/` · `validacion/` · `backup-restore/` · `operacion/` · `credenciales/` · `troubleshooting/{host,edge,datos,odoo,backups-y-dr,observability}/` |
 
 El contexto histórico, los incidentes y las justificaciones largas van a `docs/`, **nunca inline** en el código.
 

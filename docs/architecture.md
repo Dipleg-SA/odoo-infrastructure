@@ -227,7 +227,7 @@ Contrapartida escrita del principio de correr como no-root: se registra quién n
 
 ## Modularización de Compose
 
-`compose.yaml` no es monolítico: declara los recursos compartidos —`networks:` y `secrets:`— y usa `include:` para sumar un módulo por capa.
+`docker/compose.yaml` no es monolítico: declara los recursos compartidos —`networks:` y `secrets:`— y usa `include:` para sumar un módulo por capa.
 
 - **Motivo:** un archivo por capa mantiene acotado el diff de cada cambio y hace auditable de un vistazo qué contenedores pertenecen a qué capa. Más fácil de revisar y de razonar sobre el radio de impacto que un archivo de cientos de líneas con todo mezclado.
 - **Mecanismo:** `include:` en vez de encadenar `-f` a mano en cada invocación, lo que evita que una invocación se olvide un archivo y levante un subconjunto incompleto sin avisar.

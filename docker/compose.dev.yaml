@@ -13,11 +13,11 @@ networks:
 
 secrets:
   postgres_password:
-    file: ./secrets/postgres_password
+    file: ../secrets/postgres_password
   pgbouncer_credentials:
-    file: ./secrets/pgbouncer_credentials
+    file: ../secrets/pgbouncer_credentials
   odoo_admin_password:
-    file: ./secrets/odoo_admin_password
+    file: ../secrets/odoo_admin_password
 
 include:
   - compose.proxy.yaml
@@ -35,7 +35,7 @@ services:
     # Si dependiera de NGINX_MODE, un .env sin la clave montaría server-tls y nginx no arranca: no hay cert.
 
     volumes:
-      - ./config/nginx/server-plain.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ../config/nginx/server-plain.conf.template:/etc/nginx/templates/default.conf.template:ro
 
   # --- Sin pgBackRest ---
   # No archiva ni restaura, así que no lleva la credencial de R2 (PG_ARCHIVE_MODE=off en su .env).

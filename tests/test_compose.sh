@@ -30,21 +30,21 @@ contar_secrets() { sed -n '/^secrets:/,$p' | grep -cE '^  [a-z0-9_]+:$'; }
 bloque()         { sed -nE "/^  $1:$/,/^[a-z]|^  [a-z0-9_-]+:$/p"; }
 binds()          { grep -B1 -E 'target: (80|443)$' | sed -n 's/^ *host_ip: //p' | tr '\n' ' '; }
 
-PROD=$(resuelto env.production --profile cert --profile restore -f compose.yaml)
-STG=$(resuelto  env.staging    --profile cert --profile restore -f compose.staging.yaml)
-DEV=$(resuelto  env.dev        -f compose.dev.yaml)
+PROD=$(resuelto env.production --profile cert --profile restore -f docker/compose.yaml)
+STG=$(resuelto  env.staging    --profile cert --profile restore -f docker/compose.staging.yaml)
+DEV=$(resuelto  env.dev        -f docker/compose.dev.yaml)
 
 # =====================================================================
-titulo "producción — compose.yaml"
+titulo "producción — docker/compose.yaml"
 # =====================================================================
 
-igual "resuelve sin error" "0" "$(docker compose --env-file tests/fixtures/env.production -f compose.yaml config -q >/dev/null 2>&1; echo $?)"
+igual "resuelve sin error" "0" "$(docker compose --env-file tests/fixtures/env.production -f docker/compose.yaml config -q >/dev/null 2>&1; echo $?)"
 igual "declara 11 secrets" "11" "$(printf '%s\n' "$PROD" | contar_secrets)"
 igual "levanta 11 servicios sin perfiles" \
   "alloy backup cloudflared dnsmasq grafana loki nginx odoo pgbouncer postgres prometheus " \
-  "$(servicios env.production -f compose.yaml)"
+  "$(servicios env.production -f docker/compose.yaml)"
 contiene "suma certbot y restore con sus perfiles" "certbot restore-db restore-files" \
-  "$(servicios env.production --profile cert --profile restore -f compose.yaml | tr ' ' '\n' | grep -E 'certbot|restore' | tr '\n' ' ' | sed 's/ $//')"
+  "$(servicios env.production --profile cert --profile restore -f docker/compose.yaml | tr ' ' '\n' | grep -E 'certbot|restore' | tr '\n' ' ' | sed 's/ $//')"
 
 # La LAN entra sin pasar por el túnel: nivel 3 del criterio de bind.
 igual "nginx publica 80 y 443 en LOCAL_IP" "10.0.0.2 10.0.0.2 " "$(printf '%s\n' "$PROD" | bloque nginx | binds)"
@@ -61,14 +61,14 @@ contiene "odoo con SMTP_HOST real"       "SMTP_HOST: smtp.example.test" "$(print
 contiene "imágenes tagueadas por proyecto" "local/odoo:test-production" "$PROD"
 
 # =====================================================================
-titulo "staging — compose.staging.yaml"
+titulo "staging — docker/compose.staging.yaml"
 # =====================================================================
 
-igual "resuelve sin error" "0" "$(docker compose --env-file tests/fixtures/env.staging -f compose.staging.yaml config -q >/dev/null 2>&1; echo $?)"
+igual "resuelve sin error" "0" "$(docker compose --env-file tests/fixtures/env.staging -f docker/compose.staging.yaml config -q >/dev/null 2>&1; echo $?)"
 igual "declara 8 secrets" "8" "$(printf '%s\n' "$STG" | contar_secrets)"
 igual "sus capas, y solo esas" \
   "certbot cloudflared nginx odoo pgbouncer postgres restore-db restore-files " \
-  "$(servicios env.staging --profile cert --profile restore -f compose.staging.yaml)"
+  "$(servicios env.staging --profile cert --profile restore -f docker/compose.staging.yaml)"
 
 # ports: !reset [] — el ingreso entra por el túnel, y el :80 de la LAN ya lo tiene producción.
 igual "no publica ningún puerto" "" "$(printf '%s\n' "$STG" | bloque nginx | binds)"
@@ -89,12 +89,12 @@ contiene "restore-db comparte imagen con postgres" "local/postgres:test-staging"
   "$(printf '%s\n' "$STG" | bloque restore-db)"
 
 # =====================================================================
-titulo "development — compose.dev.yaml"
+titulo "development — docker/compose.dev.yaml"
 # =====================================================================
 
-igual "resuelve sin error" "0" "$(docker compose --env-file tests/fixtures/env.dev -f compose.dev.yaml config -q >/dev/null 2>&1; echo $?)"
+igual "resuelve sin error" "0" "$(docker compose --env-file tests/fixtures/env.dev -f docker/compose.dev.yaml config -q >/dev/null 2>&1; echo $?)"
 igual "declara 3 secrets" "3" "$(printf '%s\n' "$DEV" | contar_secrets)"
-igual "solo proxy, datos y aplicación" "nginx odoo pgbouncer postgres " "$(servicios env.dev -f compose.dev.yaml)"
+igual "solo proxy, datos y aplicación" "nginx odoo pgbouncer postgres " "$(servicios env.dev -f docker/compose.dev.yaml)"
 
 # server-plain no escucha en el 443: publicarlo ataría un puerto para nada.
 igual "publica solo el 80, en loopback" "127.0.0.1 " "$(printf '%s\n' "$DEV" | bloque nginx | binds)"
@@ -116,15 +116,15 @@ titulo "reglas que cruzan los tres"
 # que es exactamente lo que los principios prohíben.
 SIN_IP=$(mktemp)
 grep -v '^LOCAL_IP=' tests/fixtures/env.production > "$SIN_IP"
-SIN_LOCAL_IP=$(docker compose --env-file "$SIN_IP" -f compose.yaml config 2>/dev/null | bloque nginx | binds)
+SIN_LOCAL_IP=$(docker compose --env-file "$SIN_IP" -f docker/compose.yaml config 2>/dev/null | bloque nginx | binds)
 rm -f "$SIN_IP"
 igual "sin LOCAL_IP el bind cae a loopback, no a 0.0.0.0" "127.0.0.1 127.0.0.1 " "$SIN_LOCAL_IP"
 
 # La identidad sale de .env en los tres, con un solo mecanismo que aprender.
-# compose.yaml va nombrado aparte: el glob compose.*.yaml no lo matchea, y es el
-# único de los tres cuyo nombre de proyecto tagea las imágenes de producción.
+# docker/compose.yaml va nombrado aparte: el glob no lo matchea, y es el único de
+# los tres cuyo nombre de proyecto tagea las imágenes de producción.
 
-igual "ningún compose declara name:" "0" "$(grep -c '^name:' compose.yaml compose.*.yaml | grep -v ':0$' | wc -l | tr -d ' ')"
+igual "ningún compose declara name:" "0" "$(grep -c '^name:' docker/compose.yaml docker/compose.*.yaml | grep -v ':0$' | wc -l | tr -d ' ')"
 
 # El que atrapa un bind abierto es el conteo: un ports: sin IP no emite host_ip,
 # así que la ausencia de '0.0.0.0' sola no prueba nada — solo cubre el literal.
@@ -144,14 +144,18 @@ titulo "las tres plantillas de .env"
 # =====================================================================
 
 # Una plantilla por entorno es una copia por entorno: lo que puede pasar es que una
-# clave nueva entre en un compose.*.yaml compartido y solo se sume a una. Compose
+# clave nueva entre en un compose de capa compartido y solo se sume a una. Compose
 # avisa por cada variable sin default que no esté declarada, así que ese warning
 # —vacío en las tres— es la prueba de que ninguna plantilla se quedó atrás.
 
-for caso in "producción:prod:compose.yaml" "staging:stag:compose.staging.yaml" "development:dev:compose.dev.yaml"; do
+for caso in "producción:prod:docker/compose.yaml" "staging:stag:docker/compose.staging.yaml" "development:dev:docker/compose.dev.yaml"; do
   nombre="${caso%%:*}"; resto="${caso#*:}"; plantilla="${resto%%:*}"; entrypoint="${resto#*:}"
   igual "$nombre no deja variables sin declarar en su plantilla" "" \
     "$(docker compose --env-file ".env.$plantilla.example" -f "$entrypoint" config -q 2>&1 | grep -i 'is not set' | tr '\n' ' ')"
+  # El -f de arriba nunca ejerce el COMPOSE_FILE de la plantilla: sin esto, mover un
+  # compose y olvidar la plantilla pasa el test y falla en el servidor.
+  igual "$nombre apunta a su entrypoint desde la plantilla" "$entrypoint" \
+    "$(sed -n 's/^COMPOSE_FILE=//p' ".env.$plantilla.example")"
 done
 
 resumen

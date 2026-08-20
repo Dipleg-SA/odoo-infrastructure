@@ -37,7 +37,7 @@ services:
     # escribe ahí y nginx monta lo mismo en :ro. Van siempre juntos.
     volumes:
       - letsencrypt:/etc/letsencrypt
-      - ./config/certbot/wrapper.sh:/usr/local/bin/wrapper.sh:ro
+      - ../config/certbot/wrapper.sh:/usr/local/bin/wrapper.sh:ro
     entrypoint: ["/bin/sh", "/usr/local/bin/wrapper.sh"]
     mem_limit: 256m
     cpus: "0.50"

@@ -12,12 +12,12 @@ trap 'rm -rf "$TMP"' EXIT
 PATH="$REPO_ROOT/tests/stubs:$PATH"
 
 ROOT="$TMP/root"
-mkdir -p "$ROOT/scripts/lib"
+mkdir -p "$ROOT/scripts/lib" "$ROOT/docker"
 cp "$REPO_ROOT/scripts/capa.sh" "$ROOT/scripts/"
 cp "$REPO_ROOT/scripts/lib/ui.sh" "$ROOT/scripts/lib/"
 
 # El bloque volumes: real que nuke tiene que leer para saber qué volumen es dueño de db.
-cat > "$ROOT/compose.db.yaml" <<'EOF'
+cat > "$ROOT/docker/compose.db.yaml" <<'EOF'
 volumes:
   pgdata:
 
@@ -29,8 +29,8 @@ services:
 EOF
 
 # Una segunda capa con compose real, para probar que 'all ps' agrupa más de una
-# y saltea las que no tienen compose.*.yaml en este fixture (edge/backups/observability).
-cat > "$ROOT/compose.odoo.yaml" <<'EOF'
+# y saltea las que no tienen su compose en este fixture (edge/backups/observability).
+cat > "$ROOT/docker/compose.odoo.yaml" <<'EOF'
 volumes:
   odoo-data:
 

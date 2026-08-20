@@ -42,9 +42,9 @@ services:
     # producción y staging, server-plain para development, vía NGINX_MODE en .env.
 
     volumes:
-      - ./config/nginx/00-http.conf.template:/etc/nginx/templates/00-http.conf.template:ro
-      - ./config/nginx/odoo.locations.template:/etc/nginx/templates/odoo.locations.template:ro
-      - ./config/nginx/server-${NGINX_MODE:-tls}.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ../config/nginx/00-http.conf.template:/etc/nginx/templates/00-http.conf.template:ro
+      - ../config/nginx/odoo.locations.template:/etc/nginx/templates/odoo.locations.template:ro
+      - ../config/nginx/server-${NGINX_MODE:-tls}.conf.template:/etc/nginx/templates/default.conf.template:ro
       - letsencrypt:/etc/letsencrypt:ro
     healthcheck:
       test: ["CMD", "nginx", "-t"]

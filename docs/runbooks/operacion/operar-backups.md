@@ -35,6 +35,6 @@ Si el contenedor sale `health: starting` **no es un fallo**: con `interval: 1h` 
 
 ---
 
-**Destructivo — `make backups-nuke`.** Borra containers e imágenes de esta capa; **`compose.backups.yaml` no declara ningún volumen**, así que el comando anuncia `volúmenes (ninguno)` y no hay estado en disco que perder acá. Pide tipear `nuke`. No toca el repositorio remoto en R2 —eso vive fuera de Docker— ni el de pgBackRest, que al vivir dentro de `postgres` cae bajo [operar-db](operar-db.md).
+**Destructivo — `make backups-nuke`.** Borra containers e imágenes de esta capa; **`docker/compose.backups.yaml` no declara ningún volumen**, así que el comando anuncia `volúmenes (ninguno)` y no hay estado en disco que perder acá. Pide tipear `nuke`. No toca el repositorio remoto en R2 —eso vive fuera de Docker— ni el de pgBackRest, que al vivir dentro de `postgres` cae bajo [operar-db](operar-db.md).
 
 Si `restore-files` está levantado, el nuke termina con `⚠ alguna imagen quedó sin borrar`: comparte la imagen de `restic` con `backup`, y Docker no la borra mientras un contenedor la use. Es benigno — el comando cierra con `✓` y exit `0`.

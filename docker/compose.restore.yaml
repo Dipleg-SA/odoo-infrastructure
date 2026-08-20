@@ -9,7 +9,7 @@ services:
   restore-db:
     # Mismo build e imagen que el servicio postgres: sin el build: aquí, un
     # restore-up antes del primer build intentaría bajar el tag de Docker Hub.
-    build: ./docker/postgres
+    build: ./postgres
     image: local/postgres:${COMPOSE_PROJECT_NAME}
     container_name: ${COMPOSE_PROJECT_NAME}-restore-db
     profiles: [restore]
@@ -33,7 +33,7 @@ services:
         target: /etc/pgbackrest/conf.d/r2.conf
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./config/pgbackrest/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
+      - ../config/pgbackrest/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
     # Mismos límites que postgres: durante un restore la base está detenida, así
     # que ocupa su lugar en el presupuesto en vez de sumarse.
     mem_limit: ${POSTGRES_MEM_LIMIT:-2g}
