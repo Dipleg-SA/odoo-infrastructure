@@ -146,6 +146,12 @@ bind_declarado() {
     | grep . || echo '0.0.0.0'
 }
 
+# --- ¿El daemon rota logs? ---
+# Solo busca el límite de tamaño, no compara el archivo entero: un host con claves
+# propias (data-root, registry-mirrors) es legítimo y no tiene por qué dar rojo.
+
+rotacion_aplicada() { grep -q '"max-size"' "${DAEMON_JSON:-/etc/docker/daemon.json}" 2>/dev/null; }
+
 # --- ¿Este stack sirve TLS? ---
 # Qué plantilla monta nginx lo dice la composición, no .env: development la fija en
 # su entrypoint, así que su .env puede no traer NGINX_MODE y el modo se sabe igual.
@@ -211,6 +217,17 @@ v_host() {
     expect "docker habilitado al boot" "enabled" systemctl is-enabled docker
   else
     omitir "docker habilitado al boot" "sin systemd"
+  fi
+
+  # --- Rotación de logs del daemon ---
+  # Solo alcanza a contenedores creados después de aplicarla: descubrirlo con el
+  # stack arriba obliga a recrear los once, así que se chequea antes del primero.
+
+  if rotacion_aplicada; then
+    ok "rotación de logs del daemon aplicada"
+  else
+    bad "rotación de logs del daemon aplicada" \
+        "sin límite de tamaño en ${DAEMON_JSON:-/etc/docker/daemon.json} — aplicarlo antes del primer contenedor: sudo cp config/docker/daemon.json /etc/docker/daemon.json && sudo systemctl restart docker"
   fi
 
   # --- .env ---

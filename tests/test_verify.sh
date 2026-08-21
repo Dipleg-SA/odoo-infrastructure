@@ -155,4 +155,29 @@ titulo "sano — una capa ausente se omite, no se marca en rojo"
 SERVICIOS=$'nginx\nodoo'
 contiene "nombra que no está en este stack" "backup levantado (no está en este stack)" "$(sano backup 2>&1)"
 
+# =====================================================================
+titulo "rotacion_aplicada — el daemon.json del host lleva el límite"
+# =====================================================================
+
+DAEMON_JSON="$STUB_DIR/daemon.json"; export DAEMON_JSON
+
+# El contrato es "pasa o falla", no el código exacto: grep sale 2 con el archivo
+# ausente y 1 sin match, y el llamador solo lo usa como condición de un if.
+veredicto() { if rotacion_aplicada; then echo pasa; else echo falla; fi; }
+
+cp config/docker/daemon.json "$DAEMON_JSON"
+igual "el archivo del repo pasa"           "pasa"  "$(veredicto)"
+
+# El caso caro: el daemon por defecto usa json-file igual, pero sin cap. Verlo
+# recién con el stack arriba obliga a recrear los once contenedores.
+echo '{}' > "$DAEMON_JSON"
+igual "un daemon.json sin límite falla"    "falla" "$(veredicto)"
+
+# Claves ajenas al repo son legítimas; lo que se exige es el cap, no el archivo entero.
+printf '{"data-root":"/mnt/docker","log-opts":{"max-size":"10m"}}\n' > "$DAEMON_JSON"
+igual "y con claves propias del host pasa" "pasa"  "$(veredicto)"
+
+rm -f "$DAEMON_JSON"
+igual "sin archivo también falla"          "falla" "$(veredicto)"
+
 resumen

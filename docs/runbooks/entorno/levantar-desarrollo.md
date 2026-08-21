@@ -10,6 +10,17 @@ Odoo sirviendo por nginx en loopback, sin túnel, sin certificados, sin backups,
 
 nginx está presente aunque no haya TLS — es lo que hace honesto al `proxy_mode = True` de `odoo.conf`: sin nadie escribiendo `X-Forwarded-*`, Odoo confía en cabeceras que no existen, y esa diferencia con producción aparece justo en lo que es difícil de reproducir.
 
+## Prerrequisitos de tu máquina
+
+Dos, y el segundo no siempre:
+
+| Prerrequisito | Runbook | Cuándo |
+|---|---|---|
+| Docker Engine y Compose ≥ 2.20 | [configurar-docker-host](configurar-docker-host.md) | Siempre — solo la instalación; el arranque automático es cosa de un servidor |
+| Token de git de solo lectura | [crear-token-git-lectura](crear-token-git-lectura.md) | Si tu manifiesto de addons trae repos privados. Uno por máquina, no por checkout |
+
+**Nada de Cloudflare, R2 ni ZeptoMail.** Development no tiene túnel, ni certificados, ni backups, ni correo saliente: sus tres secrets se generan solos. Es toda la diferencia con [levantar-produccion § Prerrequisitos](levantar-produccion.md#prerrequisitos), donde seis de esos valores salen de cuentas de terceros.
+
 ---
 
 ## Fase 1 — Repositorio

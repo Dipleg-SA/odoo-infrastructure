@@ -4,7 +4,7 @@
 
 Antes de sincronizar addons — lo pide `addons-sync` para clonar los repos privados del manifiesto (los públicos no lo necesitan). **No es un secret de Compose**: vive en `~/.git-credentials` del host, nunca dentro de un contenedor, porque el clonado ocurre en el host y ningún contenedor lo consume.
 
-Se genera **una vez por checkout**: el del servidor de producción, el de cada stack adicional que viva en otra máquina, y el de cada máquina de desarrollo (ver [levantar-desarrollo](levantar-desarrollo.md)).
+Se genera **una vez por máquina**, no por checkout: `credential.helper store` se configura `--global` y escribe en `~/.git-credentials`, así que producción y staging en el mismo servidor comparten uno solo. Hace falta uno nuevo en cada máquina de desarrollo (ver [levantar-desarrollo](levantar-desarrollo.md)) y en cada stack que viva en otro host.
 
 ## Objetivo
 

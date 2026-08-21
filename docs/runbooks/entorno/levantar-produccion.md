@@ -12,20 +12,20 @@ Once servicios corriendo, verificados capa por capa, con el certificado real, lo
 
 ## Prerrequisitos
 
-Todo esto es anterior al primer `git clone` de este procedimiento: cuentas de terceros y configuración de sistema operativo, cada una con su propio runbook y su propia verificación. El orden de la tabla es también el crítico — **la zona de Cloudflare primero**, porque su delegación puede tardar 48h y ZeptoMail verifica su dominio contra esa misma zona.
+Todo esto es anterior al primer `git clone` de este procedimiento: cuentas de terceros y configuración de sistema operativo, cada una con su propio runbook y su propia verificación. **Las tres primeras van en ese orden y son el camino crítico**: la delegación de la zona puede tardar 48h, el Tunnel necesita la zona ya creada y ZeptoMail verifica su dominio contra esa misma zona. Las otras tres son independientes entre sí y de las anteriores.
 
 | Prerrequisito | Runbook | Te deja |
 |---|---|---|
-| Docker Engine y Compose, habilitados al arranque | [configurar-docker-host](configurar-docker-host.md) | El host listo para correr el stack |
-| Rotación de logs del daemon | [configurar-rotacion-logs-docker](configurar-rotacion-logs-docker.md) | `config/docker/daemon.json` aplicado, antes del primer contenedor |
 | Zona de Cloudflare + token de API | [crear-zona-cloudflare](crear-zona-cloudflare.md) | `secrets/cloudflare_api_token` |
 | Tunnel de Cloudflare | [crear-tunnel-cloudflare](crear-tunnel-cloudflare.md) | `secrets/cloudflare_tunnel_token` |
-| Bucket de R2 + credenciales | [crear-bucket-r2](crear-bucket-r2.md) | `secrets/pgbackrest_r2_credentials` · `secrets/restic_r2_credentials` · `R2_ENDPOINT` · `R2_BUCKET` |
 | ZeptoMail | [configurar-zeptomail](configurar-zeptomail.md) | `secrets/zeptomail_smtp_password` · `SMTP_USER` · `ALERT_EMAIL_FROM` |
+| Bucket de R2 + credenciales | [crear-bucket-r2](crear-bucket-r2.md) | `secrets/pgbackrest_r2_credentials` · `secrets/restic_r2_credentials` · `secrets/restic_password` · `R2_ENDPOINT` · `R2_BUCKET` |
 | Token de git de solo lectura | [crear-token-git-lectura](crear-token-git-lectura.md) | `~/.git-credentials` del servidor |
-| DNS/DHCP de la LAN | [configurar-dhcp-dns-lan](configurar-dhcp-dns-lan.md) | La LAN resolviendo el hostname público a la IP local — se aplica recién en la fase 2, pero conviene tener decidida la IP a reservar antes |
+| Docker Engine y Compose, habilitados al arranque | [configurar-docker-host](configurar-docker-host.md) | El host listo para correr el stack |
 
-`make host-verify` (fase 1, más abajo) valida los prerrequisitos del servidor junto con el resto de la config del repo. Los de cuentas externas no son verificables desde acá — cada runbook trae la suya.
+Los seis secrets con `CAMBIAR` de la fase 1 salen todos de esta tabla. `make host-verify` confirma la última fila y que cada secret tenga un valor cargado, pero no que ese valor sirva: la zona de Cloudflare y ZeptoMail se prueban contra el tercero en su propio runbook, y el token del Tunnel y la clave de R2 recién en las fases 2 y 3, la primera vez que algo los usa.
+
+Dos cosas que parecen prerrequisitos y no lo son, porque necesitan el repositorio clonado: la **rotación de logs del daemon**, que es el paso 7 de la fase 1 —antes del primer contenedor—, y el **DNS/DHCP de la LAN**, que va en la fase 2 ([configurar-dhcp-dns-lan](configurar-dhcp-dns-lan.md)). De la segunda conviene igual traer decidida la IP LAN que va a reservar el router.
 
 ---
 
@@ -33,7 +33,7 @@ Todo esto es anterior al primer `git clone` de este procedimiento: cuentas de te
 
 ### Objetivo
 
-El repo clonado en el último release, con `.env` y los 11 secrets cargados y validados. Nada levantado todavía.
+El repo clonado en el último release, con `.env` y los 11 secrets cargados y validados, y el daemon de Docker ya rotando logs. Nada levantado todavía.
 
 ### A mano
 
@@ -102,14 +102,24 @@ echo "OK: PUBLIC_HOSTNAME=$PUBLIC_HOSTNAME · LOCAL_IP=$LOCAL_IP"
 
 De acá en adelante los comandos usan esas variables en vez de valores literales. Si abrís una terminal nueva, volvé a correr este bloque.
 
+```bash
+echo "# 7 → Rotación de logs del daemon — el último momento para aplicarla"
+sudo cp config/docker/daemon.json /etc/docker/daemon.json
+sudo systemctl restart docker
+```
+
+**Va acá porque la fase 2 crea el primer contenedor.** El driver de logging se fija al crear cada contenedor, no al arrancarlo: aplicarla después no alcanza con reiniciar el daemon, obliga a recrear los once — ver [contenedor-no-rota-logs](../troubleshooting/observability/contenedor-no-rota-logs.md).
+
+`dockerd` no arranca si `daemon.json` tiene claves desconocidas, comentarios simulados incluidos. Si el restart falla, `journalctl -u docker` trae el motivo exacto.
+
 ### Verificación
 
 ```bash
-echo "# 7 → Prerrequisitos del servidor y config del repo"
+echo "# 8 → Prerrequisitos del servidor y config del repo"
 make host-verify
 ```
 
-Cubre versión de Compose, arranque automático de Docker, `.env` sin claves vacías, la identidad declarada del stack, permisos y GID de los 11 secrets, y la superficie publicada del host.
+Cubre versión de Compose, arranque automático de Docker, la rotación de logs recién aplicada, `.env` sin claves vacías, la identidad declarada del stack, permisos y GID de los 11 secrets, y la superficie publicada del host.
 
 ---
 

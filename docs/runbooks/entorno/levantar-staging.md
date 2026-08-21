@@ -12,7 +12,7 @@ Lleva proxy, borde, datos, aplicación y restore. **No lleva backups, observabil
 
 ## Prerrequisitos del servidor
 
-Ya resueltos por producción, en el mismo host: la versión de Docker Engine/Compose y su arranque automático ([configurar-docker-host](configurar-docker-host.md)), y la rotación de logs del daemon ([configurar-rotacion-logs-docker](configurar-rotacion-logs-docker.md)) —aplicada antes del primer contenedor de producción, así que cualquier contenedor nuevo, incluidos los de este stack, ya nace con ella—. No hay nada que instalar o reconfigurar a nivel de sistema operativo para levantar un segundo stack. Ver [levantar-producción § Prerrequisitos](levantar-produccion.md#prerrequisitos) si este es el primer stack que se levanta en el servidor.
+Ya resueltos por producción, en el mismo host: la versión de Docker Engine/Compose y su arranque automático ([configurar-docker-host](configurar-docker-host.md)), y la rotación de logs del daemon —aplicada en la fase 1 de producción, antes de su primer contenedor, así que cualquier contenedor nuevo, incluidos los de este stack, ya nace con ella—. No hay nada que instalar o reconfigurar a nivel de sistema operativo para levantar un segundo stack. Si este es el primer stack del servidor, el procedimiento no es este: es [levantar-produccion](levantar-produccion.md) entero.
 
 ---
 
