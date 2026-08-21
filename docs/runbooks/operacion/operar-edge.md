@@ -43,4 +43,4 @@ Cubre los servicios `healthy`, que la config renderizada no tenga variables de `
 
 **Destructivo — `make edge-nuke`.** Borra containers, imágenes **y el volumen `letsencrypt`**, donde vive el certificado emitido. Pide tipear la palabra `nuke`, no un Y/N.
 
-Consecuencia a tener presente: sin ese volumen, **nginx no vuelve a arrancar** hasta reemitir con `make cert-issue` ([levantar-produccion](../entorno/levantar-produccion.md) fase 3). Y Let's Encrypt limita cuántos certificados se emiten por dominio en una ventana de tiempo — no es un comando para repetir a la ligera.
+Consecuencia a tener presente: sin ese volumen, **nginx no vuelve a arrancar** hasta reemitir con `make cert-issue` ([levantar-produccion](../entorno/levantar-produccion.md) fase 2). Y Let's Encrypt limita cuántos certificados se emiten por dominio en una ventana de tiempo — no es un comando para repetir a la ligera.

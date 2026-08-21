@@ -1,0 +1,45 @@
+# Crear el bucket de R2 y su token
+
+## Cuándo se usa
+
+Antes de clonar el repositorio — es la credencial más sensible del stack: abre los dos repositorios de backup (pgBackRest y restic), que conviven en el mismo bucket.
+
+## Objetivo
+
+Un bucket R2 nuevo y vacío, un token `Object Read & Write` acotado a él, y las dos passphrases de cifrado generadas y guardadas — nada de esto se puede recuperar después si se pierde.
+
+## A mano
+
+1. Cloudflare → R2 → crear un bucket nuevo y vacío. Uno solo: `pgbackrest/` y `restic/` conviven adentro como prefijos separados.
+2. Token de API de R2, permiso `Object Read & Write`, acotado a ese bucket únicamente.
+3. Anotar el endpoint (sin esquema, ej. `<account-id>.r2.cloudflarestorage.com`) y el nombre del bucket — van a `R2_ENDPOINT` y `R2_BUCKET` en `.env`.
+
+## Comandos
+
+Las dos passphrases de cifrado se inventan acá, no en R2. Mismo comando, **dos valores distintos**: cifran repositorios separados y terminan en archivos separados.
+
+```bash
+echo "# 1 → Passphrase de pgBackRest, a secrets/pgbackrest_r2_credentials"
+openssl rand -hex 32
+```
+
+```bash
+echo "# 2 → Passphrase de restic, a secrets/restic_password (valor distinto)"
+openssl rand -hex 32
+```
+
+Hex y no base64: los `/ + =` rompen a cualquier consumidor que arme una URI con la credencial adentro.
+
+> **Al gestor de contraseñas ahora, antes de seguir.** Perderlas deja el repositorio de backups irrecuperable — no hay procedimiento. Y no las dejes solo en el servidor: si el servidor es lo que se perdió, ahí no las vas a poder buscar. Mismo trato para el token de R2, que puede vaciar el bucket (R2 no tiene versioning). Una vez guardadas, cerrá la terminal: a diferencia de los tokens, estas dos sí quedan impresas en el scrollback.
+
+## Verificación
+
+No hay forma de probar la clave de R2 todavía — se prueba por primera vez cuando la base esté levantada y corra `pgbackrest check` (ver [levantar-produccion](levantar-produccion.md)). Lo único a confirmar ahora:
+
+- [ ] El bucket está vacío y es nuevo — no reusado de otro deployment
+- [ ] El token es `Object Read & Write`, acotado a este bucket, no a la cuenta entera
+- [ ] Las dos passphrases y el token de R2 ya están en el gestor de contraseñas, fuera del servidor
+
+---
+
+Para rotar la clave de acceso más adelante: [rotar-credenciales-r2](../credenciales/rotar-credenciales-r2.md).

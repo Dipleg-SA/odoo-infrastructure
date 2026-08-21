@@ -34,3 +34,5 @@ sudo ufw allow from <subred-lan>/24 to any port 53 proto udp
 ```
 
 Es un prerrequisito del servidor (ver [levantar-produccion](../../entorno/levantar-produccion.md)), no algo que este stack pueda resolver solo.
+
+Si en cambio `dnsmasq` está sano (bindeado y respondiendo) pero la LAN igual sale por el DNS público, no es un problema de `dnsmasq`: el router no lo tiene cargado como resolver — ver [configurar-dhcp-dns-lan](../../entorno/configurar-dhcp-dns-lan.md).

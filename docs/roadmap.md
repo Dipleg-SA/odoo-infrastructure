@@ -31,7 +31,7 @@ Lo único de todo el plan que arregla algo que ya está roto. No depende de ning
 
 La resiliencia ante caída de internet depende de que los equipos de la LAN usen dnsmasq como resolver, y eso lo decide el DHCP del router. El repositorio nunca lo pide, y el chequeo que parece cubrirlo usa `dig … @servidor`: prueba que dnsmasq contesta, no que alguien le pregunte.
 
-- `docs/runbooks/entorno/levantar-produccion.md`: prerrequisito de apuntar el DNS de la LAN al servidor.
+- `docs/runbooks/entorno/configurar-dhcp-dns-lan.md`: prerrequisito de apuntar el DNS de la LAN al servidor.
 - El chequeo de la fase de borde pasa a `dig +short` **sin** `@`, corrido desde un equipo de la LAN.
 - `verify.sh`: dejar dicho que `sano dnsmasq` valida que responde, no que se lo consulte. Desde el servidor no se puede verificar lo otro.
 
@@ -90,7 +90,7 @@ La capa de borde se parte en dos, porque development no lleva túnel ni certific
 - `scripts/cert-renew.sh` y las units `odoo-cert-renew.{service,timer}`, con el mismo `OnFailure=` que los backups. `cert-renew.sh` escribe la métrica de vencimiento en `state/textfile/`.
 - `prometheus.yaml` pierde el job `traefik`. Las dos reglas de Grafana se migran: tasa de error a LogQL sobre el access log, vencimiento de certificado a la métrica de textfile.
 - `scripts/config-init.sh` y su target del Makefile se borran: existían solo para pre-crear `acme.json`, y el estado de certbot vive en un volumen nombrado.
-- `verify.sh`: los chequeos de borde pasan de Traefik a nginx. `docs/runbooks/entorno/levantar-produccion.md` fase 3, `docs/runbooks/troubleshooting/edge/`, `docs/architecture.md`.
+- `verify.sh`: los chequeos de borde pasan de Traefik a nginx. `docs/runbooks/entorno/levantar-produccion.md` fase 2, `docs/runbooks/troubleshooting/edge/`, `docs/architecture.md`.
 
 **Verificación.** Un stack descartable en la máquina del operador, con nombre de proyecto propio, sirviendo Odoo por nginx sin TLS. Mismo método con el que se validaron `daemon.json`, Loki y Alloy: contenedores de prueba, nunca los secrets reales.
 

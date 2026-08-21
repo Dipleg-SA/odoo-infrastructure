@@ -303,7 +303,7 @@ v_edge() {
 
   if declarado dnsmasq; then
     omitir "la LAN usa dnsmasq como resolver" \
-      "no verificable desde el servidor — correr el chequeo de docs/runbooks/entorno/levantar-produccion.md fase 3 en un equipo de la LAN"
+      "no verificable desde el servidor — correr el chequeo de docs/runbooks/entorno/levantar-produccion.md fase 2 en un equipo de la LAN"
   fi
 
   # --- Config renderizada ---
@@ -537,7 +537,7 @@ v_db() {
     case "$info" in
       *"no valid backup"*)
         omitir "repositorio de pgBackRest alcanzable y cifrado" \
-          "sin backups todavía — normal antes de la fase 7; el archive_command ya llega (ver 'wal archive min/max')" ;;
+          "sin backups todavía — normal antes de la fase 6; el archive_command ya llega (ver 'wal archive min/max')" ;;
       *"status: error"*)
         detalle=$(printf '%s' "$info" | grep -o '\[[A-Za-z]*Error\].*' | head -1)
         [ -n "$detalle" ] || detalle=$(printf '%s' "$info" | grep 'status: error' | head -1 | sed 's/^ *//')

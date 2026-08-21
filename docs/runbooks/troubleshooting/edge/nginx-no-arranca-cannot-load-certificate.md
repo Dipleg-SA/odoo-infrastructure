@@ -20,4 +20,4 @@ En un deploy nuevo, el certificado va **antes** del primer `up`:
 make cert-issue
 ```
 
-Con DNS-01 no hace falta que nginx esté vivo para emitir: la validación va contra la API de Cloudflare, no contra el puerto 80. Ver [levantar-produccion](../../entorno/levantar-produccion.md) fase 3.
+Con DNS-01 no hace falta que nginx esté vivo para emitir: la validación va contra la API de Cloudflare, no contra el puerto 80. Ver [levantar-produccion](../../entorno/levantar-produccion.md) fase 2.
