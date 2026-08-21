@@ -53,6 +53,7 @@ Lo que las capas ausentes necesitarían —SMTP, alertas, retenciones— no est�
 
 ```bash
 echo "# 1 → Clonar en su propio directorio, fijado al último tag"
+REPO_URL='git@github.com:tu-organizacion/odoo-infrastructure.git'
 git clone "$REPO_URL" /srv/odoo-staging && cd /srv/odoo-staging
 git fetch --tags && git checkout "$(git describe --tags --abbrev=0)"
 ```

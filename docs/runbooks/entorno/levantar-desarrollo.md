@@ -38,7 +38,7 @@ Nada que pegar. En `.env`, estas claves (`COMPOSE_FILE` ya viene puesto):
 
 ```bash
 echo "# 1 → Un directorio por feature, con su nombre adentro"
-FEATURE='sale'
+REPO_URL='git@github.com:tu-organizacion/odoo-infrastructure.git'; FEATURE='sale'
 git clone "$REPO_URL" ~/odoo-development-$FEATURE && cd ~/odoo-development-$FEATURE
 ```
 

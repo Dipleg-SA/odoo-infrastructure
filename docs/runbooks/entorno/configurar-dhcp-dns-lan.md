@@ -2,7 +2,7 @@
 
 ## Cuándo se usa
 
-Después de levantar la capa `edge` en producción ([levantar-produccion](levantar-produccion.md), fase 2) — `dnsmasq` queda sano y resolviendo el hostname público a la IP local, pero nadie de la LAN lo consulta hasta que el router se lo indique por DHCP. Exclusivo de producción: `dnsmasq` corre solo ahí (`network_mode: host` sobre el `53`, sin segunda instancia posible — ver [compose.dns.yaml](../../docker/compose.dns.yaml)).
+Después de levantar la capa `edge` en producción ([levantar-produccion](levantar-produccion.md), fase 2) — `dnsmasq` queda sano y resolviendo el hostname público a la IP local, pero nadie de la LAN lo consulta hasta que el router se lo indique por DHCP. Exclusivo de producción: `dnsmasq` corre solo ahí (`network_mode: host` sobre el `53`, sin segunda instancia posible — ver [compose.dns.yaml](../../../docker/compose.dns.yaml)).
 
 ## Objetivo
 
@@ -22,7 +22,7 @@ make host-verify   # "ufw permite 53/udp desde la LAN" tiene que dar ok
 Configuración en el router/DHCP de la red, fuera de este repositorio — el mecanismo exacto varía por fabricante, el concepto es el mismo en cualquiera:
 
 1. **Reservar la IP del servidor.** El campo DNS del DHCP guarda una IP fija; si el servidor la recibe dinámicamente, el día que cambie el router sigue apuntando a una IP vieja y la LAN pierde resolución en silencio. Reservar la MAC del servidor a `${LOCAL_IP}` — la sección suele llamarse "reserva de direcciones" o "DHCP reservation".
-2. **DNS primario → `${LOCAL_IP}`.** La misma IP que `dnsmasq` bindea (`--listen-address` en [compose.dns.yaml](../../docker/compose.dns.yaml)).
+2. **DNS primario → `${LOCAL_IP}`.** La misma IP que `dnsmasq` bindea (`--listen-address` en [compose.dns.yaml](../../../docker/compose.dns.yaml)).
 3. **DNS secundario → un resolver público**, el mismo que uses en `DNS_FORWARDER_1`/`DNS_FORWARDER_2` del `.env` u otro cualquiera. No es cosmético: si la capa `edge` se cae (mantenimiento, `make edge-down`, `edge-nuke`), la LAN necesita a dónde caer.
 4. **Aplicar y renovar.** Un cambio de DHCP no empuja a los clientes ya conectados — o esperan a que expire su lease, o hace falta forzar la renovación (reconectar Wi-Fi, `ipconfig /renew`, reiniciar el dispositivo).
 

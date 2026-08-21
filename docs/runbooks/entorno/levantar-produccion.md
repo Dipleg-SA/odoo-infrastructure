@@ -58,7 +58,7 @@ En `.env`, seis claves más. Cuatro salen directo de los prerrequisitos (`R2_END
 
 ```bash
 echo "# 1 → Completá la URL de tu fork"
-REPO_URL='git@github.com:tu-organizacion/infrastructure-odoo.git'
+REPO_URL='git@github.com:tu-organizacion/odoo-infrastructure.git'
 ```
 
 ```bash
