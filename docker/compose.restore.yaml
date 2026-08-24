@@ -43,11 +43,14 @@ services:
     image: restic/restic:0.19.1
     container_name: ${COMPOSE_PROJECT_NAME}-restore-files
     profiles: [restore]
-    # Mismo uid/gid que Odoo: restaurar como root dejaría archivos que la
-    # aplicación no puede leer ni pasar por el GC.
-    user: "100:101"
-    entrypoint: ["sleep"]
-    command: ["infinity"]
+    # Root, y hacen falta las dos mitades: un volumen recién creado nace root:root
+    # y ningún no-root puede crear ahí el primer directorio, y solo root le devuelve
+    # a cada archivo el owner que tenía en el snapshot. Ver docs/architecture.md.
+    user: "0:0"
+    # El chown del punto de montaje va acá y no en el Makefile: el restore de
+    # pérdida total corre estos comandos a mano. 100:101 son los uid/gid de Odoo.
+    entrypoint: ["sh", "-c"]
+    command: ["chown 100:101 /data/odoo && exec sleep infinity"]
     networks:
       - app
     environment:

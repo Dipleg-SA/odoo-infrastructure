@@ -34,9 +34,9 @@ Lo que fija el número no es una preferencia: **la ventana de la base tiene que 
 | Qué | Herramienta | Dónde | Se restaura con |
 |---|---|---|---|
 | Base de datos (cluster completo) | pgBackRest | R2, prefijo `pgbackrest/` | servicio `restore-db` (misma imagen que `postgres`, uid 999) |
-| Filestore (adjuntos) | restic | R2, prefijo `restic/` | servicio `restore-files` (uid 100:101, monta `odoo-data` rw) |
+| Filestore (adjuntos) | restic | R2, prefijo `restic/` | servicio `restore-files` (root, monta `odoo-data` rw) |
 
-**pgBackRest restaura el cluster entero**, no una base suelta: no existe "restaurar solo la tabla X" ni "solo la base `odoo`". Y **los dos servicios de restore duermen** (`entrypoint: sleep infinity`) — levantarlos no restaura nada, son contenedores donde el operador ejecuta los comandos a mano; están fuera de `make up` por `profiles: [restore]`.
+**pgBackRest restaura el cluster entero**, no una base suelta: no existe "restaurar solo la tabla X" ni "solo la base `odoo`". Y **los dos servicios de restore duermen** (`sleep infinity`) — levantarlos no restaura nada, son contenedores donde el operador ejecuta los comandos a mano; están fuera de `make up` por `profiles: [restore]`.
 
 ### Consistencia entre base y filestore
 
@@ -222,6 +222,7 @@ Contrapartida escrita del principio de correr como no-root: se registra quién n
 | DNS local | root | Bindea el `53`, puerto privilegiado, en `network_mode: host` |
 | Base de datos | root → usuario propio | La imagen oficial arranca root y baja de usuario en su propio entrypoint |
 | Aplicación | usuario propio | Cumple sin excepción |
+| Restore del filestore | root | Un volumen recién creado nace `root:root`: un no-root no puede crear ahí ni el primer directorio, y solo root le devuelve a cada archivo el owner del snapshot |
 
 ---
 
