@@ -1,9 +1,10 @@
-# Reemplazar CAMBIAR-en-deploy por la ruta absoluta del repo en el servidor.
+# Plantilla: `sudo make timers-install` inyecta la ruta del checkout y el prefijo
+# del proyecto en el nombre. No se instala copiando este archivo a mano.
 # Corre como root: necesita acceso al socket de Docker.
 
 [Unit]
 Description=Backup diario Odoo (pgBackRest check + diff, restic + prune)
-OnFailure=odoo-notify@%n.service
+OnFailure=notify@%n.service
 Requires=docker.service
 After=docker.service
 

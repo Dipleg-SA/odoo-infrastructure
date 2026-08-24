@@ -16,15 +16,15 @@ El servidor reconstruido desde cero, con la base y el filestore al último punto
 
 ## A mano
 
-**La trampa de este escenario:** si seguís [levantar-produccion](../entorno/levantar-produccion.md) de punta a punta, el entrypoint de Odoo inicializa una base nueva (`-i base`) en la fase Aplicación y te encontrás restaurando sobre un cluster que ya no está vacío. **El restore va antes de arrancar Odoo.**
+**La trampa de este escenario:** si seguís [levantar-produccion](../entorno/levantar-produccion.md) de punta a punta, el entrypoint de Odoo inicializa una base nueva (`-i base`) en el bloque 6 · Odoo y te encontrás restaurando sobre un cluster que ya no está vacío. **El restore va antes de arrancar Odoo.**
 
 **La regla de consistencia base ↔ filestore.** Un adjunto vive partido: la fila en `ir_attachment` (base) y el archivo en el filestore. La corrida de backup siempre hace pgBackRest primero y restic después, así que cada snapshot de restic es un superconjunto de lo que la base referenciaba en ese momento. En pérdida total no hay elección de timestamp: se restaura al final del WAL disponible y al último snapshot de restic, así que la regla se cumple sola.
 
 ## Comandos
 
-**1. Seguir [levantar-produccion](../entorno/levantar-produccion.md) desde el principio hasta el `up -d postgres pgbouncer` de la fase Datos.** Un solo desvío, en la fase Cuentas externas: las dos passphrases de cifrado y las claves de R2 **salen de la copia custodiada, no se inventan** — esa fase asume un deploy virgen y hace generarlas. Passphrases nuevas dejan todo el repo ilegible.
+**1. Seguir [levantar-produccion](../entorno/levantar-produccion.md) desde el principio hasta el `make db-up` del bloque 4 · Database** — solo, sin encadenarle el `make stanza-init` que ese bloque trae al lado. Un solo desvío, en el bloque 1 · Prerrequisitos: las dos passphrases de cifrado y las claves de R2 **salen de la copia custodiada, no se inventan** — ese bloque asume un deploy virgen y hace generarlas. Passphrases nuevas dejan todo el repo ilegible.
 
-**2. Saltear el `stanza-create` de la fase Datos.** La stanza ya existe en R2 — ese paso es solo para un deploy virgen, y correrlo acá falla por *system identifier* que no coincide. Solo confirmás que la ves:
+**2. Saltear `make stanza-init`.** La stanza ya existe en R2 — ese paso es solo para un deploy virgen, y correrlo acá falla por *system identifier* que no coincide. Solo confirmás que la ves:
 
 ```bash
 docker compose stop -t 60 postgres
@@ -51,9 +51,9 @@ docker compose rm -sf restore-files
 
 El `--target /` es correcto: restic guarda rutas absolutas, el snapshot contiene `/data/odoo`, y en este contenedor `/data/odoo` **es** el volumen `odoo-data` montado rw.
 
-**5. Recién ahora**, retomar [levantar-produccion](../entorno/levantar-produccion.md) en la verificación de la fase Datos (`make db-verify`) y seguir con la fase Aplicación. El entrypoint encuentra la base ya inicializada y no la toca.
+**5. Recién ahora**, retomar [levantar-produccion](../entorno/levantar-produccion.md) en la verificación del bloque 4 (`make db-verify`) y seguir con los bloques 5 · Addons y 6 · Odoo. El entrypoint encuentra la base ya inicializada y no la toca.
 
-**6. Completar las fases Protección y Observación, y el cierre.** En Protección, `restic init` va a decir `config file already exists` — es lo correcto, el repo ya está; **no lo fuerces**.
+**6. Completar los bloques 7 · Backup y 8 · Monitoring, y el cierre.** En el 7, `make backup-init` va a decir `config file already exists` — es lo correcto, el repo ya está; **no lo fuerces**.
 
 ## Verificación
 

@@ -180,4 +180,36 @@ igual "y con claves propias del host pasa" "pasa"  "$(veredicto)"
 rm -f "$DAEMON_JSON"
 igual "sin archivo también falla"          "falla" "$(veredicto)"
 
+# =====================================================================
+titulo "timer_activo — la unit sale de timers.sh, no de una lista de acá"
+# =====================================================================
+
+# El nombre no se afirma literal: se le pregunta al mismo dueño al que verify.sh
+# le pregunta. Lo que se afirma es que no lo inventa y que no recorta la salida.
+
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-production}"
+printf 'postgres\nodoo\nbackup\ncertbot\n' > "$STUB_DIR/servicios"
+
+UNIDAD=$(scripts/timers.sh units | grep -- '-backup-daily$')
+{ scripts/timers.sh units | sed 's/$/.timer activa/'
+  printf 'OnFailure=%s%%n.service\n' "$(scripts/timers.sh notify)"; } > "$STUB_DIR/systemctl"
+
+: > "$STUB_DIR/llamadas"
+contiene "chequea la unit prefijada que nombra timers.sh" \
+  "timer backup-daily activo ($UNIDAD.timer)" "$(timer_activo backup-daily 2>&1)"
+
+# Sin --full systemd asume 80 columnas y elide el nombre: el chequeo daría rojo en verde.
+contiene "y pide --full para que el nombre no se recorte" \
+  "list-timers --all --full" "$(cat "$STUB_DIR/llamadas")"
+
+# La plantilla es una sola por stack: el latch evita repetir el chequeo en cada timer.
+SALIDA=$( { timer_activo backup-daily; timer_activo backup-monthly; } 2>&1 )
+igual "la plantilla de aviso se chequea una sola vez" "1" \
+  "$(printf '%s\n' "$SALIDA" | grep -c 'unit plantilla de aviso instalada')"
+
+# Un stack sin certbot no tiene esa unit: omitida, no marcada en rojo.
+printf 'postgres\nodoo\n' > "$STUB_DIR/servicios"
+contiene "sin la capa, se omite en vez de fallar" \
+  "no corresponde a este stack" "$(timer_activo cert-renew 2>&1)"
+
 resumen

@@ -4,106 +4,137 @@
 
 Vas a empezar a trabajar en una feature — un módulo nuevo o un cambio sobre uno existente — y necesitás tu propio entorno, aislado de cualquier otro checkout de desarrollo que tengas corriendo. Un checkout por feature, en tu máquina.
 
+Son los **mismos nueve bloques y los mismos comandos** que producción: `capa.sh` resuelve qué servicios trae este stack, así que `make edge-up` levanta acá un solo contenedor. Dos bloques no corresponden y se saltean.
+
 ## Objetivo
 
 Odoo sirviendo por nginx en loopback, sin túnel, sin certificados, sin backups, y **sin ningún valor que pegar a mano**: los tres secrets se generan.
 
+| Bloque | Acá | |
+|---|---|---|
+| 1 · Prerrequisitos | Docker, y el token de git solo si tu manifiesto tiene repos privados | ✓ |
+| 2 · Repositorio | 3 secrets, los tres generados | ✓ |
+| 3 · Edge | **solo nginx**, en texto plano: ni túnel, ni certificados, ni `dnsmasq` | ✓ |
+| 4 · Database | vacía — la inicializa Odoo en el bloque 6 | ✓ |
+| 5 · Addons | tu rama de trabajo | ✓ |
+| 6 · Odoo | el sitio en `127.0.0.1` | ✓ |
+| 7 · Backup | **no corresponde** | — |
+| 8 · Monitoring | **no corresponde** | — |
+| 9 · Cierre | + el aislamiento entre checkouts | ✓ |
+
 nginx está presente aunque no haya TLS — es lo que hace honesto al `proxy_mode = True` de `odoo.conf`: sin nadie escribiendo `X-Forwarded-*`, Odoo confía en cabeceras que no existen, y esa diferencia con producción aparece justo en lo que es difícil de reproducir.
 
-## Prerrequisitos de tu máquina
+---
 
-Dos, y el segundo no siempre:
+## 1 · Prerrequisitos
+
+**Objetivo** — tu máquina lista. Dos, y el segundo no siempre.
 
 | Prerrequisito | Runbook | Cuándo |
 |---|---|---|
 | Docker Engine y Compose ≥ 2.20 | [configurar-docker-host](configurar-docker-host.md) | Siempre — solo la instalación; el arranque automático es cosa de un servidor |
 | Token de git de solo lectura | [crear-token-git-lectura](crear-token-git-lectura.md) | Si tu manifiesto de addons trae repos privados. Uno por máquina, no por checkout |
 
-**Nada de Cloudflare, R2 ni ZeptoMail.** Development no tiene túnel, ni certificados, ni backups, ni correo saliente: sus tres secrets se generan solos. Es toda la diferencia con [levantar-produccion § Prerrequisitos](levantar-produccion.md#prerrequisitos), donde seis de esos valores salen de cuentas de terceros.
+**Nada de Cloudflare, R2 ni ZeptoMail.** Development no tiene túnel, ni certificados, ni backups, ni correo saliente: sus tres secrets se generan solos. Es toda la diferencia con [levantar-produccion § 1](levantar-produccion.md#1--prerrequisitos), donde seis de esos valores salen de cuentas de terceros.
 
 ---
 
-## Fase 1 — Repositorio
+## 2 · Repositorio
 
-### Objetivo
+**Objetivo** — checkout propio por feature, con `.env` y los 3 secrets generados y con permisos. Nada levantado todavía.
 
-Checkout propio por feature, con `.env` y los 3 secrets generados y con permisos. Nada levantado todavía.
-
-### A mano
-
-Nada que pegar. En `.env`, estas claves (`COMPOSE_FILE` ya viene puesto):
-
-| Clave | Valor |
-|---|---|
-| `COMPOSE_PROJECT_NAME` | `development-<feature>`, **único por checkout** |
-| `COMPOSE_FILE` | `docker/compose.dev.yaml` |
-| `PG_ARCHIVE_MODE` | `off` |
-| `HTTP_PORT` | El puerto de loopback, distinto por checkout si vas a alternar |
-| `ADDONS_BRANCH` | Tu rama de trabajo |
+**A mano** — nada que pegar. `.env.dev.example` deja cuatro claves y las explica donde se editan; `COMPOSE_FILE` ya viene puesto. La que no se puede olvidar es `COMPOSE_PROJECT_NAME`.
 
 > **El nombre del proyecto es el único aislamiento entre dos checkouts de desarrollo.** De él salen los volúmenes: dos que lo compartan resuelven al mismo `pgdata`, y como corre uno a la vez no colisionan al arrancar — **se pisan los datos en silencio**. Si falta la clave, Compose cae al directorio del compose elegido —`docker`, el mismo en todos los checkouts—, así que olvidarla es exactamente el caso peligroso; el otro es copiar el `.env` de un checkout a otro.
 
-`NGINX_MODE` no se declara: `docker/compose.dev.yaml` fija la plantilla sin TLS en el entrypoint.
-
-### Comandos
-
 ```bash
-echo "# 1 → Un directorio por feature, con su nombre adentro"
-REPO_URL='git@github.com:tu-organizacion/odoo-infrastructure.git'; FEATURE='sale'
-git clone "$REPO_URL" ~/odoo-development-$FEATURE && cd ~/odoo-development-$FEATURE
+FEATURE='sale'
+git clone git@github.com:tu-organizacion/odoo-infrastructure.git ~/odoo-development-$FEATURE
+cd ~/odoo-development-$FEATURE
 ```
 
 Acá **no** se fija a un tag: el checkout de desarrollo sigue la rama en la que estás trabajando. El `HEAD` detached es un guard-rail del servidor, donde nadie debería estar corrigiendo código.
 
 ```bash
-echo "# 2 → Config: las claves de la tabla; COMPOSE_FILE ya viene puesto"
 cp .env.dev.example .env
-${EDITOR:-vi} .env
+${EDITOR:-nano} .env
 ```
 
-**Antes de `secrets-init`, no después.** El `COMPOSE_PROJECT_NAME` hay que editarlo igual aunque la plantilla ya traiga `COMPOSE_FILE`: el placeholder es el mismo para todo checkout que no lo cambie, y de ahí salen los volúmenes.
+**Antes de `secrets-init`, no después:** el script le pregunta a la composición cuáles secrets lleva este stack. El placeholder de `COMPOSE_PROJECT_NAME` es el mismo para todo checkout que no lo cambie, y de ahí salen los volúmenes.
 
 ```bash
-echo "# 3 → Los 3 secrets, todos generados"
 make secrets-init
 sudo make secrets-perms
+set -a; . ./.env; set +a
 ```
 
 `secrets-init` no imprime ningún pendiente: los tres salen de `openssl`.
 
 ```bash
-echo "# 4 → Cargar .env en la shell"
-set -a; . ./.env; set +a
+make host-verify
 ```
 
-### Verificación
-
-Ninguna aislada: los tres secrets se generan solos y no hay ninguna cuenta externa que confirmar todavía. Se verifica en conjunto en la fase 3.
+Chequea la versión de Compose, `.env` sin claves vacías, la identidad declarada del stack y los permisos de los 3 secrets. El arranque automático de Docker sale como fallado si tu máquina no lo tiene habilitado: en una laptop es esperable y no bloquea nada.
 
 ---
 
-## Fase 2 — Addons
+## 3 · Edge
 
-### Objetivo
+**Objetivo** — nginx sirviendo en loopback, en texto plano.
 
-El árbol de addons de tu rama en disco y la imagen de Odoo construida.
-
-### A mano
-
-Ninguno. Si todavía no declaraste ningún repo propio en `addons/addons.txt`, ver [crear-fork](../modulos/crear-fork.md).
-
-### Comandos
+**A mano** — ninguno. `NGINX_MODE` no se declara: `docker/compose.dev.yaml` fija la plantilla sin TLS en el entrypoint. Si dependiera de la variable, un `.env` sin la clave montaría la plantilla con TLS y nginx no arrancaría — no hay certificado.
 
 ```bash
-echo "# 1 → Árbol de addons y build de la imagen"
-make addons-sync
-docker compose build
+make edge-up
 ```
 
-### Verificación
+Sin `make cert-issue` adelante, que es lo que sí lleva producción: este stack no tiene certbot. Tampoco `dnsmasq` ni el túnel — de la capa edge, acá solo existe el proxy.
 
 ```bash
-echo "# 2 → Estado de cada worktree"
+make edge-verify
+```
+
+Omite el certificado, el `server_name` y el 443, los tres derivados de que este stack sirve en texto plano.
+
+---
+
+## 4 · Database
+
+**Objetivo** — la base corriendo y vacía.
+
+**A mano** — ninguno.
+
+```bash
+make db-up
+```
+
+Sin `stanza-init` detrás, que es lo que lleva producción: este stack no archiva. `PG_ARCHIVE_MODE=off` no es opcional — un stack sin capa de backups que archive le empuja WAL a la stanza de producción.
+
+```bash
+make db-verify
+```
+
+Exige `archive_mode` **apagado**, los dos servicios `healthy` y la autenticación real a través de PgBouncer.
+
+---
+
+## 5 · Addons
+
+**Objetivo** — el árbol de addons de tu rama en disco y la imagen de Odoo construida.
+
+**A mano** — completar `addons/addons.txt`. Si todavía no declaraste ningún repo propio, ver [crear-fork](../modulos/crear-fork.md).
+
+```bash
+cp addons/addons.txt.example addons/addons.txt
+cp addons/requirements.txt.example addons/requirements.txt
+${EDITOR:-nano} addons/addons.txt
+```
+
+```bash
+make addons-sync && make build
+```
+
+```bash
 make addons
 ```
 
@@ -111,44 +142,64 @@ Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, tod
 
 ---
 
-## Fase 3 — Aplicación
+## 6 · Odoo
 
-### Objetivo
+**Objetivo** — Odoo sirviendo por nginx en loopback.
 
-Odoo sirviendo por nginx en loopback, con el aislamiento entre checkouts comprobado.
-
-### A mano
-
-Ninguno.
-
-### Comandos
+**A mano** — ninguno.
 
 ```bash
-echo "# 1 → Levantar"
+make odoo-up && make odoo-logs
+```
+
+La base arranca vacía: el entrypoint detecta que no está inicializada y corre `-i base` contra `postgres:5432`, no contra PgBouncer. La primera vez tarda. Esperá `HTTP service (werkzeug) running` y cortá los logs con Ctrl-C.
+
+```bash
+make odoo-verify
+```
+
+Avisa —no falla— si tu `ADDONS_BRANCH` no lleva la versión en el nombre: una rama de feature no la declara, y nada garantiza entonces que sea de la versión de la imagen.
+
+---
+
+## 7 · Backup — no corresponde
+
+Development no respalda ni restaura: no trae la capa ni el perfil `restore`, y `make backup` falla a propósito. Lo que pierdas acá se rehace con `make nuke` y volver a empezar — es un entorno descartable por diseño.
+
+---
+
+## 8 · Monitoring — no corresponde
+
+Sin Prometheus, Loki, Grafana ni Alloy. `make verify` marca la capa como omitida, no como fallada.
+
+---
+
+## 9 · Cierre
+
+**Objetivo** — el stack convergido de una sola vez, y el aislamiento entre checkouts comprobado.
+
+```bash
 make up
 ```
 
-La base arranca vacía: el entrypoint detecta que no está inicializada y corre `-i base` contra `postgres:5432`, no contra PgBouncer. La primera vez tarda.
-
-### Verificación
-
 ```bash
-echo "# 2 → Estado, y el sitio por el proxy"
-set -a; . ./.env; set +a    # por si esta es una shell nueva desde la fase 1
 make verify
 curl -s -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:${HTTP_PORT:-8080}/web/login"
 ```
 
-Tiene que dar `200`. `make verify` omite el certificado, el `server_name` y el 443 —derivados de que este stack sirve en texto plano—, y avisa en vez de fallar si tu `ADDONS_BRANCH` no lleva la versión en el nombre.
+Tiene que dar `200`. Si esta es una shell nueva, cargá `.env` antes: `set -a; . ./.env; set +a`.
 
-El aislamiento entre checkouts se comprueba una sola vez, con dos clonados:
+El aislamiento entre checkouts se comprueba una sola vez, con dos clonados y el primero levantado:
 
 ```bash
-echo "# 3 → Desde el segundo checkout, con el primero levantado"
 docker volume ls --format '{{.Name}}' | grep '^development-'
 ```
 
 Tiene que haber un juego de volúmenes por nombre de proyecto —`development-sale_pgdata`, `development-accountant_pgdata`— y ninguno compartido. Si ves uno solo para los dos, los `COMPOSE_PROJECT_NAME` son iguales y las dos bases son la misma.
+
+- [ ] `make verify` sale con exit `0`
+- [ ] El login responde `200` en el puerto de este checkout
+- [ ] Los volúmenes llevan el nombre de este checkout y no los comparte otro
 
 ---
 

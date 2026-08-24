@@ -39,10 +39,27 @@ services:
     image: odoo
 EOF
 
+# La capa edge en chico: nginx de larga vida y certbot bajo profiles, que es el
+# par que distingue 'lo que el stack levanta' de 'lo que el stack declara'.
+cat > "$ROOT/docker/compose.proxy.yaml" <<'EOF'
+services:
+  nginx:
+    image: nginx
+EOF
+
+cat > "$ROOT/docker/compose.edge.yaml" <<'EOF'
+services:
+  cloudflared:
+    image: cloudflared
+  certbot:
+    image: certbot
+    profiles: [cert]
+EOF
+
 llamadas() { cat "$STUB_DIR/llamadas" 2>/dev/null; }
 reset_stub() {
   : > "$STUB_DIR/llamadas"
-  rm -f "$STUB_DIR/servicios" "$STUB_DIR/salida" "$STUB_DIR/config" \
+  rm -f "$STUB_DIR/servicios" "$STUB_DIR/servicios-sin-perfil" "$STUB_DIR/salida" "$STUB_DIR/config" \
         "$STUB_DIR/imagenes" "$STUB_DIR/rmi" "$STUB_DIR/exit-rmi"
 }
 
@@ -89,6 +106,35 @@ reset_stub
 printf 'postgres\npgbouncer\nodoo\n' > "$STUB_DIR/servicios"
 capa db restart >/dev/null 2>&1
 contiene "restart usa el subcomando nativo de compose" "compose restart postgres pgbouncer" "$(llamadas)"
+
+# =====================================================================
+titulo "up/restart/logs no arrastran los servicios bajo profiles"
+# =====================================================================
+# Compose habilita el perfil al nombrar el servicio: un up que incluya certbot lo
+# arranca sin argumentos y lo deja Exited. ps sí tiene que seguir mostrándolo.
+
+reset_stub
+printf 'nginx\ncloudflared\ncertbot\n' > "$STUB_DIR/servicios"
+printf 'nginx\ncloudflared\n'          > "$STUB_DIR/servicios-sin-perfil"
+
+capa edge up >/dev/null 2>&1
+contiene    "up levanta los de larga vida" "compose up -d nginx cloudflared" "$(llamadas)"
+no_contiene "y nunca certbot"              "certbot" "$(llamadas)"
+
+reset_stub
+printf 'nginx\ncloudflared\ncertbot\n' > "$STUB_DIR/servicios"
+printf 'nginx\ncloudflared\n'          > "$STUB_DIR/servicios-sin-perfil"
+
+capa edge ps >/dev/null 2>&1
+contiene "ps sí lo lista: el stack lo declara" "compose ps nginx cloudflared certbot" "$(llamadas)"
+
+# Vacío no es "ninguno": 'compose up -d' sin servicios levanta el stack entero.
+reset_stub
+printf 'nginx\ncloudflared\ncertbot\n' > "$STUB_DIR/servicios"
+: > "$STUB_DIR/servicios-sin-perfil"
+
+igual       "sin poder resolverlos, up aborta" "1" "$(capa_code edge up)"
+no_contiene "y no dispara un up sin argumentos" "compose up" "$(llamadas)"
 
 # =====================================================================
 titulo "host no tiene ciclo de vida de contenedores"
@@ -183,7 +229,7 @@ printf 'postgres\npgbouncer\nodoo\n' > "$STUB_DIR/servicios"
 SALIDA=$(capa all ps)
 contiene    "muestra el título de db"                          "$(printf '\ndb\n')" "$SALIDA"
 contiene    "muestra el título de odoo"                        "$(printf '\nodoo\n')" "$SALIDA"
-no_contiene "saltea edge (sin compose.*.yaml en este fixture)" "$(printf '\nedge\n')" "$SALIDA"
+no_contiene "saltea edge (ningún servicio suyo en este stack)" "$(printf '\nedge\n')" "$SALIDA"
 
 # =====================================================================
 titulo "ps agrupado: el servicio sin capa se lista igual, y la composición se resuelve una vez"

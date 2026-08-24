@@ -12,7 +12,7 @@ El estilo de comentarios en archivos versionados de código y config es obligato
 
 Dos verificaciones distintas, y no se reemplazan: `make test` corre sin Docker levantado ni red, sobre lo que se puede afirmar leyendo el repositorio; `make verify` dice en qué estado está un deploy real, y **eso** necesita el sistema corriendo.
 
-`tests/` cubre el contrato de los tres entrypoints (`docker compose config`), `addons.sh` de punta a punta contra repos git de verdad, y —con el stub de `tests/stubs/docker`, que registra cada invocación— los derivadores de `verify.sh`, `cert.sh`, `capa.sh` y los dos de secrets. Al tocar un script, la pregunta es si el test **falla** cuando se rompe lo que dice cubrir: mutá y comprobalo, que ya aparecieron aserciones que pasaban por el motivo equivocado.
+`tests/` cubre el contrato de los tres entrypoints (`docker compose config`), `addons.sh` de punta a punta contra repos git de verdad, y —con los stubs de `tests/stubs/`, que registran cada invocación— los derivadores de `verify.sh`, `cert.sh`, `capa.sh`, `timers.sh` y los dos de secrets. Al tocar un script, la pregunta es si el test **falla** cuando se rompe lo que dice cubrir: mutá y comprobalo, que ya aparecieron aserciones que pasaban por el motivo equivocado.
 
 Los targets siguen una sola filosofía, `<capa>-<verbo>`, para las cinco capas con contenedores —`edge` (dnsmasq+nginx+cloudflared+certbot), `db`, `odoo`, `backups`, `observability`—; `host` es la única sin ciclo de vida (son chequeos de SO). `scripts/capa.sh` resuelve qué servicios de cada capa trae *este* stack contra la composición real, así que un `db-up` en development (sin `backups`/`observability`) no falla por una capa ausente. `up`/`down`/`logs`/`ps` sin prefijo siguen siendo el stack completo.
 
@@ -25,12 +25,19 @@ make <capa>-nuke            # borra containers/imágenes/volúmenes DE ESA CAPA 
 make nuke                    # ídem, todo el stack + addons/ + state/ (nunca secrets/ ni .env)
 make up / down / logs / ps
 make addons-sync            # rearma el árbol de addons desde addons/addons.txt
+make build                  # las imágenes propias de este stack
 make odoo-install MODULES=x # -i explícito; MODULES es obligatorio
 make odoo-update MODULES=x  # -u explícito
 make cert-issue            # emisión inicial; nginx no arranca sin el archivo
 make backup / backup-full / backup-check
+make stanza-init / backup-init   # una sola vez por deploy, cada repositorio
+make restore-seed          # siembra un stack que NO respalda desde el repositorio del que sí
 make secrets-init / secrets-perms / secrets-check
+sudo make host-init / timers-install / notify-test   # lo único que se instala fuera del checkout
+make monitoring-role       # el rol de solo lectura que scrapea Postgres; repetible
 ```
+
+Los nueve bloques de `docs/runbooks/entorno/levantar-*.md` son los mismos en los tres entornos y se corren con estos targets: qué significa cada uno en cada stack lo resuelve `capa.sh` contra la composición, no una variante del procedimiento por entorno.
 
 Al tocar un `docker/compose.*.yaml`, la verificación más fuerte es que **la config resuelta no cambie**:
 
@@ -85,6 +92,7 @@ Estos valores están duplicados por necesidad —hay formatos que no interpolan 
 - **Parametrizá por `.env` solo lo que se usa dentro de un `docker/compose.*.yaml`.** Cuando el valor vive en el archivo de config propio de una herramienta, tiene que llegar por el mecanismo que *esa herramienta* ofrezca: Compose no interpola dentro de archivos bind-mounted. Loki necesita `-config.expand-env=true` **y** un bloque `environment:`, porque expande desde su propio entorno. nginx sustituye con `envsubst` sobre `/etc/nginx/templates`, y `NGINX_ENVSUBST_FILTER` acota qué variables entran — sin él, una env var homónima de una de nginx (`$host`, `$status`) se la come la sustitución.
 - **Los compose viven en `docker/`, el `.env` en la raíz.** Compose lee `.env` del directorio donde se corre el comando, no del que contiene el archivo elegido, así que `COMPOSE_FILE=docker/compose.yaml` alcanza y ningún comando lleva `-f`. Dos consecuencias: toda ruta relativa de un compose sale con `../` (`../config/…`, `../secrets/…`) porque el directorio de proyecto pasa a ser `docker/`, y sin `COMPOSE_PROJECT_NAME` el fallback del nombre de proyecto es el literal `docker`, igual en toda máquina — dos checkouts sin la variable comparten volúmenes.
 - **La imagen de Odoo lee sus pines de un contexto de build aparte.** `addons/requirements.txt` queda fuera del contexto (`docker/odoo`), así que llega por `additional_contexts: {addons: ../addons}` y `COPY --from=addons`. El corchete de `requirements.tx[t]` no es un typo: hace el `COPY` opcional —con cero matches, un glob normal aborta el build— para que un checkout sin pines buildee igual. El `RUN` que lo instala va condicionado con `if`, no con `&&`: un `;` ahí dejaría que un `pip install` fallado devuelva 0 y produzca una imagen sin dependencias.
+- **Las units de systemd llevan el nombre del proyecto adelante**, y `scripts/timers.sh` es dueño único de ese nombre y de qué units corresponden — lo deriva de la composición (`backup` → los dos timers de backup, `certbot` → `cert-renew`), no de una lista. `verify.sh` le pregunta en vez de repetir nombres, y con eso dos checkouts en el mismo host no se pisan las units.
 - **Nunca archivos `.example` paralelos** a un config: son una copia que se desincroniza. Si el valor no se puede parametrizar, se elimina o se versiona literal.
 - **`scripts/verify.sh` es dueño único de qué se chequea y qué se espera.** `docs/runbooks/` nombra el comando; los valores esperados no se duplican en la documentación.
 - `docker compose port` devuelve `invalid IP:0` con exit 0 para un puerto **no** publicado — no cadena vacía.

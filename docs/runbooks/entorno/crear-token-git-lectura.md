@@ -19,6 +19,7 @@ Generar el token en tu proveedor git (GitHub, GitLab…) — alcanza con lectura
 ```bash
 echo "# 1 → Completá tu usuario y el host HTTPS de los repos de addons — no un alias SSH propio"
 GIT_USER='tu-usuario'; GIT_HOST='github.com'
+echo "usuario: $GIT_USER"; echo "host: $GIT_HOST"
 ```
 
 ```bash

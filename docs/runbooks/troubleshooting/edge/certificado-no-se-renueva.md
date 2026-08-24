@@ -6,12 +6,15 @@ El certificado se acerca al vencimiento (o la alerta `cert-por-vencer` disparó)
 
 ## Diagnóstico
 
-La renovación no vive en ningún contenedor: la corre el timer `odoo-cert-renew.timer`, dos veces por día.
+La renovación no vive en ningún contenedor: la corre un timer de systemd, dos veces por día. La unit lleva el nombre del proyecto adelante (`production-cert-renew.timer`, `staging-cert-renew.timer`), que es el que instaló `make timers-install`.
 
 ```bash
-systemctl list-timers odoo-cert-renew.timer
-journalctl -u odoo-cert-renew.service -n 30
+UNIDAD=$(scripts/timers.sh units | grep cert-renew)
+systemctl list-timers "$UNIDAD.timer"
+journalctl -u "$UNIDAD.service" -n 30
 ```
+
+Si `timers.sh units` no lista ninguna, el stack nunca instaló la unit: `sudo make timers-install`. Es el caso que deja el certificado sin renovar desde el día uno, y el que `make edge-verify` marca en rojo.
 
 Un fallo manda mail por el `OnFailure=`, igual que los backups.
 

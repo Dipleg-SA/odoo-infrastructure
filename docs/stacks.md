@@ -61,7 +61,7 @@ Cada entorno tiene su **entrypoint** propio —un archivo bajo `docker/` con su 
 | `config/loki`                               | sí             | no                          | no                          |
 | `config/grafana`                            | sí             | no                          | no                          |
 | `config/alloy`                              | sí             | no                          | no                          |
-| `config/systemd/*`                          | sí             | no                          | no                          |
+| `config/systemd/*`                          | sí             | solo `cert-renew`           | no                          |
 | `config/docker/daemon.json`                 | host, no stack | —                           | —                           |
 | `docker/{odoo,postgres,dnsmasq}/`           | sí             | sí                          | sí                          |
 | `scripts/verify.sh`                         | sí             | sí                          | sí                          |
@@ -118,7 +118,7 @@ Acá está lo que **no** resuelve el nombre de proyecto.
 | `127.0.0.1:3001`                                                       | Grafana                     | El segundo no puede bindear — resuelto por exclusión: la capa es solo de producción                                                                                                                                    |
 | `:53` en `network_mode: host`                                          | dnsmasq                     | Ídem, y sin salida: es el único servicio que no admite un segundo de ninguna forma                                                                                                                                     |
 | `--name odoo-oneoff`                                                   | `make odoo-install/update`  | Dos one-off simultáneos en el mismo host fallan. Falla ruidoso y está documentado                                                                                                                                      |
-| Units `odoo-backup-*` y `odoo-cert-renew.*`                            | systemd                     | Nombres fijos con `WorkingDirectory` absoluto: apuntan a un checkout, no a un stack. **Staging también renueva certificados**, así que instala su copia con otro nombre o pisa la de producción                          |
+| Units de systemd (`backup-*`, `cert-renew`, `notify@`)                 | systemd                     | El `WorkingDirectory` es absoluto: apuntan a un checkout, no a un stack. Resuelto por `make timers-install`, que las instala con el proyecto adelante (`staging-cert-renew.timer`) y deriva de la composición cuáles corresponden — **staging también renueva certificados**, producción además respalda |
 | Repositorio de restic y stanza de pgBackRest                           | Capa de backups             | Resuelto por exclusión para la escritura: solo producción archiva y respalda. Los otros stacks **leen** la misma stanza para restaurar, y eso es seguro solo mientras `PG_ARCHIVE_MODE=off` los mantenga sin archivar    |
 
 El proxy ya no aparece por descubrimiento. Con Traefik, el provider de Docker leía el daemon entero y cada instancia encontraba **también** el `odoo` del otro stack, con los mismos nombres de router; había que derivarlos del proyecto para que no se pisaran. nginx sirve lo que dice su archivo y el problema desapareció con la herramienta.

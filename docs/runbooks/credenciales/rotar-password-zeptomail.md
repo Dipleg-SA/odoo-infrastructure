@@ -43,8 +43,7 @@ printf 'From: %s\nTo: %s\nSubject: prueba rotación\n\nok\n' "$ALERT_EMAIL_FROM"
 
 ```bash
 echo "# 2 → La unit real de systemd"
-sudo systemctl start odoo-notify@prueba.service
-systemctl show -p Result --value odoo-notify@prueba.service   # tiene que dar Result=success
+sudo make notify-test   # tiene que dar Result=success
 ```
 
 ```bash

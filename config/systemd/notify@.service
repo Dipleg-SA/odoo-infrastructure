@@ -1,4 +1,5 @@
-# Reemplazar CAMBIAR-en-deploy por la ruta absoluta del repo en el servidor.
+# Plantilla: `sudo make timers-install` inyecta la ruta del checkout y el prefijo
+# del proyecto en el nombre. No se instala copiando este archivo a mano.
 # Unit plantilla: el OnFailure= de cada backup la instancia con su propio nombre
 # (%n), que llega acá como %i — así el mail dice cuál corrida falló.
 

@@ -8,8 +8,11 @@
 printf '%s\n' "$*" >> "$STUB_DIR/llamadas"
 
 # --services antes que config: la primera también contiene la palabra config.
+# Y la consulta CON perfiles antes que la que no los lleva: son listas distintas
+# —certbot y restore-* solo aparecen en la primera— y el caso puede fijar cada una.
 case "$*" in
-  *"config --services"*) archivo=servicios ;;
+  *--profile*"config --services"*) archivo=servicios ;;
+  *"config --services"*) archivo=servicios-sin-perfil ;;
   *config*)              archivo=config ;;
   *"ps -q"*)             archivo=ps-q ;;
   *" ps "*)              archivo=ps ;;
@@ -18,6 +21,9 @@ case "$*" in
   rmi*)                  archivo=rmi ;;
   *)                     archivo=salida ;;
 esac
+
+# El caso que no distingue perfiles fija un solo fixture: 'servicios' sirve para las dos.
+[ "$archivo" = servicios-sin-perfil ] && [ ! -f "$STUB_DIR/servicios-sin-perfil" ] && archivo=servicios
 
 [ -f "$STUB_DIR/$archivo" ] && cat "$STUB_DIR/$archivo"
 

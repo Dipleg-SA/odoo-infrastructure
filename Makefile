@@ -1,8 +1,9 @@
-.PHONY: help up down logs ps nuke \
+.PHONY: help up down logs ps nuke build \
         cert-issue cert-renew secrets-init secrets-perms secrets-check \
-        backup backup-full backup-check restore-up restore-down \
+        host-init timers-install notify-test monitoring-role \
+        backup backup-full backup-check backup-init stanza-init restore-up restore-down restore-seed \
         addons-sync addons odoo-install odoo-update odoo-modules pydeps-check pydeps-sync \
-        require-modules require-backups require-restore test verify host-verify \
+        require-modules require-backups require-restore require-root test verify host-verify \
         edge-up edge-down edge-restart edge-logs edge-ps edge-verify edge-nuke \
         db-up db-down db-restart db-logs db-ps db-verify db-nuke \
         odoo-up odoo-down odoo-restart odoo-logs odoo-ps odoo-verify odoo-nuke \
@@ -35,6 +36,37 @@ secrets-perms: ## Aplica permisos de secrets (requiere root)
 
 secrets-check: ## Verifica permisos de secrets
 	scripts/secrets-perms.sh --check
+
+# --- Config de sistema operativo ---
+# Lo único del repo que se instala FUERA del checkout, y por eso pide root: la
+# rotación de logs del daemon y las units de systemd de este stack.
+
+require-root:
+	@. scripts/lib/ui.sh; [ "$$(id -u)" -eq 0 ] || \
+	  { ui_bad "$(TARGET) necesita root" "sudo make $(TARGET)" >&2; exit 2; }
+
+host-init: TARGET=host-init
+host-init: require-root ## Aplica la rotación de logs del daemon (requiere root)
+	@. scripts/lib/ui.sh; \
+	  if [ -e /etc/docker/daemon.json ] && ! cmp -s config/docker/daemon.json /etc/docker/daemon.json; then \
+	    ui_bad "/etc/docker/daemon.json ya existe y no es el del repo" \
+	      "el cp borraría las claves propias del host (data-root, insecure-registries) — fusionar a mano el bloque log-driver/log-opts de config/docker/daemon.json" >&2; exit 2; \
+	  fi; \
+	  ui_run "host-init" sh -c \
+	    'cp config/docker/daemon.json /etc/docker/daemon.json && systemctl restart docker'
+
+timers-install: ## Instala y activa las units de systemd de este stack (requiere root)
+	scripts/timers.sh install
+
+notify-test: TARGET=notify-test
+notify-test: require-root ## Dispara el aviso de fallo de punta a punta (requiere root)
+	@. scripts/lib/ui.sh; unidad="$$(scripts/timers.sh notify)prueba.service"; \
+	  ui_start "notify-test: $$unidad"; \
+	  systemctl start "$$unidad" || \
+	    { ui_bad "notify-test falló" "systemctl no pudo arrancar $$unidad — ¿corriste 'sudo make timers-install'?"; exit 1; }; \
+	  resultado=$$(systemctl show -p Result --value "$$unidad"); \
+	  if [ "$$resultado" = "success" ]; then ui_ok "notify-test listo — Result=success, ahora confirmá que el mail llegó"; \
+	  else ui_bad "notify-test falló" "Result=$$resultado — journalctl -u $$unidad"; exit 1; fi
 
 # --- Certificados ---
 # Emisión a mano la primera vez —nginx no arranca sin el archivo— y renovación
@@ -211,6 +243,13 @@ addons-sync: ## Clona/actualiza los addons desde addons/addons.txt
 addons: ## Muestra el estado de los addons
 	@. scripts/lib/ui.sh; ui_run "addons" scripts/addons.sh status
 
+# --- Imágenes propias ---
+# Las que este stack construye (odoo, postgres y dnsmasq donde esté). El build de
+# odoo no clona nada: el árbol de addons entra por bind-mount, no por capa de imagen.
+
+build: ## Construye las imágenes propias de este stack
+	@. scripts/lib/ui.sh; ui_run "build" docker compose build
+
 # --- Dependencias Python de los addons ---
 # check es puro host (corre en 'make test'); sync necesita Docker para resolver
 # versión contra la imagen base. Ninguno de los dos rebuildea la imagen.
@@ -278,6 +317,19 @@ require-restore:
 # El restore no es un target — necesita un timestamp/snapshot según el incidente; ver docs/runbooks/backup-restore/.
 # backup.sh ya imprime su propio ▶/✓/✗: el target no lo duplica.
 
+# --- Inicialización de los dos repositorios ---
+# Una sola vez por deploy. stanza-init va apenas arranca la base y no después: con
+# archive_mode on, cada archivado falla hasta que la stanza exista y el WAL se acumula.
+
+stanza-init: require-backups ## Crea la stanza de pgBackRest y prueba el archivado hasta R2
+	@. scripts/lib/ui.sh; ui_run "stanza-init" sh -c \
+	  'docker compose exec -T -u postgres postgres pgbackrest stanza-create && \
+	   docker compose exec -T -u postgres postgres pgbackrest check'
+
+backup-init: require-backups ## Inicializa el repositorio de restic
+	@. scripts/lib/ui.sh; ui_run "backup-init" \
+	  docker compose exec -T backup restic init
+
 backup: require-backups ## Corre el backup diario
 	scripts/backup.sh daily
 
@@ -296,3 +348,39 @@ restore-up: require-restore ## Levanta los servicios de restore
 
 restore-down: require-restore ## Baja los servicios de restore
 	@. scripts/lib/ui.sh; ui_run "restore-down" docker compose rm -sf restore-db restore-files
+
+# --- Siembra de un stack que no respalda ---
+# Base y filestore del backup más nuevo, en ese orden: al revés dejaría filas
+# apuntando a adjuntos que no existen. --delta porque resembrar es sobre un pgdata ya poblado.
+
+restore-seed: require-restore ## Siembra base y filestore desde el repositorio de backups
+	@. scripts/lib/ui.sh; \
+	  docker compose config --services 2>/dev/null | grep -qx backup && \
+	    { ui_bad "restore-seed no corre en un stack que respalda" \
+	        "es para sembrar staging desde el repositorio de producción, no para restaurar producción — ver docs/runbooks/backup-restore/" >&2; exit 2; } || true; \
+	  [ -z "$$(docker compose ps -q postgres 2>/dev/null)" ] || \
+	    { ui_bad "postgres está corriendo" "pgBackRest no restaura sobre un cluster vivo — make db-down" >&2; exit 2; }
+	@. scripts/lib/ui.sh; ui_run "restore-seed" sh -c \
+	  'docker compose --profile restore up -d restore-db restore-files && \
+	   docker compose exec -T restore-db pgbackrest restore --delta --archive-mode=off && \
+	   docker compose exec -T restore-files restic restore latest --target / --include /data/odoo'; \
+	  estado=$$?; \
+	  docker compose rm -sf restore-db restore-files >/dev/null 2>&1; \
+	  exit "$$estado"
+
+# --- Observabilidad ---
+# El rol de monitoreo no sale de la imagen: lo crea el operador contra la base ya
+# viva. DROP+CREATE lo hace repetible, y con eso sirve también para rotar la clave.
+
+monitoring-role: ## Crea (o rota) el rol de solo lectura que scrapea Postgres
+	@. scripts/lib/ui.sh; [ -s secrets/postgres_exporter_password ] || \
+	  { ui_bad "falta secrets/postgres_exporter_password" \
+	      "sin él la clave se interpola vacía y el rol queda creado sin password — ¿este stack lleva la capa de observabilidad?" >&2; exit 2; }
+	@. scripts/lib/ui.sh; ui_start "monitoring-role"; \
+	  printf "DROP ROLE IF EXISTS monitoring;\nCREATE ROLE monitoring LOGIN PASSWORD '%s';\nGRANT pg_monitor TO monitoring;\n" \
+	    "$$(cat secrets/postgres_exporter_password)" \
+	  | docker compose exec -T -u postgres postgres psql -U odoo -d postgres -v ON_ERROR_STOP=1 -q; \
+	  estado=$$?; \
+	  if [ "$$estado" -eq 0 ]; then ui_ok "monitoring-role listo"; \
+	  else ui_bad "monitoring-role falló" "exit $$estado"; fi; \
+	  exit "$$estado"

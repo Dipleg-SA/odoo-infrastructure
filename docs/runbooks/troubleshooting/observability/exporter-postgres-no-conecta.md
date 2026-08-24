@@ -16,4 +16,4 @@ Rotar el secret **no** cambia la base: hace falta además
 ALTER ROLE monitoring PASSWORD '<valor-nuevo>';
 ```
 
-Ver [levantar-produccion](../../entorno/levantar-produccion.md) fase 7 para cómo se crea ese rol la primera vez.
+Lo crea `make monitoring-role`, que es repetible: ver [levantar-produccion](../../entorno/levantar-produccion.md), bloque 8 · Monitoring.

@@ -38,16 +38,14 @@ La corrida deja además `state/meta/addons.txt` dentro del snapshot de restic �
 make backups-verify
 ```
 
-Cubre el snapshot de restic, el full de pgBackRest, el registro de addons, los dos timers de systemd activos, el `OnFailure=` cableado con su unit plantilla instalada, y que ningún contenedor del perfil `restore` esté corriendo.
+Cubre el snapshot de restic, el full de pgBackRest, el registro de addons, los dos timers de systemd activos con el nombre de este stack, el `OnFailure=` cableado con su unit plantilla instalada, y que ningún contenedor del perfil `restore` esté corriendo.
 
 Si el contenedor `backup` sale `health: starting` **no es un fallo**: con `interval: 1h` el primer chequeo que cuenta cae recién a la hora, y durante el `start_period` de 5 minutos los fallos no cuentan. **No lo recrees para forzarlo** — le cambiarías el hostname del contenedor, y con eso el grupo `(host, paths)` por el que restic agrupa la retención (`RESTIC_KEEP_*`).
 
 Probar el aviso de fallo de punta a punta, sin esperar a que uno ocurra de verdad:
 
 ```bash
-sudo systemctl start odoo-notify@prueba.service
-systemctl is-active odoo-notify@prueba.service
-systemctl show -p Result --value odoo-notify@prueba.service
+sudo make notify-test
 ```
 
 Tiene que dar `Result=success` **y llegar el mail** a `ALERT_EMAIL_TO`. Dispara la unit real, no el script suelto: prueba el cableado, la ruta absoluta del `ExecStart` y el envío con la credencial que quedó en `secrets/`.

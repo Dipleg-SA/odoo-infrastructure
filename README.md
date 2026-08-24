@@ -26,7 +26,7 @@ cp .env.prod.example .env   # o .env.stag.example / .env.dev.example
 make secrets-init
 ```
 
-El recorrido completo —qué cuentas hacen falta, en qué orden se levanta cada capa y cómo se verifica— está en [`docs/runbooks/entorno/levantar-produccion.md`](docs/runbooks/entorno/levantar-produccion.md). Ocho fases, cada una con su verificación ejecutable.
+El recorrido completo —qué cuentas hacen falta, en qué orden se levanta cada capa y cómo se verifica— está en [`docs/runbooks/entorno/levantar-produccion.md`](docs/runbooks/entorno/levantar-produccion.md). Nueve bloques, cada uno con su verificación ejecutable, iguales en los tres entornos.
 
 ```bash
 make verify     # en qué estado está el servidor

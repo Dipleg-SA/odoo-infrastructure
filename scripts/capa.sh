@@ -146,6 +146,22 @@ if [ -z "$presentes" ]; then
   exit 0
 fi
 
+# --- Servicios de larga vida ---
+# certbot y restore-* son one-off bajo profiles. Compose habilita el perfil al
+# nombrar el servicio, así que un up de la capa los arrancaría y los dejaría salidos.
+
+cargar_servicios_larga_vida() {
+  [ -n "${SERVICIOS_LARGA_VIDA+x}" ] && return 0
+  SERVICIOS_LARGA_VIDA=$(docker compose config --services 2>/dev/null)
+}
+
+de_larga_vida() {
+  cargar_servicios_larga_vida
+  local p
+  p=$(printf '%s\n' "$SERVICIOS_LARGA_VIDA" | grep -Fxf <(printf '%s\n' $1) | tr '\n' ' ')
+  printf '%s' "${p% }"
+}
+
 # --- Volúmenes dueños de la capa ---
 # Lee 'volumes:' de compose_de(); un servicio que solo MONTA un volumen ajeno no lo vuelve dueño.
 
@@ -210,10 +226,22 @@ nuke_capa() {
   return 0
 }
 
+# --- Los tres verbos que solo alcanzan a los de larga vida ---
+# Vacío nunca significa "ninguno": compose sin servicios en la línea es el stack entero,
+# así que un fallo al resolver la lista tiene que abortar, no expandirse a nada.
+
 case "$VERBO" in
-  up)      ui_run "$CAPA-up" docker compose up -d $presentes ;;
+  up|restart|logs)
+    vivos="$(de_larga_vida "$presentes")"
+    [ -n "$vivos" ] || { ui_bad "no se pudo resolver qué servicios de $CAPA son de larga vida" \
+      "¿docker responde? sin eso el comando alcanzaría al stack entero, no a la capa"; exit 1; }
+    ;;
+esac
+
+case "$VERBO" in
+  up)      ui_run "$CAPA-up" docker compose up -d $vivos ;;
   down)    ui_run "$CAPA-down" docker compose rm -sf $presentes ;;
-  restart) ui_run "$CAPA-restart" docker compose restart $presentes ;;
+  restart) ui_run "$CAPA-restart" docker compose restart $vivos ;;
   ps)
     ui_start "$CAPA-ps"
     docker compose ps $presentes --format "table {{.Name}}\t{{.Service}}\t{{.Status}}" | ui_color_status
@@ -221,8 +249,8 @@ case "$VERBO" in
     if [ "$ec" -eq 0 ]; then ui_ok "$CAPA-ps listo"; else ui_bad "$CAPA-ps falló" "exit $ec"; exit "$ec"; fi
     ;;
   logs)
-    ui_start "$CAPA-logs: siguiendo $presentes (Ctrl-C para salir)"
-    exec docker compose logs -f $presentes
+    ui_start "$CAPA-logs: siguiendo $vivos (Ctrl-C para salir)"
+    exec docker compose logs -f $vivos
     ;;
   nuke)
     ui_start "$CAPA-nuke"

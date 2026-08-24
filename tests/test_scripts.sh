@@ -154,4 +154,93 @@ contiene "y nombra el GID esperado" "esperado 65532" "$SALIDA"
 rm -rf "$ROOT/secrets"
 sale_con "sin secrets/ aborta" 1 bash -c "cd '$ROOT' && ./scripts/secrets-perms.sh --check"
 
+# =====================================================================
+titulo "timers.sh — qué units corresponden y con qué nombre"
+# =====================================================================
+
+# Checkout con las plantillas reales: lo que se afirma abajo es lo que queda
+# instalado de verdad, no una copia de las units dentro del test.
+
+crear_root_timers() {
+  local root proyecto="$1"
+  root=$(crear_root "timers-$proyecto" timers.sh)
+  mkdir -p "$root/config/systemd" "$root/systemd"
+  cp "$REPO_ROOT"/config/systemd/* "$root/config/systemd/"
+  printf 'COMPOSE_PROJECT_NAME=%s\n' "$proyecto" >> "$root/.env"
+  printf '%s' "$root"
+}
+
+timers() { (cd "$1" && SYSTEMD_DIR="$1/systemd" ./scripts/timers.sh "$2" 2>&1); }
+
+# --- Producción: respalda y renueva ---
+
+ROOT=$(crear_root_timers production)
+reset_stub
+printf 'postgres\nodoo\nbackup\ncertbot\n' > "$STUB_DIR/servicios"
+
+igual "las tres units, prefijadas por el proyecto" \
+  "production-backup-daily production-backup-monthly production-cert-renew" \
+  "$(timers "$ROOT" units | tr '\n' ' ' | sed 's/ $//')"
+igual "y la plantilla de aviso" "production-notify@" "$(timers "$ROOT" notify)"
+
+SALIDA=$(timers "$ROOT" install)
+igual "instala los siete archivos" "7" "$(ls "$ROOT/systemd" | wc -l | tr -d ' ')"
+contiene "activa los timers con el nombre prefijado" \
+  "systemctl enable --now production-backup-daily.timer production-backup-monthly.timer production-cert-renew.timer" \
+  "$(llamadas)"
+contiene "y recarga systemd antes" "systemctl daemon-reload" "$(llamadas)"
+
+# Los dos reemplazos que la plantilla no puede traer resueltos.
+no_contiene "no queda el marcador de ruta" "CAMBIAR-en-deploy" "$(cat "$ROOT/systemd/production-backup-daily.service")"
+contiene    "la ruta es la del checkout"   "WorkingDirectory=$ROOT" "$(cat "$ROOT/systemd/production-backup-daily.service")"
+contiene    "el OnFailure apunta a la plantilla de ESTE stack" \
+  "OnFailure=production-notify@%n.service" "$(cat "$ROOT/systemd/production-cert-renew.service")"
+
+# --- Staging: no respalda, pero sí renueva ---
+# El agujero que este target cierra: staging quedaba sin ninguna unit instalada.
+
+ROOT_STAG=$(crear_root_timers staging)
+reset_stub
+printf 'postgres\nodoo\ncertbot\n' > "$STUB_DIR/servicios"
+
+igual "sin capa de backups, solo la del certificado" \
+  "staging-cert-renew" "$(timers "$ROOT_STAG" units | tr '\n' ' ' | sed 's/ $//')"
+
+timers "$ROOT_STAG" install >/dev/null
+
+# --- El checkout que perdió una capa ---
+# La unit vieja sigue enabled y dispara igual: sin removerla, backup.sh corre de
+# madrugada contra un stack que ya no incluye la capa de backups.
+
+reset_stub
+printf 'postgres\nodoo\ncertbot\n' > "$STUB_DIR/servicios"
+: > "$ROOT_STAG/systemd/staging-backup-daily.timer"
+: > "$ROOT_STAG/systemd/staging-backup-daily.service"
+
+SALIDA=$(timers "$ROOT_STAG" install)
+contiene    "desactiva la unit que dejó de corresponder" \
+  "systemctl disable --now staging-backup-daily.timer" "$(llamadas)"
+no_contiene "y borra sus dos archivos" "staging-backup-daily" "$(ls "$ROOT_STAG/systemd")"
+igual "instala tres archivos, no siete" "3" "$(ls "$ROOT_STAG/systemd" | wc -l | tr -d ' ')"
+no_contiene "y no toca las units del otro checkout" "production-" "$(ls "$ROOT_STAG/systemd")"
+
+# --- Development: ni una ---
+
+ROOT_DEV=$(crear_root_timers development-sale)
+reset_stub
+printf 'postgres\nodoo\nnginx\n' > "$STUB_DIR/servicios"
+
+SALIDA=$(timers "$ROOT_DEV" install)
+igual       "no instala nada" "0" "$(ls "$ROOT_DEV/systemd" | wc -l | tr -d ' ')"
+contiene    "y dice por qué" "no lleva units" "$SALIDA"
+no_contiene "sin tocar systemd" "systemctl" "$(llamadas)"
+
+# --- Sin composición legible ---
+# Adivinar qué units corresponden es peor que no instalar ninguna.
+
+reset_stub
+rm -f "$STUB_DIR/servicios"
+sale_con "sin composición legible aborta" 1 \
+  bash -c "cd '$ROOT' && SYSTEMD_DIR='$ROOT/systemd' ./scripts/timers.sh install"
+
 resumen

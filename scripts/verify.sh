@@ -187,6 +187,42 @@ sin_publicar() {
   else ok "$svc:$puerto sin publicar"; fi
 }
 
+# --- Timers de systemd ---
+# El nombre instalado lo deriva timers.sh, que es su dueño: acá solo se pregunta si
+# el que corresponde a este stack está activo y si su fallo avisa.
+
+PLANTILLA_AVISO_VISTA=0
+
+timer_activo() {
+  local base="$1" unidad notify
+  if ! command -v systemctl >/dev/null 2>&1; then
+    omitir "timer $base activo" "sin systemd"; return
+  fi
+  # Sin composición legible, timers.sh sale con 1: decir "no corresponde" ahí sería mentir.
+  if ! unidad=$(scripts/timers.sh units 2>/dev/null); then
+    omitir "timer $base activo" "no se pudo leer la composición"; return
+  fi
+  unidad=$(printf '%s\n' "$unidad" | grep -- "-$base\$")
+  if [ -z "$unidad" ]; then
+    omitir "timer $base activo" "no corresponde a este stack"; return
+  fi
+
+  # --full: sin tty systemd asume 80 columnas y recorta la columna UNIT con '…'.
+  # Con el proyecto adelante el nombre ya no entra, y el chequeo fallaría sobre un timer sano.
+  expect "timer $base activo ($unidad.timer)" "$unidad.timer" \
+    systemctl list-timers --all --full --no-pager "$unidad.timer"
+
+  # Un OnFailure= que nombre la plantilla de otro checkout deja el aviso mudo.
+  notify=$(scripts/timers.sh notify)
+  expect "fallo de $base cableado a $notify" "$notify" systemctl cat "$unidad.service"
+
+  # La plantilla es una sola por stack: se chequea con el primer timer que la use.
+  [ "$PLANTILLA_AVISO_VISTA" -eq 1 ] && return
+  PLANTILLA_AVISO_VISTA=1
+  expect "unit plantilla de aviso instalada" "$notify" \
+    systemctl list-unit-files --full --no-pager "$notify*"
+}
+
 # =====================================================================
 # host — prerrequisitos del servidor, antes de levantar cualquier capa
 # =====================================================================
@@ -227,7 +263,7 @@ v_host() {
     ok "rotación de logs del daemon aplicada"
   else
     bad "rotación de logs del daemon aplicada" \
-        "sin límite de tamaño en ${DAEMON_JSON:-/etc/docker/daemon.json} — aplicarlo antes del primer contenedor: sudo cp config/docker/daemon.json /etc/docker/daemon.json && sudo systemctl restart docker"
+        "sin límite de tamaño en ${DAEMON_JSON:-/etc/docker/daemon.json} — aplicarlo antes del primer contenedor: sudo make host-init"
   fi
 
   # --- .env ---
@@ -320,7 +356,7 @@ v_edge() {
 
   if declarado dnsmasq; then
     omitir "la LAN usa dnsmasq como resolver" \
-      "no verificable desde el servidor — correr el chequeo de docs/runbooks/entorno/levantar-produccion.md fase 2 en un equipo de la LAN"
+      "no verificable desde el servidor — ver el apéndice de docs/runbooks/entorno/levantar-produccion.md, en un equipo de la LAN"
   fi
 
   # --- Config renderizada ---
@@ -372,6 +408,12 @@ v_edge() {
       else ok "certificado vigente ($dias días)"; fi
     fi
   fi
+
+  # --- Renovación automática ---
+  # Sin el timer, la emisión inicial es la única que hubo: el certificado vence a
+  # los 90 días y el chequeo de arriba lo descubre cuando faltan 15.
+
+  timer_activo cert-renew
 
   # --- Túnel ---
   # Cuatro conexiones registradas es lo normal; una sola funciona pero está degradado.
@@ -768,20 +810,8 @@ v_backups() {
   # --- Timers ---
   # El diario a las 02:00, el mensual el día 1 a la 01:00.
 
-  if command -v systemctl >/dev/null 2>&1; then
-    expect "timer diario activo" "odoo-backup-daily.timer" \
-      systemctl list-timers --all --no-pager odoo-backup-daily.timer
-    expect "timer mensual activo" "odoo-backup-monthly.timer" \
-      systemctl list-timers --all --no-pager odoo-backup-monthly.timer
-
-    # Sin la unit plantilla instalada, un backup que falle no avisa y nada lo delata.
-    expect "aviso de fallo cableado" "odoo-notify" \
-      systemctl cat odoo-backup-daily.service
-    expect "unit plantilla de aviso instalada" "odoo-notify@" \
-      systemctl list-unit-files --no-pager "odoo-notify@*"
-  else
-    omitir "timers de systemd" "sin systemd"
-  fi
+  timer_activo backup-daily
+  timer_activo backup-monthly
 
   # --- Perfil restore ---
   # Nunca arrancan solos: son el único camino con escritura sobre pgdata y filestore.

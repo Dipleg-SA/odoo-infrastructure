@@ -29,7 +29,7 @@ make backups-verify
 make backups-verify
 ```
 
-Cubre el snapshot de restic, el full de pgBackRest, el registro de addons, los dos timers de systemd activos, el `OnFailure=` cableado, y que ningún contenedor del perfil `restore` esté corriendo.
+Cubre el snapshot de restic, el full de pgBackRest, el registro de addons, los dos timers de systemd activos con el nombre de este stack, el `OnFailure=` cableado, y que ningún contenedor del perfil `restore` esté corriendo.
 
 Si el contenedor sale `health: starting` **no es un fallo**: con `interval: 1h` el primer chequeo que cuenta cae recién a la hora. **No lo recrees para forzarlo** — le cambiarías el hostname, y con eso el grupo `(host, paths)` por el que restic agrupa la retención.
 

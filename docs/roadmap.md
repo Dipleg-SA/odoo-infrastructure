@@ -21,7 +21,7 @@ Se descartó declarar `name:` en cada entrypoint. Con un literal compartido entr
 
 Renombrar el proyecto de producción **renombra sus volúmenes**, y Docker no sabe renombrar un volumen: hay que crear el nuevo y copiar, con el stack abajo. Si la adopción de esta rama en el servidor pasa por un redeploy con restore —que es lo esperable, porque cambia el borde entero—, los volúmenes nacen con el nombre nuevo y no hay migración. Si se quiere renombrar antes, sobre el stack actual, se copian `pgdata` y `odoo-data`; `prometheus-data`, `loki-data` y `grafana-data` se dejan nacer vacíos, porque son datos de diagnóstico y no de restauración.
 
-**La alerta de vencimiento de certificado pasa a `state/textfile/`.** Hoy sale de `traefik_tls_certs_not_after` y con certbot se queda sin fuente. `cert-renew.sh` escribe la métrica por el mismo mecanismo que ya usa `backup.sh`, sin sumar componentes. La salvedad: mide lo que certbot cree, no lo que nginx sirve — el caso «se renovó pero nginx no recargó» queda fuera y necesitaría un chequeo sobre el puerto.
+**La alerta de vencimiento de certificado pasa a `state/textfile/`.** Hoy sale de `traefik_tls_certs_not_after` y con certbot se queda sin fuente. `cert.sh` escribe la métrica por el mismo mecanismo que ya usa `backup.sh`, sin sumar componentes. La salvedad: mide lo que certbot cree, no lo que nginx sirve — el caso «se renovó pero nginx no recargó» queda fuera y necesitaría un chequeo sobre el puerto.
 
 ---
 
@@ -87,10 +87,10 @@ La capa de borde se parte en dos, porque development no lleva túnel ni certific
 - `config/nginx/` con las plantillas `envsubst` de la imagen oficial. `config/traefik/` se borra.
 - `resolver 127.0.0.11 valid=10s` y `proxy_pass` a través de una variable, desde la primera línea: sin eso nginx cachea la IP de Odoo al arrancar y devuelve 502 tras cada recreación.
 - Las labels de Traefik salen de `docker/compose.odoo.yaml`; el ruteo pasa a ser archivo, no descubrimiento.
-- `scripts/cert-renew.sh` y las units `odoo-cert-renew.{service,timer}`, con el mismo `OnFailure=` que los backups. `cert-renew.sh` escribe la métrica de vencimiento en `state/textfile/`.
+- `scripts/cert.sh` (subcomandos `issue`/`renew`) y las units `cert-renew.{service,timer}`, con el mismo `OnFailure=` que los backups. `cert.sh` escribe la métrica de vencimiento en `state/textfile/`.
 - `prometheus.yaml` pierde el job `traefik`. Las dos reglas de Grafana se migran: tasa de error a LogQL sobre el access log, vencimiento de certificado a la métrica de textfile.
 - `scripts/config-init.sh` y su target del Makefile se borran: existían solo para pre-crear `acme.json`, y el estado de certbot vive en un volumen nombrado.
-- `verify.sh`: los chequeos de borde pasan de Traefik a nginx. `docs/runbooks/entorno/levantar-produccion.md` fase 2, `docs/runbooks/troubleshooting/edge/`, `docs/architecture.md`.
+- `verify.sh`: los chequeos de borde pasan de Traefik a nginx. `docs/runbooks/entorno/levantar-produccion.md` bloque 3, `docs/runbooks/troubleshooting/edge/`, `docs/architecture.md`.
 
 **Verificación.** Un stack descartable en la máquina del operador, con nombre de proyecto propio, sirviendo Odoo por nginx sin TLS. Mismo método con el que se validaron `daemon.json`, Loki y Alloy: contenedores de prueba, nunca los secrets reales.
 
@@ -174,10 +174,10 @@ infrastructure-odoo/
 │   │   └── provisioning/{alerting,dashboards,datasources,plugins}/
 │   ├── docker/daemon.json
 │   └── systemd/
-│       ├── odoo-backup-daily.{service,timer}
-│       ├── odoo-backup-monthly.{service,timer}
-│       ├── odoo-notify@.service
-│       └── odoo-cert-renew.{service,timer}                            ← nuevo
+│       ├── backup-daily.{service,timer}
+│       ├── backup-monthly.{service,timer}
+│       ├── notify@.service
+│       └── cert-renew.{service,timer}                                 ← nuevo
 │
 ├── docker/
 │   ├── compose.yaml                   entrypoint · producción
@@ -204,11 +204,12 @@ infrastructure-odoo/
 ├── scripts/
 │   ├── addons.sh              más corto: sin entornos
 │   ├── backup.sh
-│   ├── cert-renew.sh                                                  ← nuevo
+│   ├── cert.sh                                                        ← nuevo
 │   ├── failure-notify.sh
 │   ├── integrity-check.sh     sin depender del servicio backup
 │   ├── secrets-init.sh
 │   ├── secrets-perms.sh
+│   ├── timers.sh                                                      ← nuevo
 │   └── verify.sh
 │       config-init.sh                                                 ← se borra
 │
