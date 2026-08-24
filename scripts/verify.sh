@@ -84,12 +84,16 @@ motivo() {
 
 # --- Búsqueda en logs ---
 # Helper propio porque vacio() no puede llevar un pipe: acá el grep es parte del chequeo.
+#
+# El tercer argumento acota la ventana: vacío lee el log entero, y un valor tipo 15m
+# solo lo reciente. Un error transitorio de arranque no puede quedar rojo para siempre.
 
 log_limpio() {
-  local nombre="$1" patron="$2"; shift 2
+  local nombre="$1" patron="$2" desde="$3"; shift 3
   local salida
   if ! corriendo "$1"; then omitir "$nombre" "$(motivo "$1")"; return; fi
-  salida=$(docker compose logs --tail 500 --no-log-prefix "$@" 2>/dev/null | grep -iE "$patron")
+  # Sin comillas a propósito: con ventana vacía no tiene que llegar ningún argumento.
+  salida=$(docker compose logs --tail 500 --no-log-prefix ${desde:+--since=$desde} "$@" 2>/dev/null | grep -iE "$patron")
   if [ -z "$salida" ]; then ok "$nombre"
   else bad "$nombre" "$(printf '%s' "$salida" | head -1)"; fi
 }
@@ -428,7 +432,11 @@ v_edge() {
     else bad "cloudflared con >=2 conexiones" "0 — el Tunnel no conecta"; fi
   fi
 
-  log_limpio "nginx sin errores en el log" '\[error\]|\[emerg\]' nginx
+  # --- Errores del proxy ---
+  # Con ventana: hasta que Odoo existe, nginx loguea "could not be resolved" en cada
+  # request —es el 502 que el runbook anuncia—, y sobre el log entero quedaría rojo para siempre.
+
+  log_limpio "nginx sin errores en los últimos 15 min" '\[error\]|\[emerg\]' 15m nginx
 
   # --- Binds ---
   # Nivel 3 (LAN): el acceso local esquiva el túnel y necesita llegar al proxy. La
@@ -499,7 +507,7 @@ v_db() {
   expect "auth real por PgBouncer" "1" docker compose exec -T postgres sh -c \
     'PGPASSWORD=$(cat /run/secrets/postgres_password) psql -h pgbouncer -p 6432 -U odoo -d postgres -tAc "select 1"'
 
-  log_limpio "sin errores de permisos ni auth_file" 'permission denied|could not open auth_file' postgres pgbouncer
+  log_limpio "sin errores de permisos ni auth_file" 'permission denied|could not open auth_file' "" postgres pgbouncer
 
   # --- Archivado de WAL ---
   # archive_mode es parámetro de postmaster: cambiarlo exige reinicio, no reload.
@@ -632,7 +640,7 @@ v_odoo() {
 
   sano odoo
 
-  log_limpio "sin errores de permisos" 'permission denied' odoo
+  log_limpio "sin errores de permisos" 'permission denied' "" odoo
 
   expect "odoo sirve en :8069" "200" docker compose exec -T odoo \
     curl -sS -o /dev/null -w '%{http_code}' http://localhost:8069/web/login

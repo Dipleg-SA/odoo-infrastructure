@@ -156,6 +156,33 @@ SERVICIOS=$'nginx\nodoo'
 contiene "nombra que no está en este stack" "backup levantado (no está en este stack)" "$(sano backup 2>&1)"
 
 # =====================================================================
+titulo "log_limpio — un error de arranque no puede quedar rojo para siempre"
+# =====================================================================
+
+# La ventana es el chequeo: nginx loguea "could not be resolved" en cada request
+# hasta que Odoo existe, y sobre el log entero esa línea no se va nunca más.
+
+SERVICIOS=$'nginx\nodoo'
+printf 'test-nginx\n' > "$STUB_DIR/ps-q"
+
+: > "$STUB_DIR/salida"; : > "$STUB_DIR/llamadas"
+contiene "sin coincidencias pasa" "ok      nginx sin errores" \
+  "$(log_limpio "nginx sin errores" '\[error\]' 15m nginx 2>&1)"
+contiene "con ventana acota la consulta" "--since=15m" "$(cat "$STUB_DIR/llamadas")"
+
+: > "$STUB_DIR/llamadas"
+salida=$(log_limpio "sin errores de permisos" 'permission denied' "" odoo 2>&1)
+contiene "sin ventana también pasa"      "ok      sin errores de permisos" "$salida"
+no_contiene "y lee el log entero"        "--since" "$(cat "$STUB_DIR/llamadas")"
+
+# Que el ok de arriba no sea por el motivo equivocado: con la línea presente, falla.
+printf '2026/08/24 [error] odoo could not be resolved\n' > "$STUB_DIR/salida"
+contiene "una coincidencia dentro de la ventana falla" "FALLA   nginx sin errores" \
+  "$(log_limpio "nginx sin errores" '\[error\]' 15m nginx 2>&1)"
+
+: > "$STUB_DIR/salida"; rm -f "$STUB_DIR/ps-q"
+
+# =====================================================================
 titulo "rotacion_aplicada — el daemon.json del host lleva el límite"
 # =====================================================================
 
