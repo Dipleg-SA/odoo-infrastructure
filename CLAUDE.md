@@ -32,6 +32,7 @@ make cert-issue            # emisión inicial; nginx no arranca sin el archivo
 make backup / backup-full / backup-check
 make stanza-init / backup-init   # una sola vez por deploy, cada repositorio
 make restore-seed          # siembra un stack que NO respalda desde el repositorio del que sí
+make restore-password      # tras sembrar: el rol odoo del cluster trae la clave del stack de origen
 make secrets-init / secrets-perms / secrets-check
 sudo make host-init / timers-install / notify-test   # lo único que se instala fuera del checkout
 make monitoring-role       # el rol de solo lectura que scrapea Postgres; repetible

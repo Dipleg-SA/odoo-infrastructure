@@ -1,7 +1,7 @@
 .PHONY: help up down logs ps nuke build \
         cert-issue cert-renew secrets-init secrets-perms secrets-check \
         host-init timers-install notify-test monitoring-role \
-        backup backup-full backup-check backup-init stanza-init restore-up restore-down restore-seed \
+        backup backup-full backup-check backup-init stanza-init restore-up restore-down restore-seed restore-password \
         addons-sync addons odoo-install odoo-update odoo-modules pydeps-check pydeps-sync \
         require-modules require-backups require-restore require-root test verify host-verify \
         edge-up edge-down edge-restart edge-logs edge-ps edge-verify edge-nuke \
@@ -366,6 +366,20 @@ restore-seed: require-restore ## Siembra base y filestore desde el repositorio d
 	   docker compose exec -T restore-files restic restore latest --target / --include /data/odoo'; \
 	  estado=$$?; \
 	  docker compose rm -sf restore-db restore-files >/dev/null 2>&1; \
+	  exit "$$estado"
+
+# La otra mitad de la siembra: el cluster restaurado trae los roles del stack de
+# origen, así que la contraseña del rol odoo no es la de este stack. Va tras db-up.
+
+restore-password: ## Reaplica el secret de este stack al rol odoo del cluster sembrado
+	@. scripts/lib/ui.sh; [ -s secrets/postgres_password ] || \
+	  { ui_bad "falta secrets/postgres_password" "sin él la clave se interpola vacía y el rol queda sin password" >&2; exit 2; }
+	@. scripts/lib/ui.sh; ui_start "restore-password"; \
+	  printf "ALTER ROLE odoo PASSWORD '%s';\n" "$$(cat secrets/postgres_password)" \
+	  | docker compose exec -T -u postgres postgres psql -U odoo -d postgres -v ON_ERROR_STOP=1 -q; \
+	  estado=$$?; \
+	  if [ "$$estado" -eq 0 ]; then ui_ok "restore-password listo"; \
+	  else ui_bad "restore-password falló" "exit $$estado"; fi; \
 	  exit "$$estado"
 
 # --- Observabilidad ---

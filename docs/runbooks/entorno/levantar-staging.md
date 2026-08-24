@@ -130,8 +130,10 @@ Levanta los dos contenedores del perfil `restore`, restaura la base y después e
 El target encierra dos cosas que no pueden quedar a criterio de quien lo corre: el `--archive-mode=off` del restore —sin él, el cluster restaurado hereda el `archive_command` del backup y empieza a empujar WAL a la stanza de producción— y la guarda que lo hace fallar en un stack que sí respalda. **Va antes de `db-up`**: pgBackRest no restaura sobre un cluster vivo.
 
 ```bash
-make db-up
+make db-up && make restore-password
 ```
+
+**El cluster restaurado trae los roles de producción, contraseña incluida.** El `postgres_password` que `secrets-init` generó para este stack no es el del rol `odoo` que acaba de restaurarse, así que PgBouncer relaya la autenticación a una contraseña que no coincide: `db-verify` falla en «auth real por PgBouncer» y Odoo no conecta en el bloque 6. `restore-password` reaplica el secret de este checkout al rol. Va después de `db-up` y no dentro de `restore-seed` porque necesita la base viva, y se repite en cada resiembra.
 
 ```bash
 make db-verify
