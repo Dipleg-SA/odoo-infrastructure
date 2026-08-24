@@ -85,15 +85,15 @@ motivo() {
 # --- Búsqueda en logs ---
 # Helper propio porque vacio() no puede llevar un pipe: acá el grep es parte del chequeo.
 #
-# El tercer argumento acota la ventana: vacío lee el log entero, y un valor tipo 15m
-# solo lo reciente. Un error transitorio de arranque no puede quedar rojo para siempre.
+# El tercer argumento es la excepción: el patrón que, aun matcheando, no cuenta como
+# error. Vacío exige el log limpio entero. Un error por diseño no puede quedar rojo.
 
 log_limpio() {
-  local nombre="$1" patron="$2" desde="$3"; shift 3
+  local nombre="$1" patron="$2" salvo="$3"; shift 3
   local salida
   if ! corriendo "$1"; then omitir "$nombre" "$(motivo "$1")"; return; fi
-  # Sin comillas a propósito: con ventana vacía no tiene que llegar ningún argumento.
-  salida=$(docker compose logs --tail 500 --no-log-prefix ${desde:+--since=$desde} "$@" 2>/dev/null | grep -iE "$patron")
+  salida=$(docker compose logs --tail 500 --no-log-prefix "$@" 2>/dev/null | grep -iE "$patron")
+  [ -n "$salvo" ] && salida=$(printf '%s\n' "$salida" | grep -viE "$salvo")
   if [ -z "$salida" ]; then ok "$nombre"
   else bad "$nombre" "$(printf '%s' "$salida" | head -1)"; fi
 }
@@ -433,10 +433,11 @@ v_edge() {
   fi
 
   # --- Errores del proxy ---
-  # Con ventana: hasta que Odoo existe, nginx loguea "could not be resolved" en cada
-  # request —es el 502 que el runbook anuncia—, y sobre el log entero quedaría rojo para siempre.
+  # "could not be resolved" es la contracara del resolver + proxy_pass por variable:
+  # cada request que llega mientras Odoo no está deja uno, y el log no lo olvida nunca.
+  # Que la resolución funcione lo prueba en vivo la cadena nginx → Odoo, en v_odoo.
 
-  log_limpio "nginx sin errores en los últimos 15 min" '\[error\]|\[emerg\]' 15m nginx
+  log_limpio "nginx sin errores en el log" '\[error\]|\[emerg\]' 'could not be resolved' nginx
 
   # --- Binds ---
   # Nivel 3 (LAN): el acceso local esquiva el túnel y necesita llegar al proxy. La
@@ -644,6 +645,25 @@ v_odoo() {
 
   expect "odoo sirve en :8069" "200" docker compose exec -T odoo \
     curl -sS -o /dev/null -w '%{http_code}' http://localhost:8069/web/login
+
+  # --- La cadena nginx → Odoo ---
+  # El único chequeo que recorre el camino de un request real. nginx resuelve odoo
+  # por el resolver en cada uno, así que solo un request en vivo dice que resuelve.
+
+  local via_proxy="la cadena nginx → Odoo responde"
+  if ! corriendo nginx; then
+    omitir "$via_proxy" "$(motivo nginx)"
+  elif ! corriendo odoo; then
+    omitir "$via_proxy" "$(motivo odoo)"
+  elif modo_plain; then
+    expect "$via_proxy" "200" docker compose exec -T odoo \
+      curl -sS -o /dev/null -w '%{http_code}' http://nginx/web/login
+  else
+    # -k y Host: el certificado es del hostname público y acá se entra por el nombre
+    # de servicio, que no es ninguno de sus SAN. Lo que se prueba es el ruteo, no el TLS.
+    expect "$via_proxy" "200" docker compose exec -T odoo \
+      curl -skS -o /dev/null -w '%{http_code}' -H "Host: $PUBLIC_HOSTNAME" https://nginx/web/login
+  fi
 
   # --- Árbol de addons ---
   # Llegan por bind-mount: su presencia ya no la garantiza la imagen.
