@@ -1,6 +1,0 @@
-# --- Capa de datos ---
-# Agrega postgres y pgbouncer; cada uno vive en su propia carpeta de servicio.
-
-include:
-  - postgres/compose.yaml
-  - pgbouncer/compose.yaml

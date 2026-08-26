@@ -20,4 +20,4 @@ docker compose exec nginx grep -r 'TU_DOMINIO' /etc/nginx/conf.d/
 
 ## Fix
 
-Cualquier resultado en el grep es el placeholder `TU_DOMINIO` de `server-tls.conf.example` sin reemplazar en el `server-tls.conf` real de este checkout. Lo chequea también `make edge-verify`.
+Cualquier resultado en el grep es el placeholder `TU_DOMINIO` de `server-tls.conf.example` sin reemplazar en el `server-tls.conf` real de este checkout. Lo chequea también `make nginx-verify`.

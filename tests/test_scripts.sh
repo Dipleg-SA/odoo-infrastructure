@@ -31,12 +31,14 @@ reset_stub() { : > "$STUB_DIR/llamadas"; rm -f "$STUB_DIR/config" "$STUB_DIR/ps-
 titulo "cert.sh — lo que le llega de verdad a certbot"
 # =====================================================================
 
-ROOT=$(crear_root cert cert.sh)
+ROOT=$(crear_root cert)
+mkdir -p "$ROOT/stacks/certbot/scripts"
+cp "$REPO_ROOT/stacks/certbot/scripts/cert.sh" "$ROOT/stacks/certbot/scripts/"
 reset_stub
 printf '  Expiry Date: 2026-11-01 12:00:00+00:00 (VALID: 80 days)\n' > "$STUB_DIR/salida"
 printf 'idcontenedor\n' > "$STUB_DIR/ps-q"
 
-(cd "$ROOT" && ./scripts/cert.sh renew --force-renewal >/dev/null 2>&1)
+(cd "$ROOT" && ./stacks/certbot/scripts/cert.sh renew --force-renewal >/dev/null 2>&1)
 
 # El bug que se shippeó: cmd_renew no reenviaba "$@" y el flag se perdía en silencio.
 contiene "renew reenvía --force-renewal a certbot" \
@@ -62,12 +64,12 @@ contiene "con el vencimiento en epoch UTC" "1793534400" "$METRICA"
 reset_stub
 printf '  Expiry Date: 2026-11-01 12:00:00+00:00 (VALID: 80 days)\n' > "$STUB_DIR/salida"
 : > "$STUB_DIR/ps-q"
-SALIDA=$( (cd "$ROOT" && ./scripts/cert.sh renew 2>&1) )
-igual    "con nginx abajo igual sale con 0" "0" "$( (cd "$ROOT" && ./scripts/cert.sh renew >/dev/null 2>&1); echo $?)"
+SALIDA=$( (cd "$ROOT" && ./stacks/certbot/scripts/cert.sh renew 2>&1) )
+igual    "con nginx abajo igual sale con 0" "0" "$( (cd "$ROOT" && ./stacks/certbot/scripts/cert.sh renew >/dev/null 2>&1); echo $?)"
 contiene "y lo avisa"                        "no está corriendo" "$SALIDA"
 
 # --- Uso ---
-sale_con "un subcomando inventado sale con 2" 2 bash "$ROOT/scripts/cert.sh" inventado
+sale_con "un subcomando inventado sale con 2" 2 bash "$ROOT/stacks/certbot/scripts/cert.sh" inventado
 
 # =====================================================================
 titulo "secrets-init.sh — la lista sale de la composición"
@@ -76,29 +78,23 @@ titulo "secrets-init.sh — la lista sale de la composición"
 ROOT=$(crear_root secrets secrets-init.sh secrets-perms.sh)
 reset_stub
 
-# Lo que declara un entrypoint de development: tres, y los tres generables.
+# Lo que declara un entrypoint de development: dos, y los dos generables.
 cat > "$STUB_DIR/config" <<'EOF'
 secrets:
   odoo_admin_password:
     file: /repo/secrets/odoo_admin_password
-  pgbouncer_credentials:
-    file: /repo/secrets/pgbouncer_credentials
   postgres_password:
     file: /repo/secrets/postgres_password
 EOF
 
 SALIDA=$( (cd "$ROOT" && ./scripts/secrets-init.sh 2>&1) )
-igual "crea exactamente los 3 declarados" "3" "$(ls "$ROOT/secrets" | wc -l | tr -d ' ')"
+igual "crea exactamente los 2 declarados" "2" "$(ls "$ROOT/secrets" | wc -l | tr -d ' ')"
 contiene "y dice cuáles omite"            "omitido (este stack no lo declara): secrets/cloudflare_api_token" "$SALIDA"
 contiene "sin dejar nada pendiente"       "Todos los secrets tienen valor" "$SALIDA"
 
 # hex y no base64: los / + = rompen a cualquier consumidor que arme una URI.
 igual "genera 64 hex" "0" \
   "$(grep -qE '^[0-9a-f]{64}$' "$ROOT/secrets/postgres_password"; echo $?)"
-
-# El userlist de PgBouncer lleva el MISMO valor que el password.
-contiene "el userlist de pgbouncer deriva del password" \
-  "$(cat "$ROOT/secrets/postgres_password")" "$(cat "$ROOT/secrets/pgbouncer_credentials")"
 
 # --- Idempotencia ---
 # Se corre de nuevo en cada checkout que suma una capa: pisar un valor cargado
@@ -124,7 +120,7 @@ titulo "secrets-perms.sh --check"
 
 printf 'valor\n' > "$ROOT/secrets/postgres_exporter_password"
 chmod 640 "$ROOT/secrets/postgres_exporter_password"
-rm -f "$ROOT/secrets/postgres_password" "$ROOT/secrets/pgbouncer_credentials" "$ROOT/secrets/odoo_admin_password"
+rm -f "$ROOT/secrets/postgres_password" "$ROOT/secrets/odoo_admin_password"
 
 sale_con "un secret en 640 pasa" 0 bash -c "cd '$ROOT' && ./scripts/secrets-perms.sh --check"
 
@@ -164,8 +160,9 @@ titulo "timers.sh — qué units corresponden y con qué nombre"
 crear_root_timers() {
   local root proyecto="$1"
   root=$(crear_root "timers-$proyecto" timers.sh)
-  mkdir -p "$root/docker/host/systemd" "$root/systemd"
-  cp "$REPO_ROOT"/docker/host/systemd/* "$root/docker/host/systemd/"
+  mkdir -p "$root/host/systemd" "$root/stacks" "$root/systemd"
+  cp "$REPO_ROOT"/host/systemd/* "$root/host/systemd/"
+  cp -R "$REPO_ROOT"/stacks/backup "$REPO_ROOT"/stacks/certbot "$root/stacks/"
   printf 'COMPOSE_PROJECT_NAME=%s\n' "$proyecto" >> "$root/.env"
   printf '%s' "$root"
 }

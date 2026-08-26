@@ -10,4 +10,4 @@ La política se aplica **por grupo `(host, paths)`**. Si una corrida respaldó u
 
 ## Fix
 
-Con el script estándar (`make backup`) no pasa, siempre el mismo path. Si aparece, alguien corrió un `restic backup` manual sobre otra ruta — revisar el historial de comandos antes de asumir que la retención está rota.
+Con el script estándar (`make backup-run`) no pasa, siempre el mismo path. Si aparece, alguien corrió un `restic backup` manual sobre otra ruta — revisar el historial de comandos antes de asumir que la retención está rota.

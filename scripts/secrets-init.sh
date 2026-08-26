@@ -56,12 +56,10 @@ nuevo() {
 
 genpass() { openssl rand -hex 32 | tr -d '\n'; }
 
-# --- Password de Postgres y su userlist ---
-# El userlist de PgBouncer lleva el MISMO valor; se deriva del archivo, así que
-# sigue coincidiendo aunque postgres_password ya existiera de una corrida previa.
+# --- Password de Postgres ---
+# Lo lee el motor y lo lee Odoo: un solo valor, un solo archivo.
 
 nuevo postgres_password < <(genpass) || true
-nuevo pgbouncer_credentials < <(printf '"odoo" "%s"' "$(cat secrets/postgres_password)") || true
 
 # --- Master password de Odoo ---
 
@@ -86,15 +84,8 @@ for s in cloudflare_api_token cloudflare_tunnel_token zeptomail_smtp_password re
 done
 
 # --- Credenciales de R2 ---
-# La misma clave va en los dos, en sintaxis distinta: pgBackRest parsea su INI y
-# restic el formato de AWS. Al rotarla hay que tocar ambos.
-
-nuevo pgbackrest_r2_credentials <<EOF || true
-[global]
-repo1-s3-key=$MARK
-repo1-s3-key-secret=$MARK
-repo1-cipher-pass=$MARK
-EOF
+# Formato de AWS, que es lo que restic parsea. Un solo repositorio: acá va el dump
+# de la base Y el filestore, en el mismo snapshot.
 
 nuevo restic_r2_credentials <<EOF || true
 [default]

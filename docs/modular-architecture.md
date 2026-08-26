@@ -322,7 +322,7 @@ cuales es "un archivo bien completado":
 - **El camino automático** lo da el timer de systemd, que se instala solo en producción.
   Sin timer, el contenedor de prueba no respalda nunca por su cuenta: se queda esperando
   a que alguien le pida un restore.
-- **El camino manual** —un `make backup` tipeado en el checkout equivocado— lo corta la
+- **El camino manual** —un `make backup-run` tipeado en el checkout equivocado— lo corta la
   credencial: el token de R2 de prueba es **de solo lectura**. El restore funciona; la
   escritura falla en el proveedor, no en un `if`. Es la misma regla de tokens acotados al
   permiso mínimo que el stack ya aplica en todos lados, y es verificable: la verificación

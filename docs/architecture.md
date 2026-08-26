@@ -15,37 +15,35 @@ Alta disponibilidad real queda fuera de alcance: no es alcanzable con un único 
 
 ## Backups
 
-**El requisito que lo dispara:** poder recuperar a un momento específico del día, no solo a la última foto nocturna.
+**El requisito que lo dispara:** poder recuperar la instalación entera —datos y adjuntos— a un estado consistente, sin depender de nada que solo exista en el servidor de origen.
 
 **Storage: Cloudflare R2.** El motivo principal es que no cobra egress, y en backups el costo real aparece al *restaurar* — justo en el momento de un desastre. Descartados: S3 (maduro pero cobra egress, un costo inesperado durante una recuperación real) y Backblaze B2 (barato, pero un proveedor separado más que gestionar).
 
-**Base de datos: pgBackRest.** Archivado continuo de WAL vía `archive_mode`/`archive_command` da un RPO de minutos para la base. Sube directo a storage S3-compatible, sin herramienta de transporte adicional.
+**Una sola herramienta, restic.** Deduplicación real y cifrado nativo, y sube directo a storage S3-compatible sin transporte adicional. El dump de la base y el filestore van **en el mismo snapshot**.
 
-El binario corre **dentro del contenedor de Postgres**, no en uno aparte: el `archive_command` lo ejecuta el propio proceso de la base, así que tiene que estar ahí de todas formas. Se descartó la topología de *repo host* dedicado — en modo TLS pgBackRest exige un servidor corriendo en ambos lados, lo que suma un sidecar y una PKI propia, y el aislamiento de credenciales que la justificaba queda parcial igual porque ese sidecar lee el directorio de datos en crudo.
+### Snapshot y no PITR
 
-**Filestore: restic.** Deduplicación real y cifrado nativo. Los adjuntos se acumulan y casi no cambian una vez escritos, así que la dedup ahorra espacio de forma significativa.
+Se evaluó archivado continuo de WAL con pgBackRest, que da un RPO de minutos para la base, y **se descartó**. La evidencia más pertinente es que **Odoo.sh —la plataforma de Odoo S.A. para sus propios clientes enterprise— respalda por snapshot**: backup diario con retención GFS de 7 diarios, 4 semanales y 3 mensuales, cada uno con dump, filestore, logs y sesiones. No ofrece PITR ni lo menciona. El mecanismo oficial on-premise es el mismo: el zip de `/web/database/manager`.
 
-**Retención.** Los dos modelos son distintos: pgBackRest retiene *backups full*, y al expirar uno caen en cascada sus diferenciales dependientes; el WAL se deja atado automáticamente a esa ventana para no caer en la trampa de borrar WAL que todavía hace falta. restic retiene por conteo de diarios, semanales y mensuales.
+Los proveedores de Postgres gestionado (RDS, Azure Flexible Server) sí hacen snapshot más WAL continuo. Difieren por una razón específica de esta aplicación: **ellos respaldan una base de datos, y en Odoo la base no es todo el estado.** El filestore es la otra mitad y no tiene WAL. Restaurar la base a un punto posterior al último snapshot del filestore deja filas de `ir_attachment` apuntando a archivos que nunca se respaldaron — uno de los modos de falla más documentados de Odoo. El PITR de la base solo sirve hasta donde llegue el snapshot del filestore, así que la granularidad fina del WAL no compra nada.
 
-Lo que fija el número no es una preferencia: **la ventana de la base tiene que cubrir al menos la del filestore**. Un restore de la base a un día puntual necesita un snapshot de filestore de esa misma fecha; si la base cubriera menos, la cola larga del filestore quedaría inútil para una restauración completa. La cadencia es full mensual más diferencial diario —no full semanal— para sostener esa ventana sin acumular varias copias completas.
+> Para Odoo, **la palanca del RPO es la frecuencia del snapshot, no el WAL.**
 
-**La capa es exclusiva de producción.** Los entornos no productivos no la incluyen. No es una simplificación: comparten el repositorio remoto, la stanza y los archivos de estado del host, así que la corrida de un entorno descartable escribiría la marca de éxito que apaga la alerta del entorno real. Y no hay nada que proteger — un stack que se destruye después de usarse no acumula datos.
+**El umbral donde esta decisión se revisa** no es el tamaño sino el tiempo del dump. `pg_dump` relee la base entera en cada corrida, y un dump comprimido además anula la deduplicación de restic —zlib cambia el flujo de bytes globalmente ante cualquier modificación—, así que el dump va sin comprimir y se paga leer todo cada noche. A escala grande, un incremental por páginas manda solo lo que cambió y tarda minutos donde el dump tarda horas. `backup.sh` avisa al cruzar el umbral, para que la decisión no dependa de que alguien mire.
 
-| Qué | Herramienta | Dónde | Se restaura con |
-|---|---|---|---|
-| Base de datos (cluster completo) | pgBackRest | R2, prefijo `pgbackrest/` | servicio `restore-db` (misma imagen que `postgres`, uid 999) |
-| Filestore (adjuntos) | restic | R2, prefijo `restic/` | servicio `restore-files` (root, monta `odoo-data` rw) |
+**Retención GFS, en un solo lugar.** 7 diarios, 4 semanales, 3 mensuales, aplicados por `restic forget --prune` en la corrida diaria. Con una sola herramienta desaparece el invariante de dos archivos que había que cruzar entre dos ventanas de retención distintas.
 
-**pgBackRest restaura el cluster entero**, no una base suelta: no existe "restaurar solo la tabla X" ni "solo la base `odoo`". Y **los dos servicios de restore duermen** (`sleep infinity`) — levantarlos no restaura nada, son contenedores donde el operador ejecuta los comandos a mano; están fuera de `make up` por `profiles: [restore]`.
+**Respaldar es exclusivo del entorno productivo.** Los otros comparten el repositorio remoto y los archivos de estado del host, así que la corrida de un entorno descartable escribiría la marca de éxito que apaga la alerta del real. En prueba eso se garantiza por composición —su entrypoint le pone `profiles: [restore]` al stack, así que los timers de backup no se instalan— y por una credencial de R2 de solo lectura.
 
 ### Consistencia entre base y filestore
 
 Los adjuntos viven partidos: la fila en la base, el archivo en el filestore. **Un restore desalineado es la falla silenciosa de este sistema** — la base arranca sana y el problema aparece meses después, cuando alguien abre un documento viejo.
 
-- **Orden obligatorio en cada corrida: la base primero, el filestore después.** Un filestore más nuevo deja archivos huérfanos, que son inofensivos; uno más viejo deja filas apuntando a archivos inexistentes, que es destructivo. El orden garantiza que el snapshot sea siempre un superconjunto de lo que la base referencia.
+La decisión de fondo es que **las dos mitades van en el mismo snapshot**. Con eso la consistencia deja de ser un procedimiento que hay que recordar —respaldar en cierto orden— y pasa a ser una propiedad del backup: no existe un snapshot con una mitad de una fecha y la otra de otra.
+
+- **El restore sí tiene orden, y no es simétrico:** primero el filestore, después la base. Un filestore más nuevo deja archivos huérfanos, que son inofensivos; uno más viejo deja filas apuntando a archivos inexistentes, que es destructivo.
 - **El filestore vivo no reemplaza a un snapshot.** El recolector de basura de Odoo borra archivos que ninguna fila referencia, así que un estado pasado de la base puede referenciar archivos ya limpiados.
-- **El RPO combinado lo acota la cadencia del filestore**, no el WAL. Se evaluó y descartó subirla: el escenario que eso cubre exige que se junten pérdida total del disco *y* recuperación a media tarde, mientras que en el escenario dominante —error lógico con el disco intacto— la cadencia no interviene.
-- **Contrapartida obligatoria:** el procedimiento de restore incluye un chequeo de integridad entre las referencias de la base y el filestore, que convierte una falla silenciosa en un diagnóstico inmediato.
+- **La verificación lo afirma explícitamente:** el verify del stack comprueba que el último snapshot traiga las dos rutas. Un snapshot con el filestore y sin la base restaura una base que no existe.
 
 ### El riesgo aceptado: dos copias, no 3-2-1
 
@@ -91,13 +89,11 @@ El mismo nginx corre en los tres entornos, sin TLS en desarrollo. Que el proxy e
 
 **Redis: no.** Se evaluó como backend del bus de notificaciones, que por defecto usa `LISTEN/NOTIFY` de Postgres. El worker gevent que maneja el bus queda siempre en un proceso, sin importar la cantidad de workers HTTP, así que no escala con ellos. Lo que justificaría Redis es volumen alto de notificaciones concurrentes o varias instancias compartiendo el bus; con un solo servidor no aplica ninguno. Agregarlo después es un parámetro de config, sin rearmar nada.
 
-**PgBouncer: sí, con el módulo de conexión alternativa para el bus.** Sin pooler, el límite de conexiones por proceso de Odoo da un techo teórico muy por encima del `max_connections` de Postgres. Tunear ese límite a mano resuelve el síntoma, pero es una cuenta a rehacer cada vez que cambie la cantidad de workers.
+**PgBouncer: no.** Se evaluó y se descartó. Lo que justificaría un pooler es que el límite de conexiones por proceso de Odoo dé un techo por encima del `max_connections` de Postgres — pero con una sola aplicación en un solo servidor eso se resuelve con **un valor**: `db_maxconn` por la cantidad de procesos (workers más threads de cron) tiene que entrar en `max_connections`. Es una cuenta, no una pieza de infraestructura.
 
-El setup es de **dos puertos**: los workers HTTP y los de cron conectan al pooler en **modo transacción**, que es donde está el multiplexado real; el worker gevent conecta **directo a Postgres**, porque el modo transacción rompe `LISTEN/NOTIFY` y con eso el chat en tiempo real. Alternativas descartadas: modo sesión sin el módulo (no rompe el bus, pero cede el multiplexado que es la razón de sumar el pooler) y modo transacción sin el módulo (regresión funcional real).
+El precio del pooler no era la memoria: corre en **modo transacción**, eso rompe `LISTEN/NOTIFY`, y por eso Odoo necesitaba `bus_alt_connection` en `server_wide_modules` para darle al bus su propia conexión directa. Un módulo cuya ausencia deja a Odoo arrancando igual y al chat en vivo sin actualizarse, en silencio. También arrastraba un secret con la contraseña en texto plano —`auth_type = plain`— y el procedimiento entero de reaplicar esa credencial después de restaurar.
 
-**Autenticación del pooler: contraseña en el archivo, no consultada a la base.** PgBouncer lee las credenciales de un archivo propio, así que la contraseña de la aplicación queda en texto plano dentro de él. Se acepta porque ese archivo es un secret con permisos `640` y grupo del proceso que lo lee, y porque el pooler no publica puerto: alcanzarlo exige ya estar en su red de Docker. La alternativa es que el pooler consulte la contraseña a la base en cada conexión, lo que elimina la copia y simplifica la rotación, a cambio de un rol adicional con permiso de lectura sobre el catálogo de autenticación. Se revisita si la rotación de esa credencial pasa a ser frecuente.
-
-**El tamaño del pool se calcula, no se elige.** Con Odoo procesando una request a la vez por worker, el pico teórico de transacciones simultáneas es la suma de workers HTTP más threads de cron. El pool se dimensiona sobre ese pico con margen, y el límite de clientes se deja generoso para no tener que retocar también el de Odoo.
+Se revisita con más concurrencia, o si más de una aplicación comparte la base. Los dos valores que hoy sostienen la decisión los cruza `postgres-verify`: viven en archivos de herramientas distintas y nada más los ata. **Sin pooler, pasarse no encola: Postgres rechaza.**
 
 **Versión de Postgres:** la estable más reciente compatible, no la mínima. Al no tratarse de una migración desde una versión vieja, maximiza el tiempo antes de quedar desactualizada.
 
@@ -165,7 +161,7 @@ Se evalúa herramienta por herramienta, no como stack cerrado.
 
 **Provisioning como código.** Datasources, dashboards y recursos de alerting se definen como archivos versionados junto al resto de la infraestructura. Resuelve el riesgo de perderlos si el contenedor se recrea, sin necesidad de un backup aparte. Consecuencia asumida: quedan de solo lectura en la UI, y un cambio se hace editando el archivo.
 
-**Los umbrales de las alertas van literales, y no es un pendiente.** Grafana no ofrece mecanismo para parametrizarlos: el provisioning de alerting es YAML plano, sin la interpolación que sí tienen datasources y dashboards. Se probaron las dos formas contra la imagen del stack: `${VAR}` dentro de `params` ni siquiera parsea (`did not find expected ',' or ']'`, y la regla entera no se provisiona), y `"$__env{VAR}"` pasa como cadena literal a un campo que espera un número. Como el valor vive en el archivo de config de la herramienta, la regla del stack aplica sin excepción: si no se puede parametrizar por el mecanismo de esa herramienta, se versiona literal. El único umbral que se cruza con el de otro archivo —el de «backup viejo» contra `RESTIC_MAX_AGE`, fijo en `docker/backups/backup/compose.yaml`— lo verifica `make observability-verify`.
+**Los umbrales de las alertas van literales, y no es un pendiente.** Grafana no ofrece mecanismo para parametrizarlos: el provisioning de alerting es YAML plano, sin la interpolación que sí tienen datasources y dashboards. Se probaron las dos formas contra la imagen del stack: `${VAR}` dentro de `params` ni siquiera parsea (`did not find expected ',' or ']'`, y la regla entera no se provisiona), y `"$__env{VAR}"` pasa como cadena literal a un campo que espera un número. Como el valor vive en el archivo de config de la herramienta, la regla del stack aplica sin excepción: si no se puede parametrizar por el mecanismo de esa herramienta, se versiona literal. El único umbral que se cruza con el de otro archivo —el de «backup viejo» contra `RESTIC_MAX_AGE`, fijo en `stacks/backup/compose.yaml`— lo verifica `make prometheus-verify`.
 
 ---
 
@@ -228,7 +224,7 @@ Contrapartida escrita del principio de correr como no-root: se registra quién n
 
 ## Modularización de Compose
 
-`docker/compose.yaml` no es monolítico: declara los recursos compartidos —`networks:` y `secrets:`— y usa `include:` para sumar un módulo por capa.
+`envs/production.yaml` no es monolítico: declara los recursos compartidos —`networks:` y `secrets:`— y usa `include:` para sumar un módulo por capa.
 
 - **Motivo:** un archivo por capa mantiene acotado el diff de cada cambio y hace auditable de un vistazo qué contenedores pertenecen a qué capa. Más fácil de revisar y de razonar sobre el radio de impacto que un archivo de cientos de líneas con todo mezclado.
 - **Mecanismo:** `include:` en vez de encadenar `-f` a mano en cada invocación, lo que evita que una invocación se olvide un archivo y levante un subconjunto incompleto sin avisar.

@@ -19,12 +19,11 @@ DESTINO="${SYSTEMD_DIR:-/etc/systemd/system}"
 # --- Dónde vive cada unit ---
 # Se busca, no se fija: en el árbol nuevo la unit vive con su stack —
 # stacks/certbot/systemd/cert-renew.service— y la plantilla de aviso, que es
-# transversal, en host/systemd/. docker/host/systemd va último para que el árbol
-# viejo siga instalando mientras exista. Se borra con él, en la Etapa 7.
+# transversal, en host/systemd/.
 
 ubicar() {
   local archivo="$1" d
-  for d in stacks/*/systemd host/systemd docker/host/systemd; do
+  for d in stacks/*/systemd host/systemd; do
     [ -f "$d/$archivo" ] && { printf '%s' "$d/$archivo"; return 0; }
   done
   return 1
@@ -75,7 +74,7 @@ notify() { printf '%s-notify@\n' "$PROYECTO"; }
 instalar_archivo() {
   local archivo="$1" destino="$2" origen
   if ! origen=$(ubicar "$archivo"); then
-    ui_bad "no se encontró la unit $archivo" "buscada en stacks/*/systemd, host/systemd y docker/host/systemd" >&2
+    ui_bad "no se encontró la unit $archivo" "buscada en stacks/*/systemd y host/systemd" >&2
     return 1
   fi
   sed -e "s|CAMBIAR-en-deploy|$PWD|g" \

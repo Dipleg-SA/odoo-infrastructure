@@ -15,5 +15,5 @@ docker compose logs --tail=50 odoo
 Causas típicas:
 
 - **GID incorrecto** en `odoo_admin_password`/`zeptomail_smtp_password` — deben ser `101`. Se arregla con `sudo make secrets-perms && make secrets-check` (el mapa vive en `scripts/secrets-perms.sh`, no acá). Si estás probando en Mac en vez del servidor real, Docker Desktop no respeta fielmente los permisos POSIX en bind-mounts owned-por-root — confirmá el GID en el servidor Linux real antes de asumir que el mapa está mal.
-- **Postgres/PgBouncer todavía no están `healthy`** cuando Odoo intenta conectar. Confirmar que `make db-verify` pasa antes de arrancar Odoo — ver [postgres-pgbouncer-unhealthy](../datos/postgres-pgbouncer-unhealthy.md) si no.
+- **Postgres todavía no está `healthy`** cuando Odoo intenta conectar. Confirmar que `make postgres-verify` pasa antes de arrancar Odoo.
 - **`addons_path` vacío** — el entrypoint aborta a propósito (`addons_path vacío — ¿corriste make addons-sync antes de levantar el stack?`). Desde el paso a bind-mount es la causa más frecuente: los addons llegan por bind-mount desde `addons/`, así que su presencia ya no la garantiza la imagen. Se arregla con `make addons-sync`; si eso falla por credencial, el token vive en `~/.git-credentials` del host — ver [rotar-token-git](../../credenciales/rotar-token-git.md).

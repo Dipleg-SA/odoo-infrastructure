@@ -4,7 +4,7 @@
 
 Vas a empezar a trabajar en una feature — un módulo nuevo o un cambio sobre uno existente — y necesitás tu propio entorno, aislado de cualquier otro checkout de desarrollo que tengas corriendo. Un checkout por feature, en tu máquina.
 
-Son los **mismos nueve bloques y los mismos comandos** que producción: `capa.sh` resuelve qué servicios trae este stack, así que `make edge-up` levanta acá un solo contenedor. Dos bloques no corresponden y se saltean.
+Son los **mismos nueve bloques y los mismos comandos** que producción: `capa.sh` resuelve qué servicios trae este stack, así que `make nginx-up` levanta acá un solo contenedor. Dos bloques no corresponden y se saltean.
 
 ## Objetivo
 
@@ -43,7 +43,7 @@ nginx está presente aunque no haya TLS — es lo que hace honesto al `proxy_mod
 
 **Objetivo** — checkout propio por feature, con `.env` y los 3 secrets generados y con permisos. Nada levantado todavía.
 
-**A mano** — nada que pegar. `.env.dev.example` deja cuatro claves y las explica donde se editan; `COMPOSE_FILE` ya viene puesto. La que no se puede olvidar es `COMPOSE_PROJECT_NAME`.
+**A mano** — nada que pegar. `.env.development.example` deja cuatro claves y las explica donde se editan; `COMPOSE_FILE` ya viene puesto. La que no se puede olvidar es `COMPOSE_PROJECT_NAME`.
 
 > **El nombre del proyecto es el único aislamiento entre dos checkouts de desarrollo.** De él salen los volúmenes: dos que lo compartan resuelven al mismo `pgdata`, y como corre uno a la vez no colisionan al arrancar — **se pisan los datos en silencio**. Si falta la clave, Compose cae al directorio del compose elegido —`docker`, el mismo en todos los checkouts—, así que olvidarla es exactamente el caso peligroso; el otro es copiar el `.env` de un checkout a otro.
 
@@ -56,7 +56,7 @@ cd ~/odoo-development-$FEATURE
 Acá **no** se fija a un tag: el checkout de desarrollo sigue la rama en la que estás trabajando. El `HEAD` detached es un guard-rail del servidor, donde nadie debería estar corrigiendo código.
 
 ```bash
-cp .env.dev.example .env
+cp .env.development.example .env
 ${EDITOR:-nano} .env
 ```
 
@@ -85,20 +85,20 @@ Chequea la versión de Compose, `.env` sin claves vacías, la identidad declarad
 **A mano** — bootstrapeá los dos archivos reales de nginx que este stack sí monta (gitignoreados; `server-plain.conf` no hace falta, ya viene versionado):
 
 ```bash
-cp docker/edge/nginx/00-http.conf.example docker/edge/nginx/00-http.conf
-cp docker/edge/nginx/odoo.locations.example docker/edge/nginx/odoo.locations
+cp stacks/nginx/config/00-http.conf.example stacks/nginx/config/00-http.conf
+cp stacks/nginx/config/odoo.locations.example stacks/nginx/config/odoo.locations
 ```
 
-Los valores del `.example` ya sirven tal cual (rate-limit, CIDR de Docker); no hace falta editarlos salvo que tu red los necesite distintos. `NGINX_MODE` no se declara: `docker/compose.dev.yaml` fija la plantilla sin TLS en el entrypoint. Si dependiera de la variable, un `.env` sin la clave montaría la plantilla con TLS y nginx no arrancaría — no hay certificado.
+Los valores del `.example` ya sirven tal cual (rate-limit, CIDR de Docker); no hace falta editarlos salvo que tu red los necesite distintos. `NGINX_MODE` no se declara: `envs/development.yaml` fija la plantilla sin TLS en el entrypoint. Si dependiera de la variable, un `.env` sin la clave montaría la plantilla con TLS y nginx no arrancaría — no hay certificado.
 
 ```bash
-make edge-up
+make nginx-up
 ```
 
 Sin `make cert-issue` adelante, que es lo que sí lleva producción: este stack no tiene certbot. Tampoco `dnsmasq` ni el túnel — de la capa edge, acá solo existe el proxy.
 
 ```bash
-make edge-verify
+make nginx-verify
 ```
 
 Omite el certificado, el `server_name` y el 443, los tres derivados de que este stack sirve en texto plano.
@@ -109,26 +109,20 @@ Omite el certificado, el `server_name` y el 443, los tres derivados de que este 
 
 **Objetivo** — la base corriendo y vacía.
 
-**A mano** — bootstrapeá `postgresql.conf` y `pgbackrest.conf` (gitignoreados — `postgres` los monta a los dos aunque este stack no archive ni restaure):
+**A mano** — bootstrapeá `postgresql.conf` (gitignoreado):
 
 ```bash
-cp docker/db/postgres/postgresql.conf.example docker/db/postgres/postgresql.conf
-cp docker/db/postgres/pgbackrest.conf.example docker/db/postgres/pgbackrest.conf
+cp stacks/postgres/config/postgresql.conf.example stacks/postgres/config/postgresql.conf
 ```
 
-Ninguno de los dos necesita edición: `archive_mode` lo fuerza en `off` `compose.dev.yaml`, y sin capa de backups nada usa la stanza ni el bucket de `pgbackrest.conf`.
+No necesita edición, solo bootstrap.
 
 ```bash
-make db-up
+make postgres-up
+make postgres-verify
 ```
 
-Sin `stanza-init` detrás, que es lo que lleva producción: este stack no archiva. `archive_mode = off` no es opcional —forzado en `compose.dev.yaml` además de en `postgresql.conf`— un stack sin capa de backups que archive le empuja WAL a la stanza de producción.
-
-```bash
-make db-verify
-```
-
-Exige `archive_mode` **apagado**, los dos servicios `healthy` y la autenticación real a través de PgBouncer.
+Exige el servicio `healthy`, que acepte conexiones y que las de Odoo entren en `max_connections`.
 
 ---
 
@@ -163,7 +157,7 @@ Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, tod
 **A mano** — bootstrapeá `odoo.conf` (gitignoreado):
 
 ```bash
-cp docker/app/odoo/odoo.conf.example docker/app/odoo/odoo.conf
+cp stacks/odoo/config/odoo.conf.example stacks/odoo/config/odoo.conf
 ```
 
 No hace falta editar `smtp_server`/`port`/`user`: `ODOO_DISABLE_SMTP=1`, forzado en `compose.dev.yaml`, los deja vacíos sin importar lo que traiga el `.example`.
@@ -172,7 +166,7 @@ No hace falta editar `smtp_server`/`port`/`user`: `ODOO_DISABLE_SMTP=1`, forzado
 make odoo-up && make odoo-logs
 ```
 
-La base arranca vacía: el entrypoint detecta que no está inicializada y corre `-i base` contra `postgres:5432`, no contra PgBouncer. La primera vez tarda. Esperá `HTTP service (werkzeug) running` y cortá los logs con Ctrl-C.
+La base arranca vacía: el entrypoint detecta que no está inicializada y corre `-i base` contra `postgres:5432`. La primera vez tarda. Esperá `HTTP service (werkzeug) running` y cortá los logs con Ctrl-C.
 
 ```bash
 make odoo-verify
@@ -184,7 +178,7 @@ Avisa —no falla— si tu `ADDONS_BRANCH` no lleva la versión en el nombre: un
 
 ## 7 · Backup — no corresponde
 
-Development no respalda ni restaura: no trae la capa ni el perfil `restore`, y `make backup` falla a propósito. Lo que pierdas acá se rehace con `make nuke` y volver a empezar — es un entorno descartable por diseño.
+Development no respalda ni restaura: no trae la capa ni el perfil `restore`, y `make backup-run` falla a propósito. Lo que pierdas acá se rehace con `make nuke` y volver a empezar — es un entorno descartable por diseño.
 
 ---
 

@@ -22,10 +22,10 @@ puerto_fixture() { printf '%s\n' "$1" > "$STUB_DIR/port"; }
 titulo "declarado — qué capas trae este stack"
 # =====================================================================
 
-SERVICIOS=$'nginx\nodoo\npostgres\npgbouncer'
+SERVICIOS=$'nginx\nodoo\npostgres\nbackup'
 
 igual "reconoce un servicio del stack"        "0" "$(declarado nginx; echo $?)"
-igual "y rechaza uno que no incluye"          "1" "$(declarado backup; echo $?)"
+igual "y rechaza uno que no incluye"          "1" "$(declarado grafana; echo $?)"
 igual "sin coincidencia parcial"              "1" "$(declarado ngin; echo $?)"
 
 # El daemon caído es lo que la capa host existe para diagnosticar: si acá dijera
@@ -124,7 +124,7 @@ titulo "modo_plain — el modo del proxy sale de la plantilla montada"
 # =====================================================================
 
 # Las rutas son las que emite `docker compose config` de verdad: archivos reales
-# bajo docker/edge/nginx/, sin .template — si el fixture usa el nombre viejo, el
+# bajo stacks/nginx/config/, sin .template — si el fixture usa el nombre viejo, el
 # test pasa con un modo_plain que no matchea nada en el stack real.
 
 config_fixture <<'EOF'
@@ -132,7 +132,7 @@ services:
   nginx:
     volumes:
       - type: bind
-        source: /repo/docker/edge/nginx/server-plain.conf
+        source: /repo/stacks/nginx/config/server-plain.conf
         target: /etc/nginx/conf.d/default.conf
 EOF
 igual "detecta el stack sin TLS" "0" "$(modo_plain; echo $?)"
@@ -142,7 +142,7 @@ services:
   nginx:
     volumes:
       - type: bind
-        source: /repo/docker/edge/nginx/server-tls.conf
+        source: /repo/stacks/nginx/config/server-tls.conf
         target: /etc/nginx/conf.d/default.conf
 EOF
 igual "y el que sí lo termina" "1" "$(modo_plain; echo $?)"
@@ -164,7 +164,7 @@ services:
   nginx:
     volumes:
       - type: bind
-        source: /repo/docker/edge/nginx/server-tls.conf
+        source: /repo/stacks/nginx/config/server-tls.conf
         target: /etc/nginx/conf.d/default.conf
 EOF
 export NGINX_MODE=plain
@@ -179,7 +179,7 @@ config_fixture <<'EOF'
 services:
   odoo:
     environment:
-      HOST: pgbouncer
+      HOST: postgres
 EOF
 igual "producción manda correo" "0" "$(smtp_activo; echo $?)"
 
@@ -281,7 +281,7 @@ DAEMON_JSON="$STUB_DIR/daemon.json"; export DAEMON_JSON
 # ausente y 1 sin match, y el llamador solo lo usa como condición de un if.
 veredicto() { if rotacion_aplicada; then echo pasa; else echo falla; fi; }
 
-cp docker/host/daemon.json "$DAEMON_JSON"
+cp host/daemon.json "$DAEMON_JSON"
 igual "el archivo del repo pasa"           "pasa"  "$(veredicto)"
 
 # El caso caro: el daemon por defecto usa json-file igual, pero sin cap. Verlo

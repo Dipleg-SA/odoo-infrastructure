@@ -13,17 +13,17 @@ La capa de borde en el estado pedido, sin afectar datos ni aplicación — que s
 ## Comandos
 
 ```bash
-make edge-up        # levanta los servicios de esta capa presentes en este stack
-make edge-down       # los baja
+make nginx-up        # levanta los servicios de esta capa presentes en este stack
+make nginx-down       # los baja
 make edge-restart    # docker compose restart — reinicia los contenedores existentes, no recrea
 make edge-logs
 make edge-ps
-make edge-verify
+make nginx-verify
 ```
 
-`scripts/capa.sh` resuelve qué servicios de la capa trae *este* stack contra la composición real: producción lleva `dnsmasq`+`nginx`+`cloudflared`, staging lleva `nginx`+`cloudflared` (sin `dnsmasq`, exclusivo de producción — el `53` en `network_mode: host` no admite un segundo), y development solo `nginx` sin TLS (su entrypoint ni siquiera incluye `docker/edge/{cloudflared,certbot}/compose.yaml`, así que no tiene túnel ni certbot).
+Qué servicios de borde trae *este* stack lo dice su entrypoint: producción lleva `nginx`+`cloudflared`+`certbot` y, si el cliente tiene servidor local, `dnsmasq` con `COMPOSE_PROFILES=lan`; prueba lleva los tres primeros sin publicar puertos; y development solo `nginx` sin TLS, sin túnel ni certbot.
 
-`edge-restart` **no** reemite el certificado ni aplica un cambio de imagen o de compose — para eso hace falta `edge-down` + `edge-up`. Si el cambio es solo en la config montada de nginx (`docker/edge/nginx/`), alcanza con recargar en caliente en vez de reiniciar el contenedor entero:
+`edge-restart` **no** reemite el certificado ni aplica un cambio de imagen o de compose — para eso hace falta `edge-down` + `edge-up`. Si el cambio es solo en la config montada de nginx (`stacks/nginx/`), alcanza con recargar en caliente en vez de reiniciar el contenedor entero:
 
 ```bash
 docker compose exec nginx nginx -s reload
@@ -34,7 +34,7 @@ docker compose exec nginx nginx -s reload
 ## Verificación
 
 ```bash
-make edge-verify
+make nginx-verify
 ```
 
 Cubre los servicios `healthy`, que `server-tls.conf` no tenga el placeholder de `server-tls.conf.example` sin reemplazar, el `server_name`, el `proxy_pass` por variable con el resolver de Docker, los días de vigencia del certificado, las conexiones del Tunnel y el token de Cloudflare contra la API. En un stack sin TLS (development) omite certificado y 443, y avisa en vez de fallar donde corresponda.

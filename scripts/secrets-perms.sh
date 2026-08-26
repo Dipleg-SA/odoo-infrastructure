@@ -18,12 +18,10 @@ expected_gid_for() {
     cloudflare_api_token) echo "" ;;           # lo lee certbot, que corre como root — sin GID que exigir
     cloudflare_tunnel_token) echo "65532" ;;   # cloudflared non-root (65532:65532, distroless) — load-bearing
     postgres_password) echo "101" ;;           # lo lee odoo non-root (gid 101); postgres lo lee como root — load-bearing por odoo
-    pgbouncer_credentials) echo "70" ;;               # edoburu/pgbouncer non-root (70:70) — load-bearing
     odoo_admin_password) echo "101" ;;           # odoo non-root (100:101) — load-bearing
     zeptomail_smtp_password) echo "101" ;;     # odoo non-root (100:101); grafana lo alcanza por group_add — load-bearing
     grafana_admin_password) echo "472" ;;      # grafana corre 472:0, así que el 472 le llega por group_add, no por gid primario — load-bearing
     postgres_exporter_password) echo "" ;;     # lo lee alloy, que corre como root — sin GID que exigir
-    pgbackrest_r2_credentials) echo "999" ;;               # lo lee postgres non-root (999:999) al ejecutar archive_command — load-bearing
     restic_password) echo "101" ;;             # restic corre con los uid/gid de odoo (100:101) — load-bearing
     restic_r2_credentials) echo "101" ;;       # ídem — load-bearing
     *) echo "" ;;                              # fallback genérico — no debería alcanzarse, todos los secrets están listados arriba

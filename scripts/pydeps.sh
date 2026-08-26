@@ -26,7 +26,7 @@ require_requirements() {
 
 manifest_files() {
   local category
-  for category in $(sed -n 's/^for category in \(.*\); do/\1/p' docker/app/odoo/entrypoint.sh); do
+  for category in $(sed -n 's/^for category in \(.*\); do/\1/p' stacks/odoo/image/entrypoint.sh); do
     find "addons/$category" -name __manifest__.py 2>/dev/null || true
   done
 }
@@ -108,7 +108,7 @@ cmd_sync() {
   if [ -z "$missing" ]; then
     ui_ok "pydeps sync: nada nuevo que pinear"
   else
-    image=$(sed -n 's/^FROM \(.*\)$/\1/p' docker/app/odoo/Dockerfile | head -1)
+    image=$(sed -n 's/^FROM \(.*\)$/\1/p' stacks/odoo/image/Dockerfile | head -1)
     pedidos=$(wc -l <<<"$missing" | tr -d ' ')
     ui_start "pydeps sync: resolviendo $pedidos paquete(s) contra $image"
 

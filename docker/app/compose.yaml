@@ -1,6 +1,0 @@
-# --- Capa de aplicación ---
-# Un solo servicio hoy; agregador para que los tres entrypoints incluyan la
-# capa entera con una línea, igual que el resto.
-
-include:
-  - odoo/compose.yaml

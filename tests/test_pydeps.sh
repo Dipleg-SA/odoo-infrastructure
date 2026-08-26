@@ -14,11 +14,11 @@ trap 'rm -rf "$TMP"' EXIT
 
 crear_checkout() {
   local root="$TMP/$1"
-  mkdir -p "$root/scripts/lib" "$root/docker/app/odoo" "$root/addons"
+  mkdir -p "$root/scripts/lib" "$root/stacks/odoo/image" "$root/addons"
   cp "$REPO_ROOT/scripts/pydeps.sh" "$root/scripts/"
   cp "$REPO_ROOT/scripts/lib/ui.sh" "$root/scripts/lib/"
-  echo "FROM odoo:19.0-20260810" > "$root/docker/app/odoo/Dockerfile"
-  echo "for category in enterprise custom-addons oca third-party; do" > "$root/docker/app/odoo/entrypoint.sh"
+  echo "FROM odoo:19.0-20260810" > "$root/stacks/odoo/image/Dockerfile"
+  echo "for category in enterprise custom-addons oca third-party; do" > "$root/stacks/odoo/image/entrypoint.sh"
   : > "$root/addons/requirements.txt"
   printf '%s' "$root"
 }

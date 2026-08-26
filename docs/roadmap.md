@@ -118,7 +118,7 @@ El entrypoint que faltaba, y lo único que ese entorno necesita de propio.
   sostienen el timer —que se instala solo en producción— y **un token de R2 de solo
   lectura**.
 
-**Verificación.** Sembrar prueba desde el snapshot de otro checkout. `make backup` ahí
+**Verificación.** Sembrar prueba desde el snapshot de otro checkout. `make backup-run` ahí
 **falla en el proveedor**, no en un `if`.
 
 ## Etapa 7 — Limpieza

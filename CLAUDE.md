@@ -4,8 +4,6 @@ Guía para Claude Code (claude.ai/code) al trabajar en este repositorio.
 
 Acá va **solo lo que no se deduce leyendo el repositorio**. Las reglas están en [`PRINCIPLES.md`](PRINCIPLES.md), la forma del árbol y por qué es así en [`docs/modular-architecture.md`](docs/modular-architecture.md), y cómo se corre cada cosa en `make help`. Nada de eso se repite acá: un hecho escrito dos veces es un hecho que hay que mantener dos veces.
 
-> **Migración en curso.** `docs/modular-architecture.md` describe la arquitectura acordada; el árbol todavía tiene la anterior (`docker/<capa>/<servicio>/`, con pgbouncer y pgBackRest). Al tocar algo, mové esa pieza hacia la forma nueva. Esta nota se borra cuando no quede nada bajo `docker/`.
-
 ## Idioma
 
 **Todo el repositorio está en español**: comentarios de código, documentación, mensajes de commit y salida de los scripts. Escribí en español, en la misma voz directa que ya usan los archivos. Los identificadores (servicios, variables, targets) quedan en inglés donde ya lo están.

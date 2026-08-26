@@ -21,7 +21,7 @@ make odoo-verify
 
 `odoo-restart` no sirve para aplicar un cambio de imagen (un `docker compose build` nuevo) ni un cambio en `addons/` que necesite que Odoo relea el `addons_path` desde cero — para eso hace falta `odoo-down` + `odoo-up`.
 
-**El primer arranque de una base vacía tarda más que un restart normal.** El entrypoint detecta que `ir_module_module` no existe y corre `-i base --stop-after-init` directo contra `postgres:5432`, antes de arrancar el servidor apuntando a PgBouncer — es el único caso en el que este comando dispara una instalación, y solo pasa una vez por base.
+**El primer arranque de una base vacía tarda más que un restart normal.** El entrypoint detecta que `ir_module_module` no existe y corre `-i base --stop-after-init` con la conexión explícita a `postgres:5432`, antes de arrancar el servidor — es el único caso en el que este comando dispara una instalación, y solo pasa una vez por base.
 
 ## Verificación
 

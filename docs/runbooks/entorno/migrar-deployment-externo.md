@@ -22,7 +22,7 @@ Cuatro cosas antes de tocar nada. La primera es eliminatoria.
 
 ```bash
 docker exec <contenedor-odoo-origen> odoo --version
-grep '^FROM odoo:' docker/app/odoo/Dockerfile
+grep '^FROM odoo:' stacks/odoo/image/Dockerfile
 ```
 
 Si los mayores difieren, **este runbook no aplica**: es un upgrade de versión mayor, y la vía en la edición comunitaria está en [`docs/architecture.md`](../../architecture.md) § Upgrade de versión mayor. Si coinciden en el mayor pero no en el build, seguí — el paso 6 lo resuelve.
@@ -36,7 +36,7 @@ docker exec -u postgres <contenedor-db-origen> psql -d <base-origen> -tAc \
 
 Cada nombre técnico de esa lista que no sea de la base de Odoo tiene que estar en `addons/addons.txt` de este checkout, en la rama que fija `ADDONS_BRANCH`. Si falta uno, la base restaurada arranca con registros que apuntan a código que no está.
 
-**3. El nombre de base es fijo.** Este stack no lo parametriza: el entrypoint corre `-d odoo`, y `docker/app/odoo/odoo.conf` trae `dbfilter = ^odoo$` con `list_db = False`. La base de origen aterriza llamándose `odoo` se llamara como se llamara, y el directorio del filestore se renombra con ella — el filestore se indexa por nombre de base.
+**3. El nombre de base es fijo.** Este stack no lo parametriza: el entrypoint corre `-d odoo`, y `stacks/odoo/config/odoo.conf` trae `dbfilter = ^odoo$` con `list_db = False`. La base de origen aterriza llamándose `odoo` se llamara como se llamara, y el directorio del filestore se renombra con ella — el filestore se indexa por nombre de base.
 
 **4. La regla de consistencia base ↔ filestore.** Un adjunto vive partido: la fila en `ir_attachment` y el archivo en el filestore. Copiarlos desalineados es la falla silenciosa de este sistema — arranca sano y el problema aparece meses después.
 
@@ -57,16 +57,16 @@ docker exec -u postgres <contenedor-db-origen> pg_dump -Fc -d <base-origen> > /t
 
 `-Fc` (custom) y no SQL plano: lo restaura `pg_restore`, que es el que tiene que ser el **nuevo**. Un dump de un Postgres viejo entra en uno nuevo; al revés no.
 
-**2. Dejar la base destino vacía.** A diferencia de un restore de pgBackRest, acá Postgres se queda **arriba** — lo que baja es todo lo que le escribe:
+**2. Dejar la base destino vacía.** Postgres se queda **arriba** — lo que baja es todo lo que le escribe:
 
 ```bash
-docker compose stop odoo pgbouncer
+docker compose stop odoo
 docker compose exec -T -u postgres postgres psql -U odoo -d postgres -v ON_ERROR_STOP=1 \
   -c 'DROP DATABASE IF EXISTS odoo;' \
   -c 'CREATE DATABASE odoo OWNER odoo;'
 ```
 
-PgBouncer se detiene y no solo Odoo: mantiene abiertas sus conexiones del lado del servidor, y `DROP DATABASE` falla mientras quede una.
+Odoo tiene que estar detenido: `DROP DATABASE` falla mientras quede una conexión abierta.
 
 **3. Restaurar la base:**
 
@@ -74,7 +74,7 @@ PgBouncer se detiene y no solo Odoo: mantiene abiertas sus conexiones del lado d
 docker compose exec -T -u postgres postgres pg_restore -U odoo -d odoo --no-owner --role=odoo < /tmp/origen.dump
 ```
 
-`--no-owner --role=odoo` deja todo perteneciendo al rol de este stack, cualquiera fuera el dueño en origen. **No corras `make restore-password`**: eso es para un cluster sembrado con pgBackRest, que trae los roles del stack de origen. Un dump de una sola base no trae roles, así que el rol `odoo` de acá conserva su propia contraseña del secret.
+`--no-owner --role=odoo` deja todo perteneciendo al rol de este stack, cualquiera fuera el dueño en origen. Un dump lógico no trae roles, así que el rol `odoo` de acá conserva su propia contraseña del secret.
 
 **4. Sacar el filestore del origen:**
 
@@ -83,14 +83,13 @@ docker cp <contenedor-odoo-origen>:<data_dir-origen>/filestore/<base-origen> /tm
 docker stop <contenedor-odoo-origen>   # si lo habías vuelto a levantar
 ```
 
-**5. Meterlo en el volumen, con el nombre y el owner correctos.** Se hace con `restore-files`, que ya existe para esto: monta `odoo-data` con escritura, corre como root y conoce los uid/gid de Odoo.
+**5. Meterlo en el volumen, con el nombre y el owner correctos.** Se hace con el stack `backup`, que ya monta `odoo-data` con escritura; se eleva a root en la invocación, como en cualquier restore.
 
 ```bash
-docker compose --profile restore up -d restore-files
-docker compose exec restore-files mkdir -p /data/odoo/filestore
-docker cp /tmp/filestore-origen <proyecto>-restore-files:/data/odoo/filestore/odoo
-docker compose exec restore-files chown -R 100:101 /data/odoo/filestore
-docker compose rm -sf restore-files
+docker compose up -d backup
+docker compose exec -u 0:0 backup mkdir -p /data/odoo/filestore
+docker cp /tmp/filestore-origen <proyecto>-backup:/data/odoo/filestore/odoo
+docker compose exec -u 0:0 backup chown -R 100:101 /data/odoo/filestore
 ```
 
 El `docker cp` hace el renombrado en el mismo movimiento: el directorio de origen llega como `odoo`, que es el nombre que el stack espera. `<proyecto>` es el `COMPOSE_PROJECT_NAME` del `.env`.
@@ -130,10 +129,10 @@ Las cuatro. Cada una cubre una falla que las otras no ven.
 
 ### Al terminar
 
-1. **Backup full inmediato** (`make backup-full`, ver [realizar-backup](../backup-restore/realizar-backup.md)): el primer punto de partida limpio del stack nuevo es sobre los datos migrados, no sobre la base vacía que había antes.
+1. **Backup full inmediato** (`make backup-integrity`, ver [realizar-backup](../backup-restore/realizar-backup.md)): el primer punto de partida limpio del stack nuevo es sobre los datos migrados, no sobre la base vacía que había antes.
 2. **Confirmar que el archivado corre:**
    ```bash
-   docker compose exec -u postgres postgres pgbackrest check
+   make backup-integrity
    ```
    Esperado: `completed successfully`.
 3. **Borrar el dump y la copia del filestore del host** — `/tmp/origen.dump` y `/tmp/filestore-origen` son una copia completa de la base de producción sin cifrar.
