@@ -157,11 +157,40 @@ bind_declarado() {
 rotacion_aplicada() { grep -q '"max-size"' "${DAEMON_JSON:-/etc/docker/daemon.json}" 2>/dev/null; }
 
 # --- ¿Este stack sirve TLS? ---
-# Qué plantilla monta nginx lo dice la composición, no .env: development la fija en
+# Qué config monta nginx lo dice la composición, no .env: development la fija en
 # su entrypoint, así que su .env puede no traer NGINX_MODE y el modo se sabe igual.
+#
+# El nombre no lleva .template: los config de nginx son archivos reales,
+# bootstrapeados con cp desde su .example — ya no pasan por envsubst.
 
 modo_plain() {
-  docker compose config 2>/dev/null | grep -q 'source:.*/server-plain\.conf\.template$'
+  docker compose config 2>/dev/null | grep -q 'source:.*/server-plain\.conf$'
+}
+
+# --- ¿Este stack manda correo? ---
+# Lo dice la composición, no .env: staging y development fuerzan ODOO_DISABLE_SMTP,
+# y con eso el entrypoint escribe smtp_server vacío pase lo que pase en odoo.conf.
+
+smtp_activo() {
+  ! docker compose config 2>/dev/null | grep -q 'ODOO_DISABLE_SMTP: *"1"'
+}
+
+# --- Placeholder de un .example sin reemplazar ---
+# Los config reales se bootstrapean con cp y se editan a mano: si quedó el
+# placeholder, la herramienta arranca igual con un valor inservible.
+#
+# El archivo ausente NO es ok: es el bootstrap sin hacer, y Compose monta un
+# directorio en su lugar. Da fallo propio, no el verde de un grep que no matcheó.
+
+sin_placeholder() {
+  local nombre="$1" archivo="$2" patron="$3" hallado
+  if [ ! -f "$archivo" ]; then
+    bad "$nombre" "falta $archivo — bootstrapealo con cp desde su .example"
+    return
+  fi
+  hallado=$(grep -oE "$patron" "$archivo" | sort -u | tr '\n' ' ')
+  if [ -n "$hallado" ]; then bad "$nombre" "sigue ${hallado% } sin reemplazar"
+  else ok "$nombre"; fi
 }
 
 bind_es() {
@@ -653,11 +682,16 @@ v_odoo() {
   # --- Placeholder de odoo.conf sin reemplazar ---
   # smtp_server ya no llega por .env: si quedó el placeholder de su .example,
   # Odoo intenta mandar por un host que no existe en vez de quedar sin SMTP.
+  #
+  # Solo donde el valor se usa: staging y development fuerzan ODOO_DISABLE_SMTP y
+  # el entrypoint vacía smtp_server, así que ahí el placeholder es lo esperado.
 
-  if grep -q 'TU_SMTP_HOST' docker/app/odoo/odoo.conf 2>/dev/null; then
-    bad "odoo.conf sin el placeholder de su .example" "sigue TU_SMTP_HOST sin reemplazar"
+  if ! smtp_activo; then
+    omitir "odoo.conf sin el placeholder de su .example" \
+      "este stack fuerza ODOO_DISABLE_SMTP — el smtp_server de odoo.conf no se usa"
   else
-    ok "odoo.conf sin el placeholder de su .example"
+    sin_placeholder "odoo.conf sin el placeholder de su .example" \
+      docker/app/odoo/odoo.conf 'TU_SMTP_HOST|TU_SMTP_PORT|TU_SMTP_USER'
   fi
 
   expect "odoo sirve en :8069" "200" docker compose exec -T odoo \
@@ -956,16 +990,10 @@ v_observability() {
   # .example, Grafana arranca igual y manda correo a una dirección que no
   # existe, o no manda nada, sin avisar.
 
-  if grep -q 'TU_SMTP_HOST\|TU_EMAIL_ALERTA_FROM' docker/observability/grafana/grafana.ini 2>/dev/null; then
-    bad "grafana.ini sin el placeholder de su .example" "sigue TU_SMTP_HOST o TU_EMAIL_ALERTA_FROM sin reemplazar"
-  else
-    ok "grafana.ini sin el placeholder de su .example"
-  fi
-  if grep -q 'TU_EMAIL_ALERTA_TO' docker/observability/grafana/provisioning/alerting/contact-points.yaml 2>/dev/null; then
-    bad "contact-points.yaml sin el placeholder de su .example" "sigue TU_EMAIL_ALERTA_TO sin reemplazar"
-  else
-    ok "contact-points.yaml sin el placeholder de su .example"
-  fi
+  sin_placeholder "grafana.ini sin el placeholder de su .example" \
+    docker/observability/grafana/grafana.ini 'TU_SMTP_HOST|TU_EMAIL_ALERTA_FROM'
+  sin_placeholder "contact-points.yaml sin el placeholder de su .example" \
+    docker/observability/grafana/provisioning/alerting/contact-points.yaml 'TU_EMAIL_ALERTA_TO'
 
   # --- Los dos umbrales de frescura del backup ---
   # La alerta tiene que avisar ANTES de que el healthcheck marque unhealthy. Los dos

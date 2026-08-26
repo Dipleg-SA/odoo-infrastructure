@@ -123,13 +123,17 @@ igual "sin composición legible devuelve '?'" "?" "$(bind_declarado nginx 80)"
 titulo "modo_plain — el modo del proxy sale de la plantilla montada"
 # =====================================================================
 
+# Las rutas son las que emite `docker compose config` de verdad: archivos reales
+# bajo docker/edge/nginx/, sin .template — si el fixture usa el nombre viejo, el
+# test pasa con un modo_plain que no matchea nada en el stack real.
+
 config_fixture <<'EOF'
 services:
   nginx:
     volumes:
       - type: bind
-        source: /repo/config/nginx/server-plain.conf.template
-        target: /etc/nginx/templates/default.conf.template
+        source: /repo/docker/edge/nginx/server-plain.conf
+        target: /etc/nginx/conf.d/default.conf
 EOF
 igual "detecta el stack sin TLS" "0" "$(modo_plain; echo $?)"
 
@@ -138,15 +142,79 @@ services:
   nginx:
     volumes:
       - type: bind
-        source: /repo/config/nginx/server-tls.conf.template
-        target: /etc/nginx/templates/default.conf.template
+        source: /repo/docker/edge/nginx/server-tls.conf
+        target: /etc/nginx/conf.d/default.conf
 EOF
 igual "y el que sí lo termina" "1" "$(modo_plain; echo $?)"
 
+# El nombre viejo ya no monta nadie: si vuelve a matchear, el patrón quedó laxo.
+config_fixture <<'EOF'
+services:
+  nginx:
+    volumes:
+      - type: bind
+        source: /repo/config/nginx/server-plain.conf.template
+        target: /etc/nginx/templates/default.conf.template
+EOF
+igual "no matchea la plantilla envsubst que ya no existe" "1" "$(modo_plain; echo $?)"
+
 # NGINX_MODE no participa: development no la declara y el modo se sabe igual.
+config_fixture <<'EOF'
+services:
+  nginx:
+    volumes:
+      - type: bind
+        source: /repo/docker/edge/nginx/server-tls.conf
+        target: /etc/nginx/conf.d/default.conf
+EOF
 export NGINX_MODE=plain
 igual "no lo decide la variable de entorno" "1" "$(modo_plain; echo $?)"
 unset NGINX_MODE
+
+# =====================================================================
+titulo "smtp_activo — quién usa de verdad el smtp_server de odoo.conf"
+# =====================================================================
+
+config_fixture <<'EOF'
+services:
+  odoo:
+    environment:
+      HOST: pgbouncer
+EOF
+igual "producción manda correo" "0" "$(smtp_activo; echo $?)"
+
+config_fixture <<'EOF'
+services:
+  odoo:
+    environment:
+      ODOO_DISABLE_SMTP: "1"
+EOF
+igual "staging y development no" "1" "$(smtp_activo; echo $?)"
+
+# =====================================================================
+titulo "sin_placeholder — el .example sin editar, y el bootstrap sin hacer"
+# =====================================================================
+
+printf 'smtp_server = mail.ejemplo.net\n' > "$STUB_DIR/editado.conf"
+printf 'smtp_server = TU_SMTP_HOST\n'     > "$STUB_DIR/crudo.conf"
+
+contiene "un config editado pasa" "  ok" \
+  "$(sin_placeholder "x" "$STUB_DIR/editado.conf" 'TU_SMTP_HOST|TU_SMTP_PORT')"
+
+contiene "uno con el placeholder falla" "FALLA" \
+  "$(sin_placeholder "x" "$STUB_DIR/crudo.conf" 'TU_SMTP_HOST|TU_SMTP_PORT')"
+
+contiene "y nombra cuál quedó" "TU_SMTP_HOST" \
+  "$(sin_placeholder "x" "$STUB_DIR/crudo.conf" 'TU_SMTP_HOST|TU_SMTP_PORT')"
+
+# El archivo ausente es el bootstrap sin hacer: un grep que no matchea daría verde
+# justo donde el chequeo existe para atrapar eso, y Compose montaría un directorio.
+
+contiene "el archivo ausente falla, no da verde" "FALLA" \
+  "$(sin_placeholder "x" "$STUB_DIR/no-existe.conf" 'TU_SMTP_HOST')"
+
+no_contiene "y no lo reporta como ok" "  ok" \
+  "$(sin_placeholder "x" "$STUB_DIR/no-existe.conf" 'TU_SMTP_HOST')"
 
 # =====================================================================
 titulo "sano — una capa ausente se omite, no se marca en rojo"
