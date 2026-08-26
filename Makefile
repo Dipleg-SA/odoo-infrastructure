@@ -10,6 +10,10 @@
         nginx-up nginx-down nginx-logs nginx-ps nginx-verify \
         backup-up backup-down backup-logs backup-ps backup-verify \
         backup-run backup-integrity restore \
+        prometheus-up prometheus-down prometheus-logs prometheus-ps prometheus-verify \
+        loki-up loki-down loki-logs loki-ps loki-verify \
+        grafana-up grafana-down grafana-logs grafana-ps grafana-verify \
+        alloy-up alloy-down alloy-logs alloy-ps alloy-verify \
         odoo-up odoo-down odoo-restart odoo-logs odoo-ps odoo-verify odoo-nuke \
         backups-up backups-down backups-restart backups-logs backups-ps backups-verify backups-nuke \
         observability-up observability-down observability-restart observability-logs observability-ps observability-verify observability-nuke
@@ -77,10 +81,10 @@ notify-test: require-root ## Dispara el aviso de fallo de punta a punta (requier
 # por timer de systemd. DNS-01: no necesita que el borde esté arriba.
 
 cert-issue: ## Emite el certificado inicial
-	scripts/cert.sh issue
+	stacks/certbot/scripts/cert.sh issue
 
 cert-renew: ## Renueva el certificado
-	scripts/cert.sh renew
+	stacks/certbot/scripts/cert.sh renew
 
 # --- Tests ---
 # Los tres entrypoints, addons.sh y los derivadores de verify, cert y secrets. No
@@ -223,6 +227,62 @@ backup-ps: ## Lista el contenedor de backup
 
 backup-verify: ## Verifica backup
 	scripts/verify.sh backup
+prometheus-up: ## Levanta prometheus
+	@. scripts/lib/ui.sh; ui_run "prometheus-up" docker compose up -d prometheus
+
+prometheus-down: ## Baja prometheus
+	@. scripts/lib/ui.sh; ui_run "prometheus-down" docker compose rm -sf prometheus
+
+prometheus-logs: ## Sigue los logs de prometheus
+	@docker compose logs -f prometheus
+
+prometheus-ps: ## Lista el contenedor de prometheus
+	@docker compose ps prometheus
+
+prometheus-verify: ## Verifica prometheus
+	scripts/verify.sh prometheus
+loki-up: ## Levanta loki
+	@. scripts/lib/ui.sh; ui_run "loki-up" docker compose up -d loki
+
+loki-down: ## Baja loki
+	@. scripts/lib/ui.sh; ui_run "loki-down" docker compose rm -sf loki
+
+loki-logs: ## Sigue los logs de loki
+	@docker compose logs -f loki
+
+loki-ps: ## Lista el contenedor de loki
+	@docker compose ps loki
+
+loki-verify: ## Verifica loki
+	scripts/verify.sh loki
+grafana-up: ## Levanta grafana
+	@. scripts/lib/ui.sh; ui_run "grafana-up" docker compose up -d grafana
+
+grafana-down: ## Baja grafana
+	@. scripts/lib/ui.sh; ui_run "grafana-down" docker compose rm -sf grafana
+
+grafana-logs: ## Sigue los logs de grafana
+	@docker compose logs -f grafana
+
+grafana-ps: ## Lista el contenedor de grafana
+	@docker compose ps grafana
+
+grafana-verify: ## Verifica grafana
+	scripts/verify.sh grafana
+alloy-up: ## Levanta alloy
+	@. scripts/lib/ui.sh; ui_run "alloy-up" docker compose up -d alloy
+
+alloy-down: ## Baja alloy
+	@. scripts/lib/ui.sh; ui_run "alloy-down" docker compose rm -sf alloy
+
+alloy-logs: ## Sigue los logs de alloy
+	@docker compose logs -f alloy
+
+alloy-ps: ## Lista el contenedor de alloy
+	@docker compose ps alloy
+
+alloy-verify: ## Verifica alloy
+	scripts/verify.sh alloy
 
 # --- Respaldos (árbol nuevo) ---
 # El diario respalda y purga; el check verifica integridad del repositorio. No hay
@@ -454,14 +514,4 @@ restore-password: ## Reaplica el secret de este stack al rol odoo del cluster se
 # viva. DROP+CREATE lo hace repetible, y con eso sirve también para rotar la clave.
 
 monitoring-role: ## Crea (o rota) el rol de solo lectura que scrapea Postgres
-	@. scripts/lib/ui.sh; [ -s secrets/postgres_exporter_password ] || \
-	  { ui_bad "falta secrets/postgres_exporter_password" \
-	      "sin él la clave se interpola vacía y el rol queda creado sin password — ¿este stack lleva la capa de observabilidad?" >&2; exit 2; }
-	@. scripts/lib/ui.sh; ui_start "monitoring-role"; \
-	  printf "DROP ROLE IF EXISTS monitoring;\nCREATE ROLE monitoring LOGIN PASSWORD '%s';\nGRANT pg_monitor TO monitoring;\n" \
-	    "$$(cat secrets/postgres_exporter_password)" \
-	  | docker compose exec -T -u postgres postgres psql -U odoo -d postgres -v ON_ERROR_STOP=1 -q; \
-	  estado=$$?; \
-	  if [ "$$estado" -eq 0 ]; then ui_ok "monitoring-role listo"; \
-	  else ui_bad "monitoring-role falló" "exit $$estado"; fi; \
-	  exit "$$estado"
+	stacks/alloy/scripts/monitoring-role.sh

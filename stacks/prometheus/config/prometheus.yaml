@@ -1,0 +1,30 @@
+# --- Global ---
+# 15s es el default de facto de los dashboards prearmados; cambiarlo desalinea sus rate().
+
+global:
+  scrape_interval: 15s
+
+# --- Targets ---
+# Solo lo que ya expone HTTP. Host, contenedores y Postgres NO están acá: los empuja
+# Alloy por remote_write. Alloy sí figura, y por eso su caída dispara up == 0.
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["127.0.0.1:9090"]
+
+  - job_name: alloy
+    static_configs:
+      - targets: ["alloy:12345"]
+
+  - job_name: cloudflared
+    static_configs:
+      - targets: ["cloudflared:2000"]
+
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+
+  - job_name: grafana
+    static_configs:
+      - targets: ["grafana:3000"]

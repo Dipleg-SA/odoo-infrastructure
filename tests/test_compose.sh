@@ -179,8 +179,8 @@ titulo "producción — envs/production.yaml"
 PRODN=$(resuelto env.production --profile cert -f envs/production.yaml)
 
 igual "resuelve sin error" "0" "$(docker compose --env-file tests/fixtures/env.production -f envs/production.yaml config -q >/dev/null 2>&1; echo $?)"
-igual "declara 7 secrets" "7" "$(printf '%s\n' "$PRODN" | contar_secrets)"
-igual "el borde completo, datos, aplicación y respaldos" "backup certbot cloudflared nginx odoo postgres " \
+igual "declara 9 secrets" "9" "$(printf '%s\n' "$PRODN" | contar_secrets)"
+igual "los diez stacks de producción" "alloy backup certbot cloudflared grafana loki nginx odoo postgres prometheus " \
   "$(servicios env.production --profile cert -f envs/production.yaml)"
 
 # Es el caso base: sin bloque services:, nginx cae a su default de TLS y publica
@@ -203,16 +203,29 @@ contiene "postgres escribe el dump en el volumen compartido" "dumps" "$(printf '
 contiene "backup lo lee junto al filestore"                  "dumps" "$(printf '%s\n' "$PRODN" | bloque backup)"
 contiene "y el filestore va rw: el mismo contenedor restaura" "odoo-data" "$(printf '%s\n' "$PRODN" | bloque backup)"
 
+# --- Observabilidad: una sola UI publicada ---
+# Grafana es el único de los cuatro con puerto, y en loopback (nivel 2: se entra
+# por túnel SSH). Los otros tres se consultan por nombre dentro de su red — si
+# alguno gana un ports:, queda una UI sin auth propia expuesta y nada lo avisa.
+
+igual "grafana publica solo en loopback" "127.0.0.1 " \
+  "$(printf '%s\n' "$PRODN" | bloque grafana | grep -B1 'target: 3000' | sed -n 's/^ *host_ip: //p' | tr '\n' ' ')"
+
+for svc in prometheus loki alloy; do
+  igual "$svc no publica ningún puerto" "" \
+    "$(printf '%s\n' "$PRODN" | bloque "$svc" | sed -n 's/^ *published: //p' | tr '\n' ' ')"
+done
+
 # =====================================================================
 titulo "dnsmasq entra solo si el cliente tiene LAN"
 # =====================================================================
 
 # La única variación por cliente del diseño, y vive en el .env — no en un
 # entrypoint aparte. Sin la clave, un deploy en VPS no levanta un DNS que no usa.
-igual "sin COMPOSE_PROFILES no está" "backup cloudflared nginx odoo postgres " \
+igual "sin COMPOSE_PROFILES no está" "alloy backup cloudflared grafana loki nginx odoo postgres prometheus " \
   "$(servicios env.production -f envs/production.yaml)"
 
-igual "con COMPOSE_PROFILES=lan sí está" "backup cloudflared dnsmasq nginx odoo postgres " \
+igual "con COMPOSE_PROFILES=lan sí está" "alloy backup cloudflared dnsmasq grafana loki nginx odoo postgres prometheus " \
   "$(COMPOSE_PROFILES=lan servicios env.production -f envs/production.yaml)"
 
 # =====================================================================

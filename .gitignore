@@ -49,6 +49,8 @@ stacks/postgres/config/postgresql.conf
 stacks/odoo/config/odoo.conf
 stacks/dnsmasq/config/dnsmasq.conf
 stacks/backup/config/r2.env
+stacks/grafana/config/grafana.ini
+stacks/grafana/config/provisioning/alerting/contact-points.yaml
 
 # --- Clones locales ---
 # Repos externos clonados a mano para pruebas, no versionados.

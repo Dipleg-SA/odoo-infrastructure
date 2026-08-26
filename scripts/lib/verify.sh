@@ -208,7 +208,11 @@ sin_placeholder() {
     bad "$nombre" "falta $archivo — bootstrapealo con cp desde su .example"
     return
   fi
-  hallado=$(grep -oE "$patron" "$archivo" | sort -u | tr '\n' ' ')
+  # Los comentarios se descartan ANTES de buscar: el .example de cada herramienta
+  # dice "Reemplazá TU_X por..." en un comentario que sigue ahí después de haber
+  # reemplazado el valor. Sin esto el chequeo no podía pasar nunca — se midió
+  # contra grafana.ini con todos sus valores ya cargados.
+  hallado=$(sed -E 's@^[[:space:]]*([;#]|//).*@@' "$archivo" | grep -oE "$patron" | sort -u | tr '\n' ' ')
   if [ -n "$hallado" ]; then bad "$nombre" "sigue ${hallado% } sin reemplazar"
   else ok "$nombre"; fi
 }

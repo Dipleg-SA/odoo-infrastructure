@@ -1,0 +1,16 @@
+# --- Contact point de email ---
+# Reusa el SMTP configurado en grafana.ini (ZeptoMail). Reemplazá
+# TU_EMAIL_ALERTA_TO por el mismo valor que ALERT_EMAIL_TO en el .env de este
+# checkout — lo necesita failure-notify.sh, que no lee este archivo.
+
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: email-operador
+    receivers:
+      - uid: email-operador
+        type: email
+        settings:
+          addresses: TU_EMAIL_ALERTA_TO
+          singleEmail: false

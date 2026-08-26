@@ -11,6 +11,7 @@
 networks:
   edge:
   app:
+  observability:
 
 # --- Volumen compartido ---
 # certbot escribe el certificado, nginx lo lee :ro. Lo declara el entorno y no
@@ -42,6 +43,13 @@ secrets:
     file: ../secrets/restic_password
   restic_r2_credentials:
     file: ../secrets/restic_r2_credentials
+  # Grafana corre 472:0, así que el grupo 472 del archivo le llega por group_add
+  # en el servicio, no por su gid primario.
+  grafana_admin_password:
+    file: ../secrets/grafana_admin_password
+  # Rol de solo lectura propio del monitoreo, no la credencial de la aplicación.
+  postgres_exporter_password:
+    file: ../secrets/postgres_exporter_password
 
 include:
   - ../stacks/nginx/compose.yaml
@@ -51,3 +59,7 @@ include:
   - ../stacks/postgres/compose.yaml
   - ../stacks/odoo/compose.yaml
   - ../stacks/backup/compose.yaml
+  - ../stacks/prometheus/compose.yaml
+  - ../stacks/loki/compose.yaml
+  - ../stacks/grafana/compose.yaml
+  - ../stacks/alloy/compose.yaml

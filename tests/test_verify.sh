@@ -207,6 +207,25 @@ contiene "uno con el placeholder falla" "FALLA" \
 contiene "y nombra cuál quedó" "TU_SMTP_HOST" \
   "$(sin_placeholder "x" "$STUB_DIR/crudo.conf" 'TU_SMTP_HOST|TU_SMTP_PORT')"
 
+# El .example de cada herramienta dice "Reemplazá TU_X por..." en un comentario que
+# sigue ahí después de haber cargado el valor. Sin descartar comentarios, el chequeo
+# no podía pasar NUNCA por más que el operador hiciera todo bien — se descubrió con
+# grafana.ini, cuyos valores estaban todos completos y el chequeo seguía en rojo.
+
+printf '; Reemplaza TU_SMTP_HOST por el host real\nsmtp_server = mail.ejemplo.net\n' > "$STUB_DIR/comentado.conf"
+printf '# Reemplaza TU_SMTP_HOST\nsmtp_server = TU_SMTP_HOST\n'                      > "$STUB_DIR/mixto.conf"
+printf '// Reemplaza TU_SMTP_HOST\nsmtp_server = mail.ejemplo.net\n'                 > "$STUB_DIR/alloy.conf"
+
+contiene "el placeholder en un comentario no cuenta" "  ok" \
+  "$(sin_placeholder "x" "$STUB_DIR/comentado.conf" 'TU_SMTP_HOST')"
+
+contiene "ni con el comentario de config.alloy" "  ok" \
+  "$(sin_placeholder "x" "$STUB_DIR/alloy.conf" 'TU_SMTP_HOST')"
+
+# La otra mitad: descartar comentarios no puede tapar un valor sin cargar.
+contiene "pero en un valor sigue fallando" "FALLA" \
+  "$(sin_placeholder "x" "$STUB_DIR/mixto.conf" 'TU_SMTP_HOST')"
+
 # El archivo ausente es el bootstrap sin hacer: un grep que no matchea daría verde
 # justo donde el chequeo existe para atrapar eso, y Compose montaría un directorio.
 

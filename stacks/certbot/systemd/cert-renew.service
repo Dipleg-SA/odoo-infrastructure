@@ -11,4 +11,4 @@ After=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=CAMBIAR-en-deploy
-ExecStart=CAMBIAR-en-deploy/scripts/cert.sh renew
+ExecStart=CAMBIAR-en-deploy/stacks/certbot/scripts/cert.sh renew
