@@ -1,0 +1,52 @@
+[options]
+
+; --- Servidor / proxy ---
+
+proxy_mode          = True
+dbfilter            = ^odoo$
+list_db             = False
+data_dir            = /var/lib/odoo
+
+; --- Workers y límites (bytes) ---
+; Por debajo de lo que da (cores*2)+1: esa fórmula asume la máquina entera para
+; la aplicación. Los límites por proceso se eligen para que la suma de los hard
+; entre en el mem_limit del contenedor con margen, y así el reciclado propio de
+; Odoo gane al OOM-kill de Docker. Recalibrar junto con ese cap, no por separado.
+
+workers             = 4
+max_cron_threads    = 2
+gevent_port         = 8072
+limit_memory_soft   = 805306368
+limit_memory_hard   = 939524096
+
+; --- Módulos cargados server-wide ---
+; bus_alt_connection NO es opcional: el pooler corre en modo transacción, eso
+; rompe LISTEN/NOTIFY, y este módulo le da al bus su propia conexión directa.
+; Sin él Odoo arranca igual y el chat en tiempo real deja de actualizarse solo.
+; Tiene que estar declarado en el manifiesto de addons; lo verifica make odoo-verify.
+
+server_wide_modules = base,web,bus_alt_connection
+
+; --- Bus alternativo (long-polling), su propia conexión a Postgres ---
+
+imdispatcher_db_host = postgres
+imdispatcher_db_port = 5432
+
+; --- SMTP saliente ---
+; STARTTLS. Reemplazá TU_SMTP_HOST/TU_SMTP_PORT/TU_SMTP_USER por los mismos
+; valores que SMTP_HOST/SMTP_PORT/SMTP_USER en el .env de este checkout — los
+; necesita failure-notify.sh, que no lee este archivo. En development y
+; staging no hace falta tocar esto: compose.dev.yaml/compose.staging.yaml
+; fuerzan smtp_server vacío igual, sin importar lo que diga acá.
+
+smtp_ssl    = True
+smtp_server = TU_SMTP_HOST
+smtp_port   = TU_SMTP_PORT
+smtp_user   = TU_SMTP_USER
+
+; --- Inyectado en runtime, no editar a mano ---
+
+; addons_path                -> generado por el entrypoint (glob por categoría)
+; admin_passwd               -> inyectado por el entrypoint desde secret
+; smtp_password               -> inyectado por el entrypoint desde secret (si existe)
+; db_host/port/user/password -> vía env (HOST/PORT/USER/PASSWORD_FILE) + entrypoint oficial

@@ -44,9 +44,16 @@ Todo lo demás ya está: la versión de Docker Engine/Compose y su arranque auto
 
 **Objetivo** — el repo clonado en su propio directorio, con `.env` y los 8 secrets de este entrypoint cargados y validados. Nada levantado todavía.
 
-**A mano** — `.env.stag.example` deja vacías las claves de este entorno y explica cada una donde se edita. Dos cosas que no se deducen ahí: `PGBACKREST_STANZA`, `R2_ENDPOINT` y `R2_BUCKET` llevan **los valores de producción**, letra por letra, porque es su repositorio el que se restaura; y `PUBLIC_HOSTNAME` es el de staging, distinto del de producción. Si copiás una clave de más desde el `.env` de producción, dejala con valor o borrala: `make host-verify` marca las vacías.
+**A mano** — `.env.stag.example` deja vacías las claves de este entorno y explica cada una donde se edita. Bootstrapeá además `pgbackrest.conf` y `r2.env` (gitignoreados):
 
-> **`PG_ARCHIVE_MODE=off` es la línea que protege los backups de producción.** Staging apunta a la stanza de producción para poder restaurar; con el archivado prendido su propio Postgres le empuja WAL a ese repositorio y lo contamina desde el entorno que existe para romper cosas. Lo verifica `make db-verify`, que en un stack sin capa de backups **exige** que esté apagado.
+```bash
+cp docker/db/postgres/pgbackrest.conf.example docker/db/postgres/pgbackrest.conf
+cp docker/backups/r2.env.example docker/backups/r2.env
+```
+
+Los dos llevan **la stanza y el bucket/endpoint de R2 de producción**, letra por letra, porque es su repositorio el que se restaura — son los mismos archivos que usan `postgres` y `restore-files` en staging, no un valor de `.env`. `PUBLIC_HOSTNAME` sí es de `.env`, y es el de staging, distinto del de producción. Si copiás una clave de más desde el `.env` de producción, dejala con valor o borrala: `make host-verify` marca las vacías.
+
+> **`archive_mode = off` es lo que protege los backups de producción.** Staging apunta a la stanza de producción para poder restaurar; con el archivado prendido su propio Postgres le empuja WAL a ese repositorio y lo contamina desde el entorno que existe para romper cosas. `docker/compose.staging.yaml` lo fuerza con un `-c` propio, respaldo estructural aunque el `postgresql.conf` de este checkout no se haya editado. Lo verifica `make db-verify`, que en un stack sin capa de backups **exige** que esté apagado.
 
 Los 8 secrets se reparten en tres grupos, y solo el del Tunnel es trabajo nuevo:
 
@@ -96,7 +103,15 @@ Repite los chequeos de host —ya deberían pasar, es el mismo servidor— y agr
 
 **Objetivo** — el certificado propio de staging emitido, nginx sirviendo con él y el túnel propio conectado.
 
-**A mano** — ninguno: el Tunnel se creó en el bloque 1.
+**A mano** — el Tunnel se creó en el bloque 1. Falta bootstrapear los archivos reales de nginx (gitignoreados):
+
+```bash
+cp docker/edge/nginx/00-http.conf.example docker/edge/nginx/00-http.conf
+cp docker/edge/nginx/odoo.locations.example docker/edge/nginx/odoo.locations
+cp docker/edge/nginx/server-tls.conf.example docker/edge/nginx/server-tls.conf
+```
+
+Reemplazá `TU_DOMINIO` por el hostname público de staging (las cuatro apariciones en `server-tls.conf`) — es distinto del de producción. Sin `dnsmasq` en este stack, no hace falta tocar `docker/edge/dnsmasq/`.
 
 ```bash
 make cert-issue && make edge-up
@@ -111,7 +126,7 @@ sudo make timers-install
 make edge-verify
 ```
 
-Cubre los dos servicios `healthy`, la config renderizada sin variables sin sustituir, el `server_name`, los días que le quedan al certificado, el timer de renovación recién instalado, las conexiones del Tunnel y el log de nginx sin errores. `dnsmasq` sale como omitido: este stack no lo trae.
+Cubre los dos servicios `healthy`, que `server-tls.conf` no tenga el placeholder de `.example` sin reemplazar, el `server_name`, los días que le quedan al certificado, el timer de renovación recién instalado, las conexiones del Tunnel y el log de nginx sin errores. `dnsmasq` sale como omitido: este stack no lo trae.
 
 ---
 
@@ -119,7 +134,13 @@ Cubre los dos servicios `healthy`, la config renderizada sin variables sin susti
 
 **Objetivo** — la base y el filestore sembrados desde el repositorio de backups de producción — el mismo restore que exige el simulacro semestral.
 
-**A mano** — ninguno.
+**A mano** — bootstrapeá `postgresql.conf` (gitignoreado; `pgbackrest.conf` ya quedó en el bloque 2):
+
+```bash
+cp docker/db/postgres/postgresql.conf.example docker/db/postgres/postgresql.conf
+```
+
+No hace falta editarlo: `archive_mode` lo fuerza en `off` `compose.staging.yaml`, sin importar lo que traiga el `.example`.
 
 ```bash
 make restore-seed
@@ -171,7 +192,13 @@ Encabeza con la rama declarada (`<versión>-stag`) y sigue con una fila por repo
 
 **Objetivo** — Odoo sirviendo por el hostname de staging, con los datos de producción adentro.
 
-**A mano** — ninguno. La base no arranca vacía, así que no hay `-i base` ni contraseña de `admin` por defecto: **las credenciales son las de producción**, y eso incluye a los usuarios reales. Es la razón por la que este stack saca el correo saliente con `SMTP_HOST: ""`.
+**A mano** — bootstrapeá `odoo.conf` (gitignoreado):
+
+```bash
+cp docker/app/odoo/odoo.conf.example docker/app/odoo/odoo.conf
+```
+
+No hace falta editar `smtp_server`/`port`/`user`: `ODOO_DISABLE_SMTP=1` los fuerza vacíos, sin importar lo que traiga el `.example`. La base no arranca vacía, así que no hay `-i base` ni contraseña de `admin` por defecto: **las credenciales son las de producción**, y eso incluye a los usuarios reales. Es la razón por la que este stack fuerza `ODOO_DISABLE_SMTP=1`.
 
 ```bash
 make odoo-up && make odoo-logs

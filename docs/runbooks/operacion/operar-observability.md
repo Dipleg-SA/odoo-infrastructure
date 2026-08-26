@@ -29,10 +29,10 @@ Grafana se abre por túnel SSH, no publica puerto directo: `ssh -N -L 3001:127.0
 make observability-verify
 ```
 
-Cubre los cuatro servicios, que ningún target de Prometheus esté caído, las tres familias de métricas que empuja Alloy (host, contenedores, base), que Loki reciba logs por contenedor, los binds, y que la rotación de logs del daemon (`config/docker/daemon.json`) haya quedado aplicada al contenedor de Odoo.
+Cubre los cuatro servicios, que ningún target de Prometheus esté caído, las tres familias de métricas que empuja Alloy (host, contenedores, base), que Loki reciba logs por contenedor, los binds, y que la rotación de logs del daemon (`docker/host/daemon.json`) haya quedado aplicada al contenedor de Odoo.
 
 ---
 
 **Destructivo — `make observability-nuke`.** Borra containers, imágenes **y los tres volúmenes** de la capa (`prometheus-data`, `loki-data`, `grafana-data`). Pide tipear `nuke`.
 
-Los cinco dashboards y las siete reglas de alerta están provisionados como archivos en `config/grafana/provisioning/`, así que el nuke no los pierde — se recrean solos al volver a subir. Lo que sí se pierde, y no se recupera, es el histórico de métricas y logs: no entra en ningún backup, es diagnóstico, no datos de negocio.
+Los cinco dashboards y las siete reglas de alerta están provisionados como archivos en `docker/observability/grafana/provisioning/`, así que el nuke no los pierde — se recrean solos al volver a subir. Lo que sí se pierde, y no se recupera, es el histórico de métricas y logs: no entra en ningún backup, es diagnóstico, no datos de negocio.

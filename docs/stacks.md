@@ -41,29 +41,29 @@ Cada entorno tiene su **entrypoint** propio —un archivo bajo `docker/` con su 
 |---------------------------------------------|----------------|-----------------------------|-----------------------------|
 | entrypoint                                  | `docker/compose.yaml` | `docker/compose.staging.yaml`      | `docker/compose.dev.yaml`          |
 | plantilla de `.env`                         | `.env.prod.example` | `.env.stag.example`    | `.env.dev.example`          |
-| `docker/compose.proxy.yaml`                        | sí             | sí, sin publicar puertos    | sí, solo el 80 en loopback  |
-| `docker/compose.dns.yaml`                          | sí             | no                          | no                          |
-| `docker/compose.edge.yaml`                         | sí             | sí                          | no                          |
-| `docker/compose.db.yaml`                           | sí             | sí, sin archivar WAL        | sí, sin archivar WAL        |
-| `docker/compose.odoo.yaml`                         | sí             | sí, sin credencial SMTP     | sí, sin credencial SMTP     |
-| `docker/compose.restore.yaml`                      | sí             | sí                          | no                          |
-| `docker/compose.backups.yaml`                      | sí             | no                          | no                          |
-| `docker/compose.observability.yaml`                | sí             | no                          | no                          |
-| `config/postgres/postgresql.conf`           | sí             | sí                          | sí                          |
-| `config/pgbouncer/pgbouncer.ini`            | sí             | sí                          | sí                          |
-| `config/odoo/odoo.conf`                     | sí             | sí                          | sí                          |
+| `docker/edge/nginx/compose.yaml`                   | sí             | sí, sin publicar puertos    | sí, solo el 80 en loopback  |
+| `docker/edge/dnsmasq/compose.yaml`                 | sí             | no                          | no                          |
+| `docker/edge/{cloudflared,certbot}/compose.yaml`   | sí             | sí                          | no                          |
+| `docker/db/compose.yaml`                           | sí             | sí, sin archivar WAL        | sí, sin archivar WAL        |
+| `docker/app/compose.yaml`                          | sí             | sí, sin credencial SMTP     | sí, sin credencial SMTP     |
+| `docker/backups/{restore-db,restore-files}/compose.yaml`                      | sí             | sí                          | no                          |
+| `docker/backups/backup/compose.yaml`                      | sí             | no                          | no                          |
+| `docker/observability/compose.yaml`                | sí             | no                          | no                          |
+| `docker/db/postgres/postgresql.conf`        | sí             | sí                          | sí                          |
+| `docker/db/pgbouncer/pgbouncer.ini`         | sí             | sí                          | sí                          |
+| `docker/app/odoo/odoo.conf`             | sí             | sí                          | sí                          |
 | `addons/addons.txt.example` (plantilla)     | sí             | sí                          | sí                          |
-| `config/nginx/00-http` · `odoo.locations`   | sí             | sí                          | sí                          |
-| `config/nginx/server-tls` · `server-plain`  | `-tls`         | `-tls`                      | `-plain`, fijado en su entrypoint |
-| `config/certbot/wrapper.sh`                 | sí             | sí                          | no                          |
-| `config/pgbackrest/pgbackrest.conf`         | sí             | sí, solo para restaurar     | no                          |
-| `config/prometheus`                         | sí             | no                          | no                          |
-| `config/loki`                               | sí             | no                          | no                          |
-| `config/grafana`                            | sí             | no                          | no                          |
-| `config/alloy`                              | sí             | no                          | no                          |
-| `config/systemd/*`                          | sí             | solo `cert-renew`           | no                          |
-| `config/docker/daemon.json`                 | host, no stack | —                           | —                           |
-| `docker/{odoo,postgres,dnsmasq}/`           | sí             | sí                          | sí                          |
+| `docker/edge/nginx/00-http` · `odoo.locations` | sí          | sí                          | sí                          |
+| `docker/edge/nginx/server-tls` · `server-plain` | `-tls`     | `-tls`                      | `-plain`, fijado en su entrypoint |
+| `docker/edge/certbot/wrapper.sh`            | sí             | sí                          | no                          |
+| `docker/db/postgres/pgbackrest.conf`        | sí             | sí, solo para restaurar     | no                          |
+| `docker/observability/prometheus`           | sí             | no                          | no                          |
+| `docker/observability/loki`                 | sí             | no                          | no                          |
+| `docker/observability/grafana`              | sí             | no                          | no                          |
+| `docker/observability/alloy`                | sí             | no                          | no                          |
+| `docker/host/systemd/*`                     | sí             | solo `cert-renew`           | no                          |
+| `docker/host/daemon.json`                   | host, no stack | —                           | —                           |
+| `docker/{app/odoo,db/postgres,edge/dnsmasq}/` | sí           | sí                          | sí                          |
 | `scripts/verify.sh`                         | sí             | sí                          | sí                          |
 | `scripts/addons.sh`                         | sí             | sí                          | sí                          |
 | `scripts/backup.sh`                         | sí             | no                          | no                          |
@@ -75,8 +75,8 @@ Cinco consecuencias que importan:
 
 - **`scripts/failure-notify.sh` no lo llama nadie fuera de producción.** Su único invocador es el `OnFailure=` de las units de backup, que no se instalan en los otros stacks. Va donde va la capa de backups.
 - **`scripts/integrity-check.sh` recorre el filestore por el contenedor de `odoo`.** Antes lo hacía por el de `backup`, que es exclusivo de producción, y eso lo dejaba fuera de staging — justo el entorno donde el simulacro de restore lo necesita. `odoo` monta el mismo volumen y lo lleva cualquier stack.
-- **`config/odoo/odoo.conf` es único para los tres.** `workers`, `limit_memory_*` y `dbfilter` son los mismos en la máquina del operador que en el servidor. Un stack de desarrollo que quiera menos workers necesita otro mecanismo, no otra copia del archivo — los principios prohíben archivos `.example` paralelos a un config.
-- **Las plantillas de `.env` son tres, y eso son tres copias.** La alternativa era un archivo genérico del que cada entorno borra los bloques que no le tocan, y borrar sale mal más seguido que completar: `cp .env.stag.example .env` deja el `COMPOSE_FILE`, el `PG_ARCHIVE_MODE=off` y las claves de staging ya puestas, sin decidir nada. La copia se paga con un chequeo y no con disciplina — `make test` resuelve cada entrypoint con su plantilla y falla si queda una variable sin declarar, que es justo lo que pasa cuando una clave nueva entra a una capa compartida y se suma a una sola plantilla.
+- **`docker/app/odoo/odoo.conf` es real por checkout, no versionado.** `workers`, `limit_memory_*` y `dbfilter` son los mismos en la máquina del operador que en el servidor —esos no cambian entre `.example` y el archivo real—, pero `smtp_server`/`port`/`user` sí varían: se escriben a mano al bootstrapear. Development y staging ni siquiera necesitan tocarlos: `ODOO_DISABLE_SMTP=1`, forzado en su `compose.*.yaml`, lo vacía igual.
+- **Las plantillas de `.env` son tres, y eso son tres copias.** La alternativa era un archivo genérico del que cada entorno borra los bloques que no le tocan, y borrar sale mal más seguido que completar: `cp .env.stag.example .env` deja el `COMPOSE_FILE` y las claves de staging ya puestas, sin decidir nada. La copia se paga con un chequeo y no con disciplina — `make test` resuelve cada entrypoint con su plantilla y falla si queda una variable sin declarar, que es justo lo que pasa cuando una clave nueva entra a una capa compartida y se suma a una sola plantilla.
 - **`dbfilter = ^odoo$` y el rol `odoo` son fijos.** No es un problema mientras cada stack tenga su propio volumen `pgdata`, que es lo que pasa: el nombre de la base se repite, la base no.
 
 ## 2. Estado del host no versionado — compartido por checkout
@@ -85,7 +85,11 @@ Vive fuera de git pero dentro del directorio del repositorio. **Esta tabla es la
 
 | Ruta                                      | Qué es                                     | Riesgo si se comparte                                                                          |
 |-------------------------------------------|--------------------------------------------|------------------------------------------------------------------------------------------------|
-| `.env`                                    | Valores por deployment                     | Un solo `PUBLIC_HOSTNAME`, un solo `COMPOSE_PROJECT_NAME`, un solo `PG_ARCHIVE_MODE` para los dos |
+| `.env`                                    | Valores por deployment                     | Un solo `PUBLIC_HOSTNAME`, un solo `COMPOSE_PROJECT_NAME` para los dos |
+| `docker/db/postgres/postgresql.conf`      | `archive_mode`, real por checkout          | Un solo valor para los dos — staging archivaría sobre la stanza de producción |
+| `docker/db/postgres/pgbackrest.conf`      | Stanza y credenciales de R2, reales por checkout | Un solo repositorio remoto para los dos                                    |
+| `docker/app/odoo/odoo.conf`               | `smtp_server`/`port`/`user`, reales por checkout | Staging/development mandarían correo real a clientes reales — mitigado por `ODOO_DISABLE_SMTP` de todos modos |
+| `docker/observability/grafana/grafana.ini`, `contact-points.yaml` | SMTP y destinatario de alertas, reales por checkout | Un solo destinatario para los dos                                          |
 | `secrets/*`                               | Credenciales — 11 en producción, 8 en staging, 3 en development | Staging usaría las credenciales reales de Cloudflare y SMTP                  |
 | `state/textfile/`                         | Métricas de backup y de vencimiento del certificado | Un stack pisa las métricas del otro                                                     |
 | `state/meta/addons.txt`                   | Registro de addons del snapshot            | Ídem                                                                                             |
@@ -119,7 +123,7 @@ Acá está lo que **no** resuelve el nombre de proyecto.
 | `:53` en `network_mode: host`                                          | dnsmasq                     | Ídem, y sin salida: es el único servicio que no admite un segundo de ninguna forma                                                                                                                                     |
 | `--name odoo-oneoff`                                                   | `make odoo-install/update`  | Dos one-off simultáneos en el mismo host fallan. Falla ruidoso y está documentado                                                                                                                                      |
 | Units de systemd (`backup-*`, `cert-renew`, `notify@`)                 | systemd                     | El `WorkingDirectory` es absoluto: apuntan a un checkout, no a un stack. Resuelto por `make timers-install`, que las instala con el proyecto adelante (`staging-cert-renew.timer`) y deriva de la composición cuáles corresponden — **staging también renueva certificados**, producción además respalda |
-| Repositorio de restic y stanza de pgBackRest                           | Capa de backups             | Resuelto por exclusión para la escritura: solo producción archiva y respalda. Los otros stacks **leen** la misma stanza para restaurar, y eso es seguro solo mientras `PG_ARCHIVE_MODE=off` los mantenga sin archivar    |
+| Repositorio de restic y stanza de pgBackRest                           | Capa de backups             | Resuelto por exclusión para la escritura: solo producción archiva y respalda. Los otros stacks **leen** la misma stanza para restaurar, y eso es seguro solo mientras `archive_mode = off` —forzado en `compose.staging.yaml`/`compose.dev.yaml`— los mantenga sin archivar |
 
 El proxy ya no aparece por descubrimiento. Con Traefik, el provider de Docker leía el daemon entero y cada instancia encontraba **también** el `odoo` del otro stack, con los mismos nombres de router; había que derivarlos del proyecto para que no se pisaran. nginx sirve lo que dice su archivo y el problema desapareció con la herramienta.
 
@@ -175,9 +179,9 @@ Se eligió el entrypoint por entorno sobre un módulo de override porque **Compo
 
 Tres capas salieron por extracción de archivos que ya existían:
 
-- **`docker/compose.proxy.yaml`** — nginx, los tres entornos. Sale de `docker/compose.edge.yaml` porque development quiere el proxy —para que `proxy_mode` no mienta— pero no el túnel ni los certificados. Lo que queda en `docker/compose.edge.yaml` es `cloudflared` y `certbot`.
-- **`docker/compose.dns.yaml`** — dnsmasq, solo producción. Sale de `docker/compose.edge.yaml` porque el `:53` en `network_mode: host` no se puede duplicar y staging no necesita sobrevivir a una caída de internet.
-- **`docker/compose.restore.yaml`** — `restore-db` y `restore-files`, producción y staging. Sale de `docker/compose.backups.yaml`: esos dos servicios solo leen del repositorio remoto, así que llevarlos a staging no rompe la regla de que la capa de backups es exclusiva de producción.
+- **`docker/edge/nginx/compose.yaml`** — nginx, los tres entornos. Se incluye por separado de `docker/edge/{cloudflared,certbot}/compose.yaml` porque development quiere el proxy —para que `proxy_mode` no mienta— pero no el túnel ni los certificados.
+- **`docker/edge/dnsmasq/compose.yaml`** — dnsmasq, solo producción. Se incluye aparte del resto de `edge` porque el `:53` en `network_mode: host` no se puede duplicar y staging no necesita sobrevivir a una caída de internet.
+- **`docker/backups/{restore-db,restore-files}/compose.yaml`** (`restore-db` y `restore-files`) — producción y staging. Es una capa propia, separada de `docker/backups/backup/compose.yaml`: esos dos servicios solo leen del repositorio remoto, así que llevarlos a staging no rompe la regla de que la capa de backups es exclusiva de producción.
 
 Staging no publica ningún puerto — `ports: !reset []`, verificado en Compose v5.1.4: borra el bloque entero de un servicio traído por `include:`, sin tocar el archivo compartido ni parametrizar nada. No lo necesita: `cloudflared` alcanza al proxy **por la red `edge`, por nombre de contenedor**, no por puertos publicados.
 
@@ -196,7 +200,7 @@ Detalles que van desde el primer día, no cuando aparezca el síntoma:
 
 - **`resolver 127.0.0.11 valid=10s` y `proxy_pass` a través de una variable.** nginx resuelve los upstream al arrancar y cachea; si Odoo se recrea y cambia de IP, devuelve 502 hasta que lo recargues. Traefik no tenía este problema porque escucha eventos de Docker.
 - `limit_req` para POST `/web/login`, `location /websocket` al `8072`, el resto al `8069`.
-- Config por entorno con las plantillas `envsubst` de la imagen oficial: `nginx.conf` es un archivo versionado y el hostname varía por deployment.
+- Config real por checkout, no plantilla: `server-tls.conf`/`00-http.conf`/`odoo.locations` se editan a mano (gitignoreados, bootstrap desde su `.example`), porque el hostname y el rate-limit varían por deployment.
 - Publicación: producción `${LOCAL_IP}:80` y `:443` para la LAN, staging nada, development un puerto de loopback.
 
 ## Certificados
@@ -230,7 +234,7 @@ Restore desde el repositorio remoto, de solo lectura. El propósito es doble y d
 
 Staging queda con datos reales de clientes, **y sin credenciales SMTP**. Un `-u` que dispare correo, o una tarea programada que venía en la base restaurada, mandaría mail de verdad a clientes de verdad desde el entorno que existe para romper cosas. Sin el secret, Odoo encola y falla al enviar: visible adentro, inofensivo afuera. Su entrypoint además vacía `SMTP_HOST`, porque si dependiera solo de `.env` un archivo copiado de producción alcanzaría para mandar.
 
-Y **no archiva WAL**. Apunta a la stanza de producción para poder restaurar, así que con `archive_mode` prendido le empujaría su propio WAL al repositorio del entorno real. Lo decide `PG_ARCHIVE_MODE` en el `-c` de `docker/compose.db.yaml` y no `postgresql.conf`, que es el mismo archivo para los tres; `make db-verify` exige el valor que corresponde a las capas del stack, no uno fijo.
+Y **no archiva WAL**. Apunta a la stanza de producción para poder restaurar, así que con `archive_mode` prendido le empujaría su propio WAL al repositorio del entorno real. `postgresql.conf` es real por checkout y trae `on` por defecto (el caso de producción); staging y development lo fuerzan a `off` con un `-c` en su propio `compose.*.yaml`, respaldo estructural por si el `postgresql.conf` de ese checkout no se editó. `make db-verify` exige el valor que corresponde a las capas del stack, no uno fijo.
 
 La anonimización se evaluó y se descartó por ahora: es un script que envejece mal, porque protege exactamente los campos que conocía el día que se escribió. Deja de ser opcional si alguna vez entra a staging alguien más que el operador.
 
@@ -269,5 +273,5 @@ Son dos y no una, porque las capas son distintas: `require-backups` cuelga de `b
 Los otros tres arrastres se cerraron:
 
 - **Imágenes al día.** `alpine` 3.20 → 3.24, Odoo `19.0-20260630` → `19.0-20260810`, nginx `1.29.3` → `1.31.3` (misma rama mainline), Grafana 13.1.2 → 13.1.3, cloudflared 2026.7.2 → 2026.8.0 y certbot 5.1.0 → 5.7.0. Postgres 17.10, PgBouncer, restic, Prometheus, Loki y Alloy ya estaban en su último tag estable.
-- **`pgbackrest.conf` se quedó sin sección de stanza.** El nombre, `pg1-path` y `pg1-user` llegan por `PGBACKREST_*` desde `docker/compose.db.yaml` y `docker/compose.restore.yaml`, junto al `POSTGRES_USER` del que `pg1-user` tiene que ser copia. La invariante «el `[nombre]` del archivo tiene que coincidir con el `.env`» desapareció: ya no hay dos lados que puedan divergir. `db-verify` dejó de comparar cadenas y ahora lee el valor efectivo dentro del contenedor (`pgbackrest help archive-push pg1-path`).
+- **`pgbackrest.conf` trae su sección de stanza, real por checkout.** El nombre —`[<stanza>]`—, `pg1-path` y `pg1-user` (copia de `POSTGRES_USER`) viven ahí, gitignoreado, bootstrapeado desde `pgbackrest.conf.example`. `postgres` y `restore-db` montan el mismo archivo, así que ninguno de los dos necesita `environment:` para esto. Con una sola sección de stanza en el archivo, pgBackRest la autodetecta sin `--stanza` — verificado contra el binario real antes de asumirlo. `db-verify` lee el nombre del archivo mismo y el valor efectivo dentro del contenedor (`pgbackrest help archive-push pg1-path`), no compara cadenas contra `.env`.
 - **Los umbrales de Grafana quedan literales**, porque no hay mecanismo: el provisioning de alerting no interpola nada. El detalle de lo que se probó está en `docs/architecture.md`.

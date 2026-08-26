@@ -14,7 +14,7 @@ if [ -f .env ]; then
 fi
 
 VERBO="${1:-}"
-ORIGEN="config/systemd"
+ORIGEN="docker/host/systemd"
 DESTINO="${SYSTEMD_DIR:-/etc/systemd/system}"
 
 # --- Prefijo del nombre ---

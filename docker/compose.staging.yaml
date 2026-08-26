@@ -23,7 +23,7 @@ secrets:
   odoo_admin_password:
     file: ../secrets/odoo_admin_password
   # Lo lee restore-db: la stanza es la de producción y nada de staging le escribe
-  # (PG_ARCHIVE_MODE=off en su .env es lo que lo garantiza).
+  # (archive_mode=off forzado sobre postgres, más abajo, es lo que lo garantiza).
   pgbackrest_r2_credentials:
     file: ../secrets/pgbackrest_r2_credentials
   restic_password:
@@ -32,11 +32,13 @@ secrets:
     file: ../secrets/restic_r2_credentials
 
 include:
-  - compose.proxy.yaml
-  - compose.edge.yaml
-  - compose.db.yaml
-  - compose.odoo.yaml
-  - compose.restore.yaml
+  - edge/nginx/compose.yaml
+  - edge/cloudflared/compose.yaml
+  - edge/certbot/compose.yaml
+  - db/compose.yaml
+  - app/compose.yaml
+  - backups/restore-db/compose.yaml
+  - backups/restore-files/compose.yaml
 
 services:
   # --- Sin puertos publicados ---
@@ -45,13 +47,23 @@ services:
   nginx:
     ports: !reset []
 
+  # --- Archivado de WAL APAGADO ---
+  # Staging apunta a la stanza de producción para poder restaurar. archive_mode
+  # forzado en off acá — respaldo estructural: aunque postgresql.conf de este
+  # checkout se haya bootstrapeado del .example sin editar (que trae "on"),
+  # este stack no le empuja WAL al repositorio del entorno real.
+
+  postgres:
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf -c archive_mode=off
+
   # --- Sin correo saliente ---
   # Se siembra con datos reales: con SMTP le mandaría correo de verdad a clientes de verdad.
-  # Vacía el host acá y no solo el secret: si dependiera del .env, un clon del de producción manda.
+  # Forzado acá y no solo en el secret: si dependiera de que el odoo.conf de este
+  # checkout no tenga smtp_server, un checkout clonado del de producción manda.
 
   odoo:
     environment:
-      SMTP_HOST: ""
+      ODOO_DISABLE_SMTP: "1"
     secrets: !override
       - postgres_password
       - odoo_admin_password

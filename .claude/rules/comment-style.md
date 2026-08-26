@@ -1,8 +1,8 @@
 # Comment style — código y config versionados
 
 Regla oficial (reemplaza cualquier guía ad hoc anterior). Aplica a todo archivo de
-código/config versionado en git: `compose.*.yaml`, `Dockerfile`s, `entrypoint.sh`
-y demás scripts, `*.conf`/`*.ini`/`*.yaml` bajo `config/`, y el `Makefile`.
+código/config versionado en git: `compose.yaml`, `Dockerfile`s, `entrypoint.sh`
+y demás scripts, `*.conf`/`*.ini`/`*.yaml` bajo `docker/`, y el `Makefile`.
 No aplica a prosa (`docs/*.md`, `PRINCIPLES.md`, `README.md`) — esos
 ya se organizan con sus propios encabezados Markdown.
 
@@ -27,7 +27,7 @@ odoo.conf/pgbouncer.ini):
 - Contexto histórico, incidentes pasados o justificaciones largas van a
   `docs/architecture.md`, no inline.
 
-## Ejemplo (`config/postgres/postgresql.conf`)
+## Ejemplo (`docker/db/postgres/postgresql.conf`)
 
 ```
 # --- Tuning ---
@@ -39,5 +39,5 @@ effective_cache_size = 1536MB
 
 ## Ya aplicado en
 
-`config/odoo`, `config/pgbouncer`, `config/postgres`, `config/nginx`,
-`docker/odoo/{Dockerfile,entrypoint.sh}`.
+`docker/app/odoo`, `docker/db/pgbouncer`, `docker/db/postgres`, `docker/edge/nginx`,
+`docker/app/odoo/{Dockerfile,entrypoint.sh}`.

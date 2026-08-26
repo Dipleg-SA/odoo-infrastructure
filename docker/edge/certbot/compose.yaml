@@ -1,0 +1,21 @@
+# --- Emisión y renovación de certificados ---
+# profiles lo deja fuera de `make up`: corre como one-off, a mano la primera vez
+# y por timer de systemd después. DNS-01 y no HTTP-01 para que la emisión no
+# dependa del ingreso — hoy el certificado se emite aunque el borde esté roto.
+services:
+  certbot:
+    image: certbot/dns-cloudflare:v5.7.0
+    container_name: ${COMPOSE_PROJECT_NAME}-certbot
+    profiles: [cert]
+    networks:
+      - edge
+    secrets:
+      - cloudflare_api_token
+    # El volumen lo declara nginx/compose.yaml, que es quien lo lee: certbot
+    # escribe ahí y nginx monta lo mismo en :ro. Van siempre juntos.
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - ./wrapper.sh:/usr/local/bin/wrapper.sh:ro
+    entrypoint: ["/bin/sh", "/usr/local/bin/wrapper.sh"]
+    mem_limit: 256m
+    cpus: "0.50"

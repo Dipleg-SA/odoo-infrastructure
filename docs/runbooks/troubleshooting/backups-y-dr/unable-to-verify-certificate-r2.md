@@ -10,7 +10,7 @@ Falta el almacén de CAs raíz. La imagen oficial de Postgres no trae `ca-certif
 
 ## Fix
 
-`docker/postgres/Dockerfile` lo instala. Si aparece este error, la imagen en uso no es la propia:
+`docker/db/postgres/Dockerfile` lo instala. Si aparece este error, la imagen en uso no es la propia:
 
 ```bash
 docker compose build postgres && docker compose up -d postgres

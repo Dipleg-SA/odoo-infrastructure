@@ -1,0 +1,25 @@
+# --- Forwarders y caché ---
+# no-resolv deja SERVFAIL todo lo que no sea el hostname si ninguno de los
+# server= de abajo responde — sin él, dnsmasq usaría /etc/resolv.conf del
+# contenedor. Caché 1000 (default 150).
+
+keep-in-foreground
+no-resolv
+bind-interfaces
+cache-size=1000
+
+# --- Forwarders ---
+# A dónde reenvía dnsmasq lo que no sea el hostname público. Fijos
+# (Cloudflare + Google); para cambiarlos, editar acá directo.
+
+server=1.1.1.1
+server=8.8.8.8
+
+# --- Esta LAN ---
+# Reemplazá TU_IP_LOCAL por la IP del servidor en la LAN y TU_DOMINIO por el
+# hostname público real — los mismos valores que LOCAL_IP/PUBLIC_HOSTNAME en
+# el .env de este checkout, que los necesitan nginx y cert.sh (no leen este
+# archivo). make edge-verify cruza los dos.
+
+listen-address=TU_IP_LOCAL
+address=/TU_DOMINIO/TU_IP_LOCAL

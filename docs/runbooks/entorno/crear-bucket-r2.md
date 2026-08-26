@@ -12,7 +12,7 @@ Un bucket R2 nuevo y vacío, un token `Object Read & Write` acotado a él, y las
 
 1. Cloudflare → R2 → crear un bucket nuevo y vacío. Uno solo: `pgbackrest/` y `restic/` conviven adentro como prefijos separados.
 2. Token de API de R2, permiso `Object Read & Write`, acotado a ese bucket únicamente.
-3. Anotar el endpoint (sin esquema, ej. `<account-id>.r2.cloudflarestorage.com`) y el nombre del bucket — van a `R2_ENDPOINT` y `R2_BUCKET` en `.env`.
+3. Anotar el endpoint (sin esquema, ej. `<account-id>.r2.cloudflarestorage.com`) y el nombre del bucket — no van a `.env`: van a `docker/db/postgres/pgbackrest.conf` (pgBackRest) y `docker/backups/r2.env` (restic), cada uno real por checkout, bootstrapeado desde su `.example` en [levantar-produccion](levantar-produccion.md).
 
 ## Comandos
 

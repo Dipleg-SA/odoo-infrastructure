@@ -55,7 +55,7 @@ cmd_issue() {
   ui_start "cert-issue: emitiendo para $PUBLIC_HOSTNAME"
   certbot certonly \
     --dns-cloudflare --dns-cloudflare-credentials /tmp/cloudflare.ini \
-    --dns-cloudflare-propagation-seconds "${ACME_PROPAGATION_SECONDS:-30}" \
+    --dns-cloudflare-propagation-seconds 30 \
     -d "$PUBLIC_HOSTNAME" \
     --agree-tos --register-unsafely-without-email --non-interactive
   escribir_metrica

@@ -48,12 +48,12 @@ require-root:
 host-init: TARGET=host-init
 host-init: require-root ## Aplica la rotación de logs del daemon (requiere root)
 	@. scripts/lib/ui.sh; \
-	  if [ -e /etc/docker/daemon.json ] && ! cmp -s config/docker/daemon.json /etc/docker/daemon.json; then \
+	  if [ -e /etc/docker/daemon.json ] && ! cmp -s docker/host/daemon.json /etc/docker/daemon.json; then \
 	    ui_bad "/etc/docker/daemon.json ya existe y no es el del repo" \
-	      "el cp borraría las claves propias del host (data-root, insecure-registries) — fusionar a mano el bloque log-driver/log-opts de config/docker/daemon.json" >&2; exit 2; \
+	      "el cp borraría las claves propias del host (data-root, insecure-registries) — fusionar a mano el bloque log-driver/log-opts de docker/host/daemon.json" >&2; exit 2; \
 	  fi; \
 	  ui_run "host-init" sh -c \
-	    'cp config/docker/daemon.json /etc/docker/daemon.json && systemctl restart docker'
+	    'cp docker/host/daemon.json /etc/docker/daemon.json && systemctl restart docker'
 
 timers-install: ## Instala y activa las units de systemd de este stack (requiere root)
 	scripts/timers.sh install

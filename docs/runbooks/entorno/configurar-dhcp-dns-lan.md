@@ -2,7 +2,7 @@
 
 ## Cuándo se usa
 
-Después de levantar la capa `edge` en producción ([levantar-produccion](levantar-produccion.md), bloque 3 · Edge) — `dnsmasq` queda sano y resolviendo el hostname público a la IP local, pero nadie de la LAN lo consulta hasta que el router se lo indique por DHCP. Exclusivo de producción: `dnsmasq` corre solo ahí (`network_mode: host` sobre el `53`, sin segunda instancia posible — ver [compose.dns.yaml](../../../docker/compose.dns.yaml)).
+Después de levantar la capa `edge` en producción ([levantar-produccion](levantar-produccion.md), bloque 3 · Edge) — `dnsmasq` queda sano y resolviendo el hostname público a la IP local, pero nadie de la LAN lo consulta hasta que el router se lo indique por DHCP. Exclusivo de producción: `dnsmasq` corre solo ahí (`network_mode: host` sobre el `53`, sin segunda instancia posible — ver [compose.yaml](../../../docker/edge/dnsmasq/compose.yaml)).
 
 ## Objetivo
 
@@ -22,11 +22,11 @@ make host-verify   # "ufw permite 53/udp desde la LAN" tiene que dar ok
 Configuración en el router/DHCP de la red, fuera de este repositorio — el mecanismo exacto varía por fabricante, el concepto es el mismo en cualquiera:
 
 1. **Reservar la IP del servidor.** El campo DNS del DHCP guarda una IP fija; si el servidor la recibe dinámicamente, el día que cambie el router sigue apuntando a una IP vieja y la LAN pierde resolución en silencio. Reservar la MAC del servidor a `${LOCAL_IP}` — la sección suele llamarse "reserva de direcciones" o "DHCP reservation".
-2. **DNS primario → `${LOCAL_IP}`.** La misma IP que `dnsmasq` bindea (`--listen-address` en [compose.dns.yaml](../../../docker/compose.dns.yaml)).
-3. **DNS secundario → un resolver público**, el mismo que uses en `DNS_FORWARDER_1`/`DNS_FORWARDER_2` del `.env` u otro cualquiera. No es cosmético: si la capa `edge` se cae (mantenimiento, `make edge-down`, `edge-nuke`), la LAN necesita a dónde caer.
+2. **DNS primario → `${LOCAL_IP}`.** La misma IP que `dnsmasq` bindea (`listen-address` en [dnsmasq.conf](../../../docker/edge/dnsmasq/dnsmasq.conf.example)).
+3. **DNS secundario → un resolver público**, el mismo que dnsmasq usa de forwarder (`1.1.1.1`/`8.8.8.8`, fijos en `docker/edge/dnsmasq/compose.yaml`) u otro cualquiera. No es cosmético: si la capa `edge` se cae (mantenimiento, `make edge-down`, `edge-nuke`), la LAN necesita a dónde caer.
 4. **Aplicar y renovar.** Un cambio de DHCP no empuja a los clientes ya conectados — o esperan a que expire su lease, o hace falta forzar la renovación (reconectar Wi-Fi, `ipconfig /renew`, reiniciar el dispositivo).
 
-Poner acá un DNS local **no evita que se caiga internet** — solo evita que el hostname propio dependa de que el WAN esté arriba. Cualquier dominio externo sigue resolviendo vía `DNS_FORWARDER_1`/`2`, que necesitan salida real a internet.
+Poner acá un DNS local **no evita que se caiga internet** — solo evita que el hostname propio dependa de que el WAN esté arriba. Cualquier dominio externo sigue resolviendo vía los forwarders de `dnsmasq`, que necesitan salida real a internet.
 
 ## Verificación
 
@@ -51,7 +51,7 @@ echo "# 3 → Un dominio externo sigue resolviendo — prueba el forwarder, no s
 dig +short example.com
 ```
 
-Si el 3 falla, es `dnsmasq` sin forwarders alcanzables (`DNS_FORWARDER_1`/`2` del `.env`), no un problema del router.
+Si el 3 falla, es `dnsmasq` sin forwarders alcanzables (`1.1.1.1`/`8.8.8.8`, fijos en `docker/edge/dnsmasq/compose.yaml`), no un problema del router.
 
 Para confirmar que el DNS secundario sostiene la LAN si el servidor se cae, apagá `dnsmasq` un momento y repetí el paso 3 — tiene que seguir resolviendo, esta vez por el secundario:
 

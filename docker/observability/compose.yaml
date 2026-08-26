@@ -1,0 +1,9 @@
+# --- Capa de observación ---
+# Prometheus y Loki almacenan, Grafana consulta y alerta, Alloy es el único
+# agente (métricas de host/contenedores/base + logs).
+
+include:
+  - prometheus/compose.yaml
+  - loki/compose.yaml
+  - grafana/compose.yaml
+  - alloy/compose.yaml

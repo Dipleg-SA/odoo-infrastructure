@@ -10,7 +10,7 @@
 sudo ss -ulnp | grep ':53'
 ```
 
-Tiene que mostrar `dnsmasq` escuchando en `${LOCAL_IP}:53`. Corre en `network_mode: host` (no publica puerto vía Docker), escuchando directo ahí (`--listen-address` + `--bind-interfaces`).
+Tiene que mostrar `dnsmasq` escuchando en `${LOCAL_IP}:53`. Corre en `network_mode: host` (no publica puerto vía Docker), escuchando directo ahí (`listen-address` + `bind-interfaces` de `docker/edge/dnsmasq/dnsmasq.conf`).
 
 Dos causas, ambas surgidas en el primer deploy real:
 

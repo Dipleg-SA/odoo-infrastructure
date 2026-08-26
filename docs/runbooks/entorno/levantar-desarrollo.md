@@ -82,7 +82,14 @@ Chequea la versión de Compose, `.env` sin claves vacías, la identidad declarad
 
 **Objetivo** — nginx sirviendo en loopback, en texto plano.
 
-**A mano** — ninguno. `NGINX_MODE` no se declara: `docker/compose.dev.yaml` fija la plantilla sin TLS en el entrypoint. Si dependiera de la variable, un `.env` sin la clave montaría la plantilla con TLS y nginx no arrancaría — no hay certificado.
+**A mano** — bootstrapeá los dos archivos reales de nginx que este stack sí monta (gitignoreados; `server-plain.conf` no hace falta, ya viene versionado):
+
+```bash
+cp docker/edge/nginx/00-http.conf.example docker/edge/nginx/00-http.conf
+cp docker/edge/nginx/odoo.locations.example docker/edge/nginx/odoo.locations
+```
+
+Los valores del `.example` ya sirven tal cual (rate-limit, CIDR de Docker); no hace falta editarlos salvo que tu red los necesite distintos. `NGINX_MODE` no se declara: `docker/compose.dev.yaml` fija la plantilla sin TLS en el entrypoint. Si dependiera de la variable, un `.env` sin la clave montaría la plantilla con TLS y nginx no arrancaría — no hay certificado.
 
 ```bash
 make edge-up
@@ -102,13 +109,20 @@ Omite el certificado, el `server_name` y el 443, los tres derivados de que este 
 
 **Objetivo** — la base corriendo y vacía.
 
-**A mano** — ninguno.
+**A mano** — bootstrapeá `postgresql.conf` y `pgbackrest.conf` (gitignoreados — `postgres` los monta a los dos aunque este stack no archive ni restaure):
+
+```bash
+cp docker/db/postgres/postgresql.conf.example docker/db/postgres/postgresql.conf
+cp docker/db/postgres/pgbackrest.conf.example docker/db/postgres/pgbackrest.conf
+```
+
+Ninguno de los dos necesita edición: `archive_mode` lo fuerza en `off` `compose.dev.yaml`, y sin capa de backups nada usa la stanza ni el bucket de `pgbackrest.conf`.
 
 ```bash
 make db-up
 ```
 
-Sin `stanza-init` detrás, que es lo que lleva producción: este stack no archiva. `PG_ARCHIVE_MODE=off` no es opcional — un stack sin capa de backups que archive le empuja WAL a la stanza de producción.
+Sin `stanza-init` detrás, que es lo que lleva producción: este stack no archiva. `archive_mode = off` no es opcional —forzado en `compose.dev.yaml` además de en `postgresql.conf`— un stack sin capa de backups que archive le empuja WAL a la stanza de producción.
 
 ```bash
 make db-verify
@@ -146,7 +160,13 @@ Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, tod
 
 **Objetivo** — Odoo sirviendo por nginx en loopback.
 
-**A mano** — ninguno.
+**A mano** — bootstrapeá `odoo.conf` (gitignoreado):
+
+```bash
+cp docker/app/odoo/odoo.conf.example docker/app/odoo/odoo.conf
+```
+
+No hace falta editar `smtp_server`/`port`/`user`: `ODOO_DISABLE_SMTP=1`, forzado en `compose.dev.yaml`, los deja vacíos sin importar lo que traiga el `.example`.
 
 ```bash
 make odoo-up && make odoo-logs

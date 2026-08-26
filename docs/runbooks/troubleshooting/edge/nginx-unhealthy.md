@@ -12,12 +12,12 @@ Su healthcheck es `nginx -t`, así que un `unhealthy` es siempre config inválid
 docker compose logs --tail=20 nginx
 ```
 
-La causa más común en un deploy nuevo es que la sustitución de variables no corrió y quedó el literal `${PUBLIC_HOSTNAME}` dentro de la config:
+La causa más común en un deploy nuevo es que `server-tls.conf` se bootstrapeó desde `server-tls.conf.example` y quedó el placeholder sin reemplazar:
 
 ```bash
-docker compose exec nginx grep -r '\${' /etc/nginx/conf.d/
+docker compose exec nginx grep -r 'TU_DOMINIO' /etc/nginx/conf.d/
 ```
 
 ## Fix
 
-Cualquier resultado en el grep es un `envsubst` que no sustituyó: revisá que la variable esté en `.env` y que `NGINX_ENVSUBST_FILTER` en `docker/compose.proxy.yaml` la cubra. Lo chequea también `make edge-verify`.
+Cualquier resultado en el grep es el placeholder `TU_DOMINIO` de `server-tls.conf.example` sin reemplazar en el `server-tls.conf` real de este checkout. Lo chequea también `make edge-verify`.

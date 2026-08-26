@@ -49,12 +49,18 @@ contiene "suma certbot y restore con sus perfiles" "certbot restore-db restore-f
 # La LAN entra sin pasar por el túnel: nivel 3 del criterio de bind.
 igual "nginx publica 80 y 443 en LOCAL_IP" "10.0.0.2 10.0.0.2 " "$(printf '%s\n' "$PROD" | bloque nginx | binds)"
 
-# El único stack que archiva WAL, porque es el único que respalda.
-contiene "postgres archiva WAL" "archive_mode=on" "$(printf '%s\n' "$PROD" | bloque postgres)"
+# El único stack que archiva WAL, porque es el único que respalda. Producción no
+# lo fuerza por compose —vive en postgresql.conf, real por checkout— así que acá
+# solo se confirma que su .example trae "on" por default, no en la config resuelta.
+contiene "postgresql.conf.example archiva por default" "archive_mode    = on" \
+  "$(cat docker/db/postgres/postgresql.conf.example)"
 
-# Producción sí manda correo: es el contraste de los otros dos.
+# Producción sí manda correo: es el contraste de los otros dos. smtp_server ya
+# no está en la config resuelta —es literal de odoo.conf, real por checkout—
+# así que acá solo se confirma que su .example trae el placeholder a reemplazar.
 contiene "odoo lleva la credencial SMTP" "zeptomail_smtp_password" "$(printf '%s\n' "$PROD" | bloque odoo)"
-contiene "odoo con SMTP_HOST real"       "SMTP_HOST: smtp.example.test" "$(printf '%s\n' "$PROD" | bloque odoo)"
+contiene "odoo.conf.example trae el placeholder de smtp_server" "smtp_server = TU_SMTP_HOST" \
+  "$(cat docker/app/odoo/odoo.conf.example)"
 
 # El nombre de imagen es global al daemon: sin el tag por proyecto, el build de un
 # stack pisa la imagen que corre el otro.
@@ -80,8 +86,8 @@ contiene "postgres NO archiva WAL" "archive_mode=off" "$(printf '%s\n' "$STG" | 
 # protección, y el fixture trae SMTP cargado a propósito: prueba el escenario que
 # importa, que es un .env copiado de producción.
 
-no_contiene "odoo sin la credencial SMTP"                   "zeptomail_smtp_password" "$(printf '%s\n' "$STG" | bloque odoo)"
-contiene    "un .env con SMTP no alcanza para mandar correo" 'SMTP_HOST: ""'          "$(printf '%s\n' "$STG" | bloque odoo)"
+no_contiene "odoo sin la credencial SMTP"                        "zeptomail_smtp_password" "$(printf '%s\n' "$STG" | bloque odoo)"
+contiene    "un odoo.conf clonado no alcanza para mandar correo" 'ODOO_DISABLE_SMTP: "1"'  "$(printf '%s\n' "$STG" | bloque odoo)"
 
 # Si restore-db no usa la misma imagen que postgres, restaura con un binario
 # distinto al que escribió el pgdata.
@@ -101,12 +107,12 @@ igual "publica solo el 80, en loopback" "127.0.0.1 " "$(printf '%s\n' "$DEV" | b
 
 # Fijada en el entrypoint y no por NGINX_MODE: un .env sin la clave montaría
 # server-tls y nginx no arranca, porque no hay certificado.
-contiene    "monta la plantilla sin TLS" "server-plain.conf.template" "$(printf '%s\n' "$DEV" | bloque nginx)"
+contiene    "monta el config sin TLS" "server-plain.conf" "$(printf '%s\n' "$DEV" | bloque nginx)"
 no_contiene "y ninguna con TLS"          "server-tls"                 "$DEV"
 
 # No archiva ni restaura, así que no lleva la credencial de R2.
 no_contiene "postgres sin credencial de R2" "pgbackrest_r2_credentials" "$(printf '%s\n' "$DEV" | bloque postgres)"
-contiene    "un .env con SMTP no alcanza para mandar correo" 'SMTP_HOST: ""' "$(printf '%s\n' "$DEV" | bloque odoo)"
+contiene    "un odoo.conf clonado no alcanza para mandar correo" 'ODOO_DISABLE_SMTP: "1"' "$(printf '%s\n' "$DEV" | bloque odoo)"
 
 # =====================================================================
 titulo "reglas que cruzan los tres"

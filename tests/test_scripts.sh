@@ -164,8 +164,8 @@ titulo "timers.sh — qué units corresponden y con qué nombre"
 crear_root_timers() {
   local root proyecto="$1"
   root=$(crear_root "timers-$proyecto" timers.sh)
-  mkdir -p "$root/config/systemd" "$root/systemd"
-  cp "$REPO_ROOT"/config/systemd/* "$root/config/systemd/"
+  mkdir -p "$root/docker/host/systemd" "$root/systemd"
+  cp "$REPO_ROOT"/docker/host/systemd/* "$root/docker/host/systemd/"
   printf 'COMPOSE_PROJECT_NAME=%s\n' "$proyecto" >> "$root/.env"
   printf '%s' "$root"
 }

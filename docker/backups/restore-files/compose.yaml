@@ -1,0 +1,31 @@
+services:
+  restore-files:
+    image: restic/restic:0.19.1
+    container_name: ${COMPOSE_PROJECT_NAME}-restore-files
+    profiles: [restore]
+    # Root, y hacen falta las dos mitades: un volumen recién creado nace root:root
+    # y ningún no-root puede crear ahí el primer directorio, y solo root le devuelve
+    # a cada archivo el owner que tenía en el snapshot. Ver docs/architecture.md.
+    user: "0:0"
+    # El chown del punto de montaje va acá y no en el Makefile: el restore de
+    # pérdida total corre estos comandos a mano. 100:101 son los uid/gid de Odoo.
+    entrypoint: ["sh", "-c"]
+    command: ["chown 100:101 /data/odoo && exec sleep infinity"]
+    networks:
+      - app
+    # RESTIC_REPOSITORY real por checkout, gitignoreado — no interpola desde .env.
+    env_file:
+      - ../r2.env
+    environment:
+      RESTIC_PASSWORD_FILE: /run/secrets/restic_password
+      AWS_SHARED_CREDENTIALS_FILE: /run/secrets/restic_r2_credentials
+      HOME: /tmp
+      RESTIC_CACHE_DIR: /tmp/restic-cache
+    secrets:
+      - restic_password
+      - restic_r2_credentials
+    volumes:
+      # rw, a diferencia del servicio de backup.
+      - odoo-data:/data/odoo
+    mem_limit: 512m
+    cpus: "1.0"

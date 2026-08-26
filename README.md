@@ -2,22 +2,22 @@
 
 Infraestructura Docker autoalojada para una instancia de Odoo, operada por una sola persona sobre un único servidor.
 
-Once servicios en ocho módulos de Compose, uno por capa: reverse proxy con TLS propio, túnel de ingreso sin puertos abiertos, acceso por red local, Postgres con pooling, la aplicación, backups con recuperación a un punto en el tiempo, y observabilidad con alerting.
+Once servicios bajo `docker/`, una carpeta por capa y un `compose.yaml` por servicio dentro: reverse proxy con TLS propio, túnel de ingreso sin puertos abiertos, acceso por red local, Postgres con pooling, la aplicación, backups con recuperación a un punto en el tiempo, y observabilidad con alerting.
 
 ## Qué levanta
 
-| Capa | Servicios | Módulo |
+| Capa | Servicios | Carpeta |
 |---|---|---|
-| DNS local | `dnsmasq` | `docker/compose.dns.yaml` |
-| Proxy | `nginx` | `docker/compose.proxy.yaml` |
-| Borde | `cloudflared` · `certbot` | `docker/compose.edge.yaml` |
-| Datos | `postgres` · `pgbouncer` | `docker/compose.db.yaml` |
-| Aplicación | `odoo` | `docker/compose.odoo.yaml` |
-| Protección | `backup` (restic) + pgBackRest embebido en Postgres | `docker/compose.backups.yaml` |
-| Restore | `restore-db` · `restore-files`, bajo `profiles` | `docker/compose.restore.yaml` |
-| Observación | `prometheus` · `loki` · `grafana` · `alloy` | `docker/compose.observability.yaml` |
+| DNS local | `dnsmasq` | `docker/edge/dnsmasq/` |
+| Proxy | `nginx` | `docker/edge/nginx/` |
+| Borde | `cloudflared` · `certbot` | `docker/edge/{cloudflared,certbot}/` |
+| Datos | `postgres` · `pgbouncer` | `docker/db/{postgres,pgbouncer}/` |
+| Aplicación | `odoo` | `docker/app/odoo/` |
+| Protección | `backup` (restic) + pgBackRest embebido en Postgres | `docker/backups/backup/` |
+| Restore | `restore-db` · `restore-files`, bajo `profiles` | `docker/backups/{restore-db,restore-files}/` |
+| Observación | `prometheus` · `loki` · `grafana` · `alloy` | `docker/observability/{prometheus,loki,grafana,alloy}/` |
 
-`docker/compose.yaml` no es monolítico: declara las redes y los secretos compartidos y suma un módulo por capa con `include:`. Tampoco declara el nombre del stack — eso vive en `.env`, junto a `COMPOSE_FILE`, que es lo que elige qué capas se levantan.
+`docker/compose.yaml` no es monolítico: declara las redes y los secretos compartidos y suma el `compose.yaml` de cada servicio con `include:`. Tampoco declara el nombre del stack — eso vive en `.env`, junto a `COMPOSE_FILE`, que es lo que elige qué capas se levantan.
 
 ## Empezar
 

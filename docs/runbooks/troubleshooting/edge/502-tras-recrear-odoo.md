@@ -18,4 +18,4 @@ Mitigación inmediata:
 docker compose exec nginx nginx -s reload
 ```
 
-Si vuelve a pasar después de cada recreación de Odoo, revisar que `config/nginx/` no haya perdido el patrón de `resolver` + variable en el `proxy_pass`.
+Si vuelve a pasar después de cada recreación de Odoo, revisar que `docker/edge/nginx/` no haya perdido el patrón de `resolver` + variable en el `proxy_pass`.

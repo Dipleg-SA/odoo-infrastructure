@@ -15,11 +15,11 @@ CAPA="${1:-}"; VERBO="${2:-}"
 
 compose_de() {
   case "$1" in
-    edge)          echo "docker/compose.dns.yaml docker/compose.proxy.yaml docker/compose.edge.yaml" ;;
-    db)            echo "docker/compose.db.yaml" ;;
-    odoo)          echo "docker/compose.odoo.yaml" ;;
-    backups)       echo "docker/compose.backups.yaml" ;;
-    observability) echo "docker/compose.observability.yaml" ;;
+    edge)          echo "docker/edge/dnsmasq/compose.yaml docker/edge/nginx/compose.yaml docker/edge/cloudflared/compose.yaml docker/edge/certbot/compose.yaml" ;;
+    db)            echo "docker/db/postgres/compose.yaml docker/db/pgbouncer/compose.yaml" ;;
+    odoo)          echo "docker/app/odoo/compose.yaml" ;;
+    backups)       echo "docker/backups/backup/compose.yaml" ;;
+    observability) echo "docker/observability/prometheus/compose.yaml docker/observability/loki/compose.yaml docker/observability/grafana/compose.yaml docker/observability/alloy/compose.yaml" ;;
   esac
 }
 

@@ -12,25 +12,30 @@ trap 'rm -rf "$TMP"' EXIT
 PATH="$REPO_ROOT/tests/stubs:$PATH"
 
 ROOT="$TMP/root"
-mkdir -p "$ROOT/scripts/lib" "$ROOT/docker"
+mkdir -p "$ROOT/scripts/lib" "$ROOT/docker/db/postgres" "$ROOT/docker/db/pgbouncer"
 cp "$REPO_ROOT/scripts/capa.sh" "$ROOT/scripts/"
 cp "$REPO_ROOT/scripts/lib/ui.sh" "$ROOT/scripts/lib/"
 
 # El bloque volumes: real que nuke tiene que leer para saber qué volumen es dueño de db.
-cat > "$ROOT/docker/compose.db.yaml" <<'EOF'
+cat > "$ROOT/docker/db/postgres/compose.yaml" <<'EOF'
 volumes:
   pgdata:
 
 services:
   postgres:
     image: postgres
+EOF
+
+cat > "$ROOT/docker/db/pgbouncer/compose.yaml" <<'EOF'
+services:
   pgbouncer:
     image: pgbouncer
 EOF
 
 # Una segunda capa con compose real, para probar que 'all ps' agrupa más de una
 # y saltea las que no tienen su compose en este fixture (edge/backups/observability).
-cat > "$ROOT/docker/compose.odoo.yaml" <<'EOF'
+mkdir -p "$ROOT/docker/app/odoo"
+cat > "$ROOT/docker/app/odoo/compose.yaml" <<'EOF'
 volumes:
   odoo-data:
 
@@ -41,16 +46,21 @@ EOF
 
 # La capa edge en chico: nginx de larga vida y certbot bajo profiles, que es el
 # par que distingue 'lo que el stack levanta' de 'lo que el stack declara'.
-cat > "$ROOT/docker/compose.proxy.yaml" <<'EOF'
+mkdir -p "$ROOT/docker/edge/nginx" "$ROOT/docker/edge/cloudflared" "$ROOT/docker/edge/certbot"
+cat > "$ROOT/docker/edge/nginx/compose.yaml" <<'EOF'
 services:
   nginx:
     image: nginx
 EOF
 
-cat > "$ROOT/docker/compose.edge.yaml" <<'EOF'
+cat > "$ROOT/docker/edge/cloudflared/compose.yaml" <<'EOF'
 services:
   cloudflared:
     image: cloudflared
+EOF
+
+cat > "$ROOT/docker/edge/certbot/compose.yaml" <<'EOF'
+services:
   certbot:
     image: certbot
     profiles: [cert]

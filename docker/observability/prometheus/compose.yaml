@@ -1,0 +1,31 @@
+volumes:
+  prometheus-data:
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.13.2
+    # Nombre derivado del proyecto: predecible y sin el sufijo -1 del autonaming,
+    # pero sin colisionar si se levanta un segundo stack con otro nombre de proyecto.
+    container_name: ${COMPOSE_PROJECT_NAME}-prometheus
+    # Red edge además de observability: scrapea cloudflared por nombre.
+    networks:
+      - observability
+      - edge
+    volumes:
+      - prometheus-data:/prometheus
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+    # --- Techos y receptor de push ---
+    # Techo por tiempo Y por tamaño: el segundo es el fusible si la cardinalidad supera lo estimado.
+    # Repetir los dos flags de path es obligatorio: pasar command: pisa los defaults de la imagen.
+
+    command:
+      - --config.file=/etc/prometheus/prometheus.yaml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=125d
+      - --storage.tsdb.retention.size=20GB
+      - --web.enable-remote-write-receiver
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090/-/healthy"]
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: "1.0"

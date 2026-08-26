@@ -37,7 +37,7 @@ El orden no es negociable: cada bloque depende de que el anterior haya cerrado, 
 | Zona de Cloudflare + token de API | [crear-zona-cloudflare](crear-zona-cloudflare.md) | `secrets/cloudflare_api_token` |
 | Tunnel de Cloudflare | [crear-tunnel-cloudflare](crear-tunnel-cloudflare.md) | `secrets/cloudflare_tunnel_token` |
 | ZeptoMail | [configurar-zeptomail](configurar-zeptomail.md) | `secrets/zeptomail_smtp_password` · `SMTP_USER` · `ALERT_EMAIL_FROM` |
-| Bucket de R2 + credenciales | [crear-bucket-r2](crear-bucket-r2.md) | `secrets/pgbackrest_r2_credentials` · `secrets/restic_r2_credentials` · `secrets/restic_password` · `R2_ENDPOINT` · `R2_BUCKET` |
+| Bucket de R2 + credenciales | [crear-bucket-r2](crear-bucket-r2.md) | `secrets/pgbackrest_r2_credentials` · `secrets/restic_r2_credentials` · `secrets/restic_password` · el bucket/endpoint van a `docker/db/postgres/pgbackrest.conf` (bloque 4) y `docker/backups/r2.env` (bloque 7), no a `.env` |
 | Token de git de solo lectura | [crear-token-git-lectura](crear-token-git-lectura.md) | `~/.git-credentials` del servidor |
 | Docker Engine y Compose, habilitados al arranque | [configurar-docker-host](configurar-docker-host.md) | El host listo para correr el stack |
 
@@ -51,7 +51,7 @@ Dos cosas que parecen prerrequisitos y no lo son, porque necesitan el repositori
 
 **Objetivo** — el repo clonado en el último release, con `.env` y los 11 secrets cargados y validados, y el daemon de Docker ya rotando logs. Nada levantado todavía.
 
-**A mano** — `.env.prod.example` deja nueve claves vacías y explica cada una donde se edita; no hay una segunda lista acá. Cuatro salen directo de los prerrequisitos (`R2_ENDPOINT`, `R2_BUCKET`, `SMTP_USER`, `ALERT_EMAIL_FROM`) y las otras cinco se completan con lo que devuelve el segundo comando. Dos trampas: `LOCAL_IP` tiene que ser una IP real de una interfaz existente —`dnsmasq` bindea exactamente ahí y si no, queda `unhealthy`— y `SMTP_HOST` es la que más se olvida, porque ningún prerrequisito la deja anotada. Ninguna puede quedar vacía: Compose interpola una variable vacía sin fallar y el síntoma aparece capas después.
+**A mano** — `.env.prod.example` deja seis claves vacías y explica cada una donde se edita; no hay una segunda lista acá. Dos salen directo de los prerrequisitos (`SMTP_USER`, `ALERT_EMAIL_FROM`) y las otras cuatro se completan con lo que devuelve el segundo comando. Dos trampas: `LOCAL_IP` tiene que ser una IP real de una interfaz existente —`dnsmasq` bindea exactamente ahí y si no, queda `unhealthy`— y `SMTP_HOST` es la que más se olvida, porque ningún prerrequisito la deja anotada. Ninguna puede quedar vacía: Compose interpola una variable vacía sin fallar y el síntoma aparece capas después. El bucket y el endpoint de R2 **no** van acá: se editan directo en `pgbackrest.conf` (bloque 4) y `r2.env` (bloque 7), cada uno bootstrapeado desde su `.example`.
 
 `secrets-init` deja **11 archivos**: 5 generados que no se tocan nunca y 6 con el marcador `CAMBIAR`, que se llenan con los valores de los prerrequisitos. Tres detalles de formato:
 
@@ -112,7 +112,16 @@ Cubre versión de Compose, arranque automático de Docker, la rotación de logs 
 
 **Objetivo** — el certificado emitido, nginx sirviendo con él, el Tunnel conectado y `dnsmasq` resolviendo el hostname a la IP local para la LAN.
 
-**A mano** — ninguno: el Tunnel y su Public Hostname ya quedaron configurados en [crear-tunnel-cloudflare](crear-tunnel-cloudflare.md).
+**A mano** — el Tunnel y su Public Hostname ya quedaron configurados en [crear-tunnel-cloudflare](crear-tunnel-cloudflare.md). Falta bootstrapear los archivos reales de nginx y dnsmasq (gitignoreados, no vienen del checkout):
+
+```bash
+cp docker/edge/nginx/00-http.conf.example docker/edge/nginx/00-http.conf
+cp docker/edge/nginx/odoo.locations.example docker/edge/nginx/odoo.locations
+cp docker/edge/nginx/server-tls.conf.example docker/edge/nginx/server-tls.conf
+cp docker/edge/dnsmasq/dnsmasq.conf.example docker/edge/dnsmasq/dnsmasq.conf
+```
+
+Reemplazá `TU_DOMINIO` por tu hostname público en `server-tls.conf` (las cuatro apariciones) y en `dnsmasq.conf`, y `TU_IP_LOCAL` por la IP de este servidor en la LAN — los mismos valores que `PUBLIC_HOSTNAME`/`LOCAL_IP` en tu `.env`. `00-http.conf` y `odoo.locations` ya traen valores razonables (rate-limit, CIDR de Docker); tocalos solo si tu LAN cae en `172.16.0.0/12`.
 
 ```bash
 make cert-issue && make edge-up
@@ -138,7 +147,14 @@ nginx no publica ninguna UI: su estado se lee del log (JSON, `make edge-logs`) y
 
 **Objetivo** — la base corriendo y **ya respaldándose**, antes de que exista un solo dato adentro.
 
-**A mano** — ninguno.
+**A mano** — bootstrapeá `postgresql.conf` y `pgbackrest.conf` (gitignoreados):
+
+```bash
+cp docker/db/postgres/postgresql.conf.example docker/db/postgres/postgresql.conf
+cp docker/db/postgres/pgbackrest.conf.example docker/db/postgres/pgbackrest.conf
+```
+
+Reemplazá `TU_STANZA` (el nombre de la sección — estable, cambiarlo deja huérfanos los backups viejos), `TU_BUCKET` y `TU_ENDPOINT` con los valores reales de R2. `postgresql.conf` no necesita edición, solo bootstrap: ya trae `archive_mode = on`, el default de producción.
 
 ```bash
 make db-up && make stanza-init
@@ -188,7 +204,15 @@ Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, tod
 
 **Objetivo** — Odoo sirviendo por el hostname público con certificado propio. Acá se cierra el 502 que dejó el bloque 3.
 
-**A mano** — **la contraseña de `admin`, apenas el sitio responda y antes que cualquier otra cosa.** El `-i base` del primer arranque la deja en `admin`, y para ese momento el sitio ya está publicado en internet por el Tunnel. Entrá a `https://$PUBLIC_HOSTNAME` → Ajustes → Usuarios → `admin` → cambiar contraseña. Es distinta del **master password** (`admin_passwd`), que se gestiona vía `secrets:` y no se toca acá.
+**A mano** — bootstrapeá `odoo.conf` (gitignoreado) antes de levantar:
+
+```bash
+cp docker/app/odoo/odoo.conf.example docker/app/odoo/odoo.conf
+```
+
+Reemplazá `TU_SMTP_HOST`/`TU_SMTP_PORT`/`TU_SMTP_USER` con los mismos valores que `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER` en tu `.env`. No interpola: si dejás el placeholder, Odoo intenta mandar por un host que no existe en vez de quedar sin SMTP.
+
+**Y la contraseña de `admin`, apenas el sitio responda y antes que cualquier otra cosa.** El `-i base` del primer arranque la deja en `admin`, y para ese momento el sitio ya está publicado en internet por el Tunnel. Entrá a `https://$PUBLIC_HOSTNAME` → Ajustes → Usuarios → `admin` → cambiar contraseña. Es distinta del **master password** (`admin_passwd`), que se gestiona vía `secrets:` y no se toca acá.
 
 ```bash
 make odoo-up && make odoo-logs
@@ -212,7 +236,13 @@ Cubre el servicio `healthy`, los logs sin errores de permisos, Odoo respondiendo
 
 **Objetivo** — las dos mitades del backup corriendo, probadas una vez de punta a punta, y avisando por mail si fallan.
 
-**A mano** — ninguno. Como en el bloque 4, lo único propio es el orden: va después del 6 porque su verificación exige un snapshot, y un snapshot exige que exista un filestore.
+**A mano** — bootstrapeá `r2.env` (gitignoreado):
+
+```bash
+cp docker/backups/r2.env.example docker/backups/r2.env
+```
+
+Reemplazá `TU_ENDPOINT` y `TU_BUCKET` con los valores reales de R2 — puede ser el mismo bucket que usa pgBackRest, con otro prefijo, o uno propio. Lo demás, como en el bloque 4: lo único propio es el orden, va después del 6 porque su verificación exige un snapshot, y un snapshot exige que exista un filestore.
 
 ```bash
 make backups-up && make backup-init
@@ -254,7 +284,15 @@ sudo make notify-test
 
 **Objetivo** — métricas de host, contenedores y base, logs centralizados, y las siete alertas vivas **y llegando por mail**.
 
-**A mano** — la prueba de entrega de las alertas, en la UI de Grafana. Va al final, y el acceso está en el apéndice porque el `3001` solo escucha en loopback.
+**A mano** — bootstrapeá `grafana.ini` y `contact-points.yaml` (gitignoreados), y la prueba de entrega de las alertas en la UI de Grafana. El acceso está en el apéndice porque el `3001` solo escucha en loopback.
+
+```bash
+cp docker/observability/grafana/grafana.ini.example docker/observability/grafana/grafana.ini
+cp docker/observability/grafana/provisioning/alerting/contact-points.yaml.example \
+   docker/observability/grafana/provisioning/alerting/contact-points.yaml
+```
+
+Reemplazá `TU_SMTP_HOST`/`TU_SMTP_PORT`/`TU_SMTP_USER`/`TU_EMAIL_ALERTA_FROM` en `grafana.ini` y `TU_EMAIL_ALERTA_TO` en `contact-points.yaml` — los mismos valores que `SMTP_*`/`ALERT_EMAIL_*` en tu `.env`. Ninguno de los dos interpola desde `.env`: si dejás el placeholder, Grafana lo rechaza al arrancar (`from_address` inválido) o manda el correo a una dirección que no existe.
 
 ```bash
 make monitoring-role && make observability-up
@@ -331,7 +369,7 @@ SRV_ADMIN='ip-de-administracion-del-servidor'
 ssh -N -L 3001:127.0.0.1:3001 "<usuario>@$SRV_ADMIN"
 ```
 
-Con el túnel abierto, `http://localhost:3001`. Usuario `admin`, contraseña en `secrets/grafana_admin_password`. Adentro tienen que estar los **5 dashboards** y las **7 reglas de alerta**, provisionadas y de solo lectura. **Y que las alertas lleguen:** Alertas → Contact points → `email-operador` → **Test**, y el mail tiene que llegar a `ALERT_EMAIL_TO`. Si no llega, revisá en orden: saldo de créditos, remitente verificado, y `docker compose logs grafana | grep -i smtp`. Si el `ssh` responde `Permission denied (publickey)`, mirá a qué IP fue: un `127.0.0.1` ahí significa que lo estás corriendo en el servidor contra sí mismo.
+Con el túnel abierto, `http://localhost:3001`. Usuario `admin`, contraseña en `secrets/grafana_admin_password`. Adentro tienen que estar los **5 dashboards** y las **7 reglas de alerta**, provisionadas y de solo lectura. **Y que las alertas lleguen:** Alertas → Contact points → `email-operador` → **Test**, y el mail tiene que llegar a la dirección de `contact-points.yaml` (la misma que `ALERT_EMAIL_TO`). Si no llega, revisá en orden: saldo de créditos, remitente verificado, y `docker compose logs grafana | grep -i smtp`. Si el `ssh` responde `Permission denied (publickey)`, mirá a qué IP fue: un `127.0.0.1` ahí significa que lo estás corriendo en el servidor contra sí mismo.
 
 El rate-limit del login se prueba una sola vez, en el servidor, y va acá porque deja el login en 503 unos segundos:
 

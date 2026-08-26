@@ -153,49 +153,45 @@ infrastructure-odoo/
 ├── PRINCIPLES.md
 ├── README.md
 │
-├── config/
-│   ├── nginx/                                                         ← reemplaza traefik/
-│   │   ├── nginx.conf
-│   │   └── templates/
-│   │       ├── 00-upstreams.conf.template
-│   │       ├── 10-odoo.conf.template
-│   │       └── 20-log-format.conf.template
-│   ├── certbot/cli.ini                                                ← nuevo
-│   ├── odoo/{odoo.conf, addons.txt}
-│   ├── postgres/postgresql.conf
-│   ├── pgbouncer/pgbouncer.ini
-│   ├── pgbackrest/pgbackrest.conf
-│   ├── prometheus/prometheus.yaml
-│   ├── loki/loki.yaml
-│   ├── alloy/config.alloy
-│   ├── grafana/
-│   │   ├── grafana.ini
-│   │   ├── dashboards/*.json
-│   │   └── provisioning/{alerting,dashboards,datasources,plugins}/
-│   ├── docker/daemon.json
-│   └── systemd/
-│       ├── backup-daily.{service,timer}
-│       ├── backup-monthly.{service,timer}
-│       ├── notify@.service
-│       └── cert-renew.{service,timer}                                 ← nuevo
-│
 ├── docker/
 │   ├── compose.yaml                   entrypoint · producción
-│   ├── compose.staging.yaml           entrypoint · staging               ← nuevo
-│   ├── compose.dev.yaml               entrypoint · development           ← nuevo
+│   ├── compose.staging.yaml           entrypoint · staging
+│   ├── compose.dev.yaml               entrypoint · development
 │   │
-│   ├── compose.dns.yaml               capa · dnsmasq                     ← extraído de edge
-│   ├── compose.proxy.yaml             capa · nginx                       ← extraído de edge
-│   ├── compose.edge.yaml              capa · cloudflared + certbot
-│   ├── compose.db.yaml                capa · postgres + pgbouncer
-│   ├── compose.odoo.yaml              capa · odoo
-│   ├── compose.backups.yaml           capa · restic
-│   ├── compose.restore.yaml           capa · restore-db + restore-files  ← extraído de backups
-│   ├── compose.observability.yaml     capa · prometheus + loki + grafana + alloy
-│   │
-│   ├── dnsmasq/Dockerfile
-│   ├── odoo/{Dockerfile, entrypoint.sh}
-│   └── postgres/Dockerfile
+│   ├── edge/
+│   │   ├── dnsmasq/{compose.yaml, Dockerfile}
+│   │   ├── nginx/{compose.yaml, 00-http.conf.template, odoo.locations.template,
+│   │   │          server-tls.conf.template, server-plain.conf.template}
+│   │   ├── cloudflared/compose.yaml
+│   │   └── certbot/{compose.yaml, wrapper.sh}
+│   ├── db/
+│   │   ├── compose.yaml                capa · postgres + pgbouncer
+│   │   ├── postgres/{compose.yaml, Dockerfile, postgresql.conf, pgbackrest.conf}
+│   │   └── pgbouncer/{compose.yaml, pgbouncer.ini}
+│   ├── app/
+│   │   ├── compose.yaml                capa · odoo
+│   │   └── odoo/{compose.yaml, Dockerfile, entrypoint.sh, odoo.conf}
+│   ├── backups/
+│   │   ├── compose.yaml                capa · restic
+│   │   └── backup/compose.yaml
+│   ├── restore/
+│   │   ├── compose.yaml                capa · restore-db + restore-files
+│   │   ├── restore-db/compose.yaml
+│   │   └── restore-files/compose.yaml
+│   ├── observability/
+│   │   ├── compose.yaml                capa · prometheus + loki + grafana + alloy
+│   │   ├── prometheus/{compose.yaml, prometheus.yaml}
+│   │   ├── loki/{compose.yaml, loki.yaml}
+│   │   ├── alloy/{compose.yaml, config.alloy}
+│   │   └── grafana/{compose.yaml, grafana.ini, dashboards/*.json,
+│   │                provisioning/{alerting,dashboards,datasources,plugins}/}
+│   └── host/
+│       ├── daemon.json
+│       └── systemd/
+│           ├── backup-daily.{service,timer}
+│           ├── backup-monthly.{service,timer}
+│           ├── notify@.service
+│           └── cert-renew.{service,timer}
 │
 ├── docs/
 │   ├── architecture.md · roadmap.md · stacks.md

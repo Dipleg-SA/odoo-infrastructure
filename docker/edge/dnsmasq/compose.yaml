@@ -1,0 +1,35 @@
+# --- DNS local ---
+# Resuelve el hostname público a la IP de la LAN, para que los equipos de la red
+# no salgan a internet para llegar a un servidor que tienen al lado.
+#
+# EXCLUSIVA DE PRODUCCIÓN. Corre en network_mode: host sobre el 53, así que es
+# el único servicio del stack que no admite una segunda instancia de ninguna
+# forma. Un entorno de prueba resuelve su hostname por el DNS público.
+#
+# No alcanza con levantarlo: quién resuelve para la LAN lo decide el DHCP de la
+# red, no este archivo. Sin ese paso dnsmasq queda sano y sin consultarlo nadie.
+services:
+  dnsmasq:
+    build: .
+    # Tag por proyecto: el nombre de imagen es global al daemon, así que un tag
+    # fijo deja que el build de un stack pise la imagen que corre el otro.
+    image: local/dnsmasq:${COMPOSE_PROJECT_NAME}
+    container_name: ${COMPOSE_PROJECT_NAME}-dnsmasq
+    # network_mode: host — bindea directo en ${LOCAL_IP}:53 para evitar el
+    # conflicto con systemd-resolved y el NAT/ufw del publish de Docker.
+    network_mode: host
+    # --- Config real, no flags ---
+    # dnsmasq.conf es gitignoreado, bootstrapeado con cp desde su .example:
+    # LOCAL_IP y PUBLIC_HOSTNAME se editan a mano ahí (como listen-address/
+    # address), no llegan por variable.
+
+    command: ["--conf-file=/etc/dnsmasq.conf"]
+    volumes:
+      - ./dnsmasq.conf:/etc/dnsmasq.conf:ro
+    # Corre como root porque el 53 es puerto privilegiado y usa el stack de red
+    # del host; dnsmasq baja de privilegios por su cuenta después de bindear.
+    healthcheck:
+      test: ["CMD-SHELL", "nslookup ${PUBLIC_HOSTNAME} ${LOCAL_IP} | grep -q ${LOCAL_IP}"]
+    restart: unless-stopped
+    mem_limit: 32m
+    cpus: "0.10"

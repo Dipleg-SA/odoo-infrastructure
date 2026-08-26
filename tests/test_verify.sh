@@ -194,7 +194,7 @@ DAEMON_JSON="$STUB_DIR/daemon.json"; export DAEMON_JSON
 # ausente y 1 sin match, y el llamador solo lo usa como condición de un if.
 veredicto() { if rotacion_aplicada; then echo pasa; else echo falla; fi; }
 
-cp config/docker/daemon.json "$DAEMON_JSON"
+cp docker/host/daemon.json "$DAEMON_JSON"
 igual "el archivo del repo pasa"           "pasa"  "$(veredicto)"
 
 # El caso caro: el daemon por defecto usa json-file igual, pero sin cap. Verlo

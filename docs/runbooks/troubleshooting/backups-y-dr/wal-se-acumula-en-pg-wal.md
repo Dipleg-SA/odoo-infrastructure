@@ -14,4 +14,4 @@ Los backups full/diff pueden seguir aparentando éxito mientras esto pasa — po
 
 ## Fix
 
-Causas típicas: credencial de R2 vencida o mal rotada (ver [rotar-credenciales-r2](../../credenciales/rotar-credenciales-r2.md)), `PGBACKREST_STANZA` vacío en `.env`, o el bucket inalcanzable.
+Causas típicas: credencial de R2 vencida o mal rotada (ver [rotar-credenciales-r2](../../credenciales/rotar-credenciales-r2.md)), `docker/db/postgres/pgbackrest.conf` sin sección de stanza, o el bucket inalcanzable.

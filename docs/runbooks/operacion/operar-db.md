@@ -2,7 +2,7 @@
 
 ## Cuándo se usa
 
-Necesitás subir, bajar, reiniciar o inspeccionar `postgres` + `pgbouncer` sin tocar el resto del stack — por ejemplo, para aplicar un cambio en `config/postgres/postgresql.conf`, o antes de un restore (ver [restore-pitr](../backup-restore/restore-pitr.md), que apaga esta capa con un timeout explícito antes de tocarla).
+Necesitás subir, bajar, reiniciar o inspeccionar `postgres` + `pgbouncer` sin tocar el resto del stack — por ejemplo, para aplicar un cambio en `docker/db/postgres/postgresql.conf`, o antes de un restore (ver [restore-pitr](../backup-restore/restore-pitr.md), que apaga esta capa con un timeout explícito antes de tocarla).
 
 ## Objetivo
 
@@ -34,7 +34,7 @@ El `-t 60` no es cosmético: con Odoo y PgBouncer conectados, Postgres no cierra
 make db-verify
 ```
 
-Cubre los dos servicios `healthy`, `archive_mode` y `archive_command` según lo que este stack espera (`PG_ARCHIVE_MODE`), la stanza cifrada en R2, que no haya WAL pendiente de archivar, los logs sin errores de permisos, que ningún puerto esté publicado, y la autenticación real **a través de PgBouncer** — no alcanza con que el puerto responda.
+Cubre los dos servicios `healthy`, `archive_mode` y `archive_command` según lo que este stack espera, la stanza cifrada en R2, que no haya WAL pendiente de archivar, los logs sin errores de permisos, que ningún puerto esté publicado, y la autenticación real **a través de PgBouncer** — no alcanza con que el puerto responda.
 
 ---
 

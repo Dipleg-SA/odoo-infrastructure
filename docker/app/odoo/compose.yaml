@@ -1,0 +1,47 @@
+volumes:
+  odoo-data:
+
+services:
+  odoo:
+    build:
+      context: .
+      # El requirements.txt lo escribe pydeps-sync desde los manifiestos y no se
+      # versiona: vive con los addons, fuera del contexto de build.
+      additional_contexts:
+        addons: ../../../addons
+    # Tag por proyecto: el nombre de imagen es global al daemon, así que un tag
+    # fijo deja que el build de un stack pise la imagen que corre el otro.
+    image: local/odoo:${COMPOSE_PROJECT_NAME}
+    # Nombre derivado del proyecto: predecible y sin el sufijo -1 del autonaming,
+    # pero sin colisionar si se levanta un segundo stack con otro nombre de proyecto.
+    container_name: ${COMPOSE_PROJECT_NAME}-odoo
+    networks:
+      - app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+    environment:
+      HOST: pgbouncer
+      PORT: 6432
+      USER: odoo
+      PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+      - odoo_admin_password
+      - zeptomail_smtp_password
+    volumes:
+      - odoo-data:/var/lib/odoo
+      - ./odoo.conf:/etc/odoo/odoo.conf:ro
+      # Un árbol por checkout: qué rama se materializa lo dice ADDONS_BRANCH.
+      - ../../../addons:/mnt/extra-addons:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8069/web/health?db_server_status=1"]
+      start_period: 90s
+    restart: unless-stopped
+    # --- Presupuesto de memoria ---
+    # Fijo, no por deployment: nunca se tocó en ningún .env.*.example real. Un
+    # servidor chico o una laptop que necesiten menos, se edita acá directo.
+    mem_limit: 5g
+    cpus: "4.0"

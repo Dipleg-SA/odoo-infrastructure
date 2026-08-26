@@ -280,17 +280,17 @@ v_host() {
   else ok ".env sin claves vacías"; fi
 
   # --- Destinatario de las alertas ---
-  # Grafana lo interpola al leer el contact point y sin dirección el provisioning
-  # aborta: no arranca, sale con 1 y el restart lo reintenta para siempre. Se
-  # chequea acá, antes de levantar capa alguna, porque el de arriba solo ve la
-  # clave presente y vacía, y la que rompe igual es la que no está.
+  # No es lo que usa Grafana —contact-points.yaml ya trae la dirección literal,
+  # bootstrapeada aparte— sino lo que necesita failure-notify.sh, que sí lee
+  # .env. Se chequea acá, antes de levantar capa alguna, porque el de arriba
+  # solo ve la clave presente y vacía, y la que rompe igual es la que no está.
 
-  if ! declarado grafana; then
-    omitir "ALERT_EMAIL_TO declarado" "sin Grafana en este stack"
+  if ! declarado backup; then
+    omitir "ALERT_EMAIL_TO declarado" "sin capa de backups en este stack"
   elif [ -n "${ALERT_EMAIL_TO:-}" ]; then
     ok "ALERT_EMAIL_TO declarado ($ALERT_EMAIL_TO)"
   else
-    bad "ALERT_EMAIL_TO declarado" "falta o está vacío en .env — Grafana no arranca: el provisioning de alerting aborta"
+    bad "ALERT_EMAIL_TO declarado" "falta o está vacío en .env — failure-notify.sh aborta sin destinatario"
   fi
 
   # --- Identidad del stack ---
@@ -363,13 +363,14 @@ v_edge() {
       "no verificable desde el servidor — ver el apéndice de docs/runbooks/entorno/levantar-produccion.md, en un equipo de la LAN"
   fi
 
-  # --- Config renderizada ---
-  # envsubst corre al arrancar: si el filtro o la variable fallan, nginx levanta
-  # igual con el literal ${PUBLIC_HOSTNAME} adentro y sirve un server_name inútil.
+  # --- Config real, no plantilla ---
+  # server-tls.conf es un archivo editado a mano: si quedó el placeholder de
+  # server-tls.conf.example sin reemplazar, nginx levanta igual con un
+  # server_name inútil.
 
   if corriendo nginx; then
-    vacio "sin variables sin sustituir en la config" \
-      docker compose exec -T nginx grep -rl '\${' /etc/nginx/conf.d/
+    vacio "sin el placeholder de server-tls.conf.example sin reemplazar" \
+      docker compose exec -T nginx grep -rl 'TU_DOMINIO' /etc/nginx/conf.d/
     if modo_plain; then
       omitir "server_name es el hostname público" "modo plain: el server_name es el catch-all, no hay hostname que servir"
     elif [ -n "$PUBLIC_HOSTNAME" ]; then
@@ -379,7 +380,7 @@ v_edge() {
       omitir "server_name es el hostname público" "falta PUBLIC_HOSTNAME en .env"
     fi
   else
-    omitir "sin variables sin sustituir en la config" "$(motivo nginx)"
+    omitir "sin el placeholder de server-tls.conf.example sin reemplazar" "$(motivo nginx)"
     omitir "server_name es el hostname público" "$(motivo nginx)"
   fi
 
@@ -388,9 +389,9 @@ v_edge() {
   # y devuelve 502 en cuanto el contenedor se recrea, hasta que alguien lo recargue.
 
   vacio "proxy_pass va por variable, no por nombre fijo" \
-    grep -nE 'proxy_pass +http://odoo' config/nginx/odoo.locations.template
+    grep -nE 'proxy_pass +http://odoo' docker/edge/nginx/odoo.locations
   expect "resolver de Docker declarado" "127.0.0.11" \
-    grep -h resolver config/nginx/00-http.conf.template
+    grep -h resolver docker/edge/nginx/00-http.conf
 
   # --- Certificado ---
   # Lo emite certbot, no nginx: si falta, nginx ni siquiera arranca. Se avisa
@@ -441,7 +442,7 @@ v_edge() {
 
   # --- Binds ---
   # Nivel 3 (LAN): el acceso local esquiva el túnel y necesita llegar al proxy. La
-  # dirección esperada es la misma que arma el ports: de docker/compose.proxy.yaml.
+  # dirección esperada es la misma que arma el ports: de docker/edge/nginx/compose.yaml.
 
   # El esperado no se declara acá: lo lee bind_es de la composición resuelta, que es
   # la única que sabe qué cadena de defaults aplicó el entrypoint de ESTE stack.
@@ -450,10 +451,10 @@ v_edge() {
   bind_es nginx 443
 
   # --- Bind caído al default ---
-  # El loopback de docker/compose.proxy.yaml es una red de contención, no una configuración:
+  # El loopback de docker/edge/nginx/compose.yaml es una red de contención, no una configuración:
   # sin LOCAL_IP el proxy deja de atender la LAN y el esperado cae con él, en verde.
 
-  if bind_declarado nginx 443 >/dev/null && [ -z "${HTTP_BIND:-}${HTTPS_BIND:-}${LOCAL_IP:-}" ]; then
+  if bind_declarado nginx 443 >/dev/null && [ -z "${LOCAL_IP:-}" ]; then
     bad "LOCAL_IP declarada en .env" \
         "falta y este stack publica el 443 — nginx cae al loopback y no atiende la LAN"
   fi
@@ -532,22 +533,28 @@ v_db() {
   # archive_command llega de verdad a R2 y no solo parsea.
 
   # --- Stanza y opciones del cluster ---
-  # pgbackrest.conf no trae sección de stanza: el nombre y pg1-path llegan por
-  # entorno. Sin pg1-path resuelto el archivado muere sin que la config parezca rota,
-  # y `help` es la única forma de leer el valor efectivo sin tocar el repositorio.
+  # pgbackrest.conf trae una sola sección de stanza: pgBackRest la autodetecta
+  # sin --stanza (verificado contra el binario real). Sin pg1-path resuelto el
+  # archivado muere sin que la config parezca rota, y `help` es la única forma
+  # de leer el valor efectivo sin tocar el repositorio.
 
   # Producción archiva y restaura, staging solo restaura, development ninguna de las
   # dos: sin pgBackRest en juego, la stanza no es un dato que falte.
 
-  local stanza="${PGBACKREST_STANZA:-}"
+  local stanza pg1path
+  stanza=$(sed -n 's/^\[\(.*\)\]$/\1/p' docker/db/postgres/pgbackrest.conf | grep -v '^global$' | head -1)
   if ! declarado backup && ! declarado restore-db; then
-    omitir "stanza declarada en .env" "este stack no archiva ni restaura"
+    omitir "stanza declarada en pgbackrest.conf" "este stack no archiva ni restaura"
   elif [ -z "$stanza" ]; then
-    bad "stanza declarada en .env" "PGBACKREST_STANZA vacío"
+    bad "stanza declarada en pgbackrest.conf" "no se encontró ninguna sección además de [global]"
   else
-    ok "stanza '$stanza' declarada en .env"
-    expect "pg1-path resuelto por entorno" "current: /var/lib/postgresql/data" \
-      docker compose exec -T -u postgres postgres pgbackrest help archive-push pg1-path
+    ok "stanza '$stanza' declarada en pgbackrest.conf"
+    pg1path=$(sed -n 's/^pg1-path[[:space:]]*=[[:space:]]*\(.*\)/\1/p' docker/db/postgres/pgbackrest.conf)
+    if [ "$pg1path" = "/var/lib/postgresql/data" ]; then
+      ok "pg1-path de la stanza coincide con el volumen"
+    else
+      bad "pg1-path de la stanza coincide con el volumen" "esperaba /var/lib/postgresql/data, es '$pg1path'"
+    fi
   fi
 
   # --- Coherencia de las dos retenciones ---
@@ -559,10 +566,10 @@ v_db() {
   if ! declarado backup; then
     omitir "retención de la base cubre la del filestore" "este stack no escribe backups"
   else
-    dia="${RESTIC_KEEP_DAILY:-7}"
-    sem="${RESTIC_KEEP_WEEKLY:-4}"
-    mes="${RESTIC_KEEP_MONTHLY:-3}"
-    ret="${BACKUP_RETENTION_DAYS:-125}"
+    dia=$(sed -n 's/^KEEP_DAILY=\([0-9]*\)/\1/p' scripts/backup.sh)
+    sem=$(sed -n 's/^KEEP_WEEKLY=\([0-9]*\)/\1/p' scripts/backup.sh)
+    mes=$(sed -n 's/^KEEP_MONTHLY=\([0-9]*\)/\1/p' scripts/backup.sh)
+    ret=$(sed -n 's/^repo1-retention-full[[:space:]]*=[[:space:]]*\([0-9]*\)/\1/p' docker/db/postgres/pgbackrest.conf)
     cobertura=$(( dia + sem * 7 + mes * 30 ))
     if [ "$ret" -ge "$cobertura" ]; then
       ok "retención de la base ($ret d) cubre la del filestore ($cobertura d)"
@@ -577,8 +584,8 @@ v_db() {
 
   local pmax pcpus
   pmax=$(sed -n 's/^process-max[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' \
-         config/pgbackrest/pgbackrest.conf | head -1)
-  pcpus=$(sed -n '/^  postgres:/,/^  [a-z]/p' docker/compose.db.yaml | sed -n 's/.*cpus: "\([0-9.]*\)".*/\1/p' | head -1)
+         docker/db/postgres/pgbackrest.conf | head -1)
+  pcpus=$(sed -n '/^  postgres:/,/^  [a-z]/p' docker/db/postgres/compose.yaml | sed -n 's/.*cpus: "\([0-9.]*\)".*/\1/p' | head -1)
   if ! declarado backup && ! declarado restore-db; then
     omitir "process-max dentro de los cpus de postgres" "este stack no corre pgBackRest"
   elif [ -z "$pmax" ] || [ -z "$pcpus" ]; then
@@ -643,6 +650,16 @@ v_odoo() {
 
   log_limpio "sin errores de permisos" 'permission denied' "" odoo
 
+  # --- Placeholder de odoo.conf sin reemplazar ---
+  # smtp_server ya no llega por .env: si quedó el placeholder de su .example,
+  # Odoo intenta mandar por un host que no existe en vez de quedar sin SMTP.
+
+  if grep -q 'TU_SMTP_HOST' docker/app/odoo/odoo.conf 2>/dev/null; then
+    bad "odoo.conf sin el placeholder de su .example" "sigue TU_SMTP_HOST sin reemplazar"
+  else
+    ok "odoo.conf sin el placeholder de su .example"
+  fi
+
   expect "odoo sirve en :8069" "200" docker compose exec -T odoo \
     curl -sS -o /dev/null -w '%{http_code}' http://localhost:8069/web/login
 
@@ -687,7 +704,7 @@ v_odoo() {
   # lejos de la causa — el bus deja de actualizar en tiempo real, por ejemplo.
 
   local swm mod hallado
-  swm=$(sed -n 's/^server_wide_modules[[:space:]]*=[[:space:]]*\(.*\)/\1/p' config/odoo/odoo.conf | tr -d ' ' | tr ',' '\n')
+  swm=$(sed -n 's/^server_wide_modules[[:space:]]*=[[:space:]]*\(.*\)/\1/p' docker/app/odoo/odoo.conf | tr -d ' ' | tr ',' '\n')
   while read -r mod; do
     [ -n "$mod" ] || continue
     case "$mod" in base|web) continue ;; esac
@@ -706,7 +723,7 @@ v_odoo() {
   # 18.0 no lo es. La versión vive solo en el Dockerfile; ADDONS_BRANCH la hereda.
 
   local ver_img rama
-  ver_img=$(sed -n 's/^FROM odoo:\([0-9.]*\).*/\1/p' docker/odoo/Dockerfile | head -1)
+  ver_img=$(sed -n 's/^FROM odoo:\([0-9.]*\).*/\1/p' docker/app/odoo/Dockerfile | head -1)
   rama="${ADDONS_BRANCH:-$ver_img}"
   if [ -z "$ver_img" ]; then
     aviso "ADDONS_BRANCH coherente con la imagen" "no se pudo leer el tag del Dockerfile"
@@ -732,7 +749,7 @@ v_odoo() {
 
   local cats_sync cats_path
   cats_sync=$(sed -n 's/^[[:space:]]*\([a-z|-]*\)) return 0 ;;/\1/p' scripts/addons.sh | tr '|' '\n' | sort | tr '\n' ' ')
-  cats_path=$(sed -n 's/^for category in \(.*\); do/\1/p' docker/odoo/entrypoint.sh | tr ' ' '\n' | sort | tr '\n' ' ')
+  cats_path=$(sed -n 's/^for category in \(.*\); do/\1/p' docker/app/odoo/entrypoint.sh | tr ' ' '\n' | sort | tr '\n' ' ')
   if [ -z "$cats_sync" ] || [ -z "$cats_path" ]; then
     aviso "categorías coherentes entre sync y addons_path" "no se pudieron leer las listas"
   elif [ "$cats_sync" = "$cats_path" ]; then
@@ -906,7 +923,7 @@ v_observability() {
   # carga, el stack se ve sano, y esa alerta no dispara nunca.
 
   local esperadas cargadas codigo pass_gf
-  esperadas=$(grep -c '^      - uid:' config/grafana/provisioning/alerting/rules.yaml)
+  esperadas=$(grep -c '^      - uid:' docker/observability/grafana/provisioning/alerting/rules.yaml)
   if [ "${esperadas:-0}" -eq 0 ]; then
     bad "reglas de alerting cargadas" \
         "no se pudo contar ninguna en rules.yaml — el chequeo no verifica nada hasta arreglar el conteo"
@@ -934,14 +951,30 @@ v_observability() {
     fi
   fi
 
+  # --- Placeholders de grafana.ini / contact-points.yaml sin reemplazar ---
+  # Ninguno de los dos interpola desde .env: si quedó el placeholder de su
+  # .example, Grafana arranca igual y manda correo a una dirección que no
+  # existe, o no manda nada, sin avisar.
+
+  if grep -q 'TU_SMTP_HOST\|TU_EMAIL_ALERTA_FROM' docker/observability/grafana/grafana.ini 2>/dev/null; then
+    bad "grafana.ini sin el placeholder de su .example" "sigue TU_SMTP_HOST o TU_EMAIL_ALERTA_FROM sin reemplazar"
+  else
+    ok "grafana.ini sin el placeholder de su .example"
+  fi
+  if grep -q 'TU_EMAIL_ALERTA_TO' docker/observability/grafana/provisioning/alerting/contact-points.yaml 2>/dev/null; then
+    bad "contact-points.yaml sin el placeholder de su .example" "sigue TU_EMAIL_ALERTA_TO sin reemplazar"
+  else
+    ok "contact-points.yaml sin el placeholder de su .example"
+  fi
+
   # --- Los dos umbrales de frescura del backup ---
   # La alerta tiene que avisar ANTES de que el healthcheck marque unhealthy. Los dos
   # derivan de la cadencia del timer y viven en archivos de herramientas distintas.
 
   local alerta maxage
   alerta=$(sed -n 's/.*params: \[\([0-9]\{4,\}\)\].*/\1/p' \
-           config/grafana/provisioning/alerting/rules.yaml | head -1)
-  maxage="${RESTIC_MAX_AGE:-129600}"
+           docker/observability/grafana/provisioning/alerting/rules.yaml | head -1)
+  maxage=$(sed -n 's/.*RESTIC_MAX_AGE: \([0-9]*\)/\1/p' docker/backups/backup/compose.yaml | head -1)
   if [ -z "$alerta" ]; then
     aviso "la alerta de backup avisa antes que el healthcheck" "no se pudo leer el umbral"
   elif [ "$alerta" -le "$maxage" ]; then

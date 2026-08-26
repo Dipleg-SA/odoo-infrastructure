@@ -24,6 +24,21 @@ state/textfile/*
 state/meta/*
 !state/meta/.gitkeep
 
+# --- Config real de nginx, dnsmasq, postgres y grafana ---
+# Archivos con valores de deployment (hostname, IP local, rate-limit, stanza,
+# bucket de R2, archive_mode, SMTP) escritos a mano; solo su .example se versiona.
+
+docker/edge/nginx/00-http.conf
+docker/edge/nginx/odoo.locations
+docker/edge/nginx/server-tls.conf
+docker/edge/dnsmasq/dnsmasq.conf
+docker/db/postgres/pgbackrest.conf
+docker/db/postgres/postgresql.conf
+docker/observability/grafana/grafana.ini
+docker/observability/grafana/provisioning/alerting/contact-points.yaml
+docker/app/odoo/odoo.conf
+docker/backups/r2.env
+
 # --- Clones locales ---
 # Repos externos clonados a mano para pruebas, no versionados.
 
