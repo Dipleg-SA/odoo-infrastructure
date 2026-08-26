@@ -19,6 +19,9 @@ networks:
 
 volumes:
   letsencrypt:
+  # postgres escribe el dump acá, backup lo lee para meterlo en el mismo snapshot
+  # que el filestore. Compartido entre dos stacks, así que lo declara el entorno.
+  dumps:
 
 # --- Solo los secrets de los stacks que lleva ---
 # Compose falla si un `file:` declarado no existe, y declarar de más obliga a
@@ -35,6 +38,10 @@ secrets:
     file: ../secrets/odoo_admin_password
   zeptomail_smtp_password:
     file: ../secrets/zeptomail_smtp_password
+  restic_password:
+    file: ../secrets/restic_password
+  restic_r2_credentials:
+    file: ../secrets/restic_r2_credentials
 
 include:
   - ../stacks/nginx/compose.yaml
@@ -43,3 +50,4 @@ include:
   - ../stacks/dnsmasq/compose.yaml
   - ../stacks/postgres/compose.yaml
   - ../stacks/odoo/compose.yaml
+  - ../stacks/backup/compose.yaml

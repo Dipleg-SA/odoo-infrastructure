@@ -20,6 +20,10 @@ services:
       - postgres_password
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Donde pg_dump escribe para que el backup lo meta en el mismo snapshot que
+      # el filestore. Lo declara el entorno: lo comparte con el stack backup, que
+      # lo lee. Un entorno sin backup simplemente no lo declara ni lo monta.
+      - dumps:/dumps
       - ./config/postgresql.conf:/etc/postgresql/postgresql.conf:ro
     command: postgres -c config_file=/etc/postgresql/postgresql.conf
     healthcheck:

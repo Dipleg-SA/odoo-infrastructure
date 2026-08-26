@@ -1,0 +1,13 @@
+[Unit]
+Description=Dispara el backup diario de Odoo
+
+[Timer]
+# La ventana es decisión de cada deployment: editá OnCalendar al instalar. Si la
+# cambiás, ajustá también RESTIC_MAX_AGE, que es cadencia + margen.
+# Persistent: si el servidor estuvo apagado a esa hora, la corrida se ejecuta al
+# arrancar en vez de saltearse en silencio.
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

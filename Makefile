@@ -8,6 +8,8 @@
         db-up db-down db-restart db-logs db-ps db-verify db-nuke \
         postgres-up postgres-down postgres-logs postgres-ps postgres-verify \
         nginx-up nginx-down nginx-logs nginx-ps nginx-verify \
+        backup-up backup-down backup-logs backup-ps backup-verify \
+        backup-run backup-integrity restore \
         odoo-up odoo-down odoo-restart odoo-logs odoo-ps odoo-verify odoo-nuke \
         backups-up backups-down backups-restart backups-logs backups-ps backups-verify backups-nuke \
         observability-up observability-down observability-restart observability-logs observability-ps observability-verify observability-nuke
@@ -206,6 +208,34 @@ nginx-ps: ## Lista el contenedor de nginx
 
 nginx-verify: ## Verifica nginx
 	scripts/verify.sh nginx
+
+backup-up: ## Levanta backup
+	@. scripts/lib/ui.sh; ui_run "backup-up" docker compose up -d backup
+
+backup-down: ## Baja backup
+	@. scripts/lib/ui.sh; ui_run "backup-down" docker compose rm -sf backup
+
+backup-logs: ## Sigue los logs de backup
+	@docker compose logs -f backup
+
+backup-ps: ## Lista el contenedor de backup
+	@docker compose ps backup
+
+backup-verify: ## Verifica backup
+	scripts/verify.sh backup
+
+# --- Respaldos (árbol nuevo) ---
+# El diario respalda y purga; el check verifica integridad del repositorio. No hay
+# 'full': en restic todo snapshot es completo y la retención GFS la hace forget.
+
+backup-run: require-backups ## Corre el backup diario (dump + filestore en un snapshot)
+	stacks/backup/scripts/backup.sh daily
+
+backup-integrity: require-backups ## Verifica la integridad del repositorio (restic check)
+	stacks/backup/scripts/backup.sh check
+
+restore: require-backups ## Restaura filestore y base desde un snapshot — SNAPSHOT=latest
+	stacks/backup/scripts/restore.sh $(or $(SNAPSHOT),latest)
 
 backups-up: ## Levanta la capa backups (restic; pgBackRest vive dentro de postgres)
 	scripts/capa.sh backups up

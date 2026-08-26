@@ -179,8 +179,8 @@ titulo "producción — envs/production.yaml"
 PRODN=$(resuelto env.production --profile cert -f envs/production.yaml)
 
 igual "resuelve sin error" "0" "$(docker compose --env-file tests/fixtures/env.production -f envs/production.yaml config -q >/dev/null 2>&1; echo $?)"
-igual "declara 5 secrets" "5" "$(printf '%s\n' "$PRODN" | contar_secrets)"
-igual "el borde completo, datos y aplicación" "certbot cloudflared nginx odoo postgres " \
+igual "declara 7 secrets" "7" "$(printf '%s\n' "$PRODN" | contar_secrets)"
+igual "el borde completo, datos, aplicación y respaldos" "backup certbot cloudflared nginx odoo postgres " \
   "$(servicios env.production --profile cert -f envs/production.yaml)"
 
 # Es el caso base: sin bloque services:, nginx cae a su default de TLS y publica
@@ -193,16 +193,26 @@ igual "publica en la IP de la LAN, no en loopback" "10.0.0.2 10.0.0.2 " \
 # porque dos declaraciones divergentes del mismo recurso se fusionan en silencio.
 contiene "certbot escribe el volumen del certificado" "letsencrypt" "$(printf '%s\n' "$PRODN" | bloque certbot)"
 
+# --- El dump y el filestore, en el mismo snapshot ---
+# La consistencia deja de ser un procedimiento —respaldar en orden— y pasa a ser
+# una propiedad: postgres escribe el dump en un volumen que backup lee junto al
+# filestore. Si estos dos mounts se separan, el snapshot deja de ser restaurable
+# como unidad y nada más lo avisa.
+
+contiene "postgres escribe el dump en el volumen compartido" "dumps" "$(printf '%s\n' "$PRODN" | bloque postgres)"
+contiene "backup lo lee junto al filestore"                  "dumps" "$(printf '%s\n' "$PRODN" | bloque backup)"
+contiene "y el filestore va rw: el mismo contenedor restaura" "odoo-data" "$(printf '%s\n' "$PRODN" | bloque backup)"
+
 # =====================================================================
 titulo "dnsmasq entra solo si el cliente tiene LAN"
 # =====================================================================
 
 # La única variación por cliente del diseño, y vive en el .env — no en un
 # entrypoint aparte. Sin la clave, un deploy en VPS no levanta un DNS que no usa.
-igual "sin COMPOSE_PROFILES no está" "cloudflared nginx odoo postgres " \
+igual "sin COMPOSE_PROFILES no está" "backup cloudflared nginx odoo postgres " \
   "$(servicios env.production -f envs/production.yaml)"
 
-igual "con COMPOSE_PROFILES=lan sí está" "cloudflared dnsmasq nginx odoo postgres " \
+igual "con COMPOSE_PROFILES=lan sí está" "backup cloudflared dnsmasq nginx odoo postgres " \
   "$(COMPOSE_PROFILES=lan servicios env.production -f envs/production.yaml)"
 
 # =====================================================================

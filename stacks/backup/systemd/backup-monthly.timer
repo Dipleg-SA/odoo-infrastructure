@@ -1,0 +1,12 @@
+[Unit]
+Description=Dispara la verificacion mensual del repositorio de backups
+
+[Timer]
+# El dia 1, antes del diario: si el repositorio esta corrupto conviene saberlo
+# antes de escribirle encima. --read-data-subset lee datos reales, asi que tarda
+# mas que un backup: por eso es mensual y no diario.
+OnCalendar=*-*-01 01:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

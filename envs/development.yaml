@@ -14,6 +14,9 @@ networks:
 
 volumes:
   letsencrypt:
+  # postgres lo monta aunque acá no haya backup que lo lea: el stack es genérico
+  # y es el entorno el que lo recorta. Un volumen vacío no cuesta nada.
+  dumps:
 
 # --- Dos secrets, los dos generados ---
 # secrets-init.sh los saca de openssl: un checkout nuevo no pide ningún valor a mano.
