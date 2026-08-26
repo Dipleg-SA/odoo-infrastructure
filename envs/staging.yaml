@@ -1,0 +1,83 @@
+# Entrypoint de prueba: borde, datos, aplicación y la mitad restauradora de los
+# respaldos. Sin observabilidad —es exclusiva de producción— y sin dnsmasq.
+#
+# Convive con producción en el mismo servidor, y de ahí sale casi todo lo que lo
+# distingue: no publica puertos, no manda correo y no respalda.
+#
+# El nombre del stack NO se declara acá — sale de COMPOSE_PROJECT_NAME en .env,
+# junto a COMPOSE_FILE, igual que en los otros entornos.
+
+networks:
+  edge:
+  app:
+
+volumes:
+  letsencrypt:
+  dumps:
+
+# --- Solo los secrets de los stacks que lleva ---
+# Ocho: Compose falla si un `file:` declarado no existe, y declarar de más obliga
+# a fabricar archivos inertes que secrets-check después exige completar.
+#
+# Los de restic son los MISMOS de producción: prueba lee de ese repositorio, no
+# escribe uno propio. La credencial tiene que ser de solo lectura — ver
+# .env.staging.example.
+
+secrets:
+  cloudflare_api_token:
+    file: ../secrets/cloudflare_api_token
+  cloudflare_tunnel_token:
+    file: ../secrets/cloudflare_tunnel_token
+  postgres_password:
+    file: ../secrets/postgres_password
+  odoo_admin_password:
+    file: ../secrets/odoo_admin_password
+  restic_password:
+    file: ../secrets/restic_password
+  restic_r2_credentials:
+    file: ../secrets/restic_r2_credentials
+
+# dnsmasq NO se incluye, y no alcanza con no activarle el perfil: es el único
+# servicio que no admite una segunda instancia de ninguna forma —corre en
+# network_mode: host sobre el 53— y un .env copiado de producción con
+# COMPOSE_PROFILES=lan lo levantaría. Ausente es la única garantía.
+
+include:
+  - ../stacks/nginx/compose.yaml
+  - ../stacks/certbot/compose.yaml
+  - ../stacks/cloudflared/compose.yaml
+  - ../stacks/postgres/compose.yaml
+  - ../stacks/odoo/compose.yaml
+  - ../stacks/backup/compose.yaml
+
+services:
+  # --- Sin puertos publicados ---
+  # cloudflared llega al proxy por la red edge; el :80 y el :443 de la LAN los tiene producción.
+
+  nginx:
+    ports: !reset []
+
+  # --- Sin correo saliente ---
+  # Se siembra con datos reales de clientes: con SMTP les mandaría correo de verdad.
+  # Forzado acá y no solo en el secret: si dependiera de que el odoo.conf de este
+  # checkout no tenga smtp_server, un checkout clonado del de producción manda.
+
+  odoo:
+    environment:
+      ODOO_DISABLE_SMTP: "1"
+    secrets: !override
+      - postgres_password
+      - odoo_admin_password
+
+  # --- Restaura, pero NO respalda ---
+  # El profile es lo que lo garantiza, y es estructural: timers.sh deriva qué units
+  # corresponden preguntándole a la composición SIN perfiles, así que acá no ve
+  # backup y no instala backup-daily. Sin esto, un `sudo make timers-install` en
+  # prueba dejaría una corrida nocturna escribiendo en el repositorio de producción
+  # y apagando su alerta de backup viejo.
+  #
+  # `compose run` alcanza igual a un servicio con el perfil inactivo, así que el
+  # restore —que es para lo que prueba lo lleva— funciona sin activar nada.
+
+  backup:
+    profiles: [restore]

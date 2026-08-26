@@ -217,6 +217,54 @@ for svc in prometheus loki alloy; do
 done
 
 # =====================================================================
+titulo "prueba — envs/staging.yaml"
+# =====================================================================
+
+# Con los dos perfiles: Compose PODA los secrets de un servicio inactivo, así que
+# preguntar solo por --profile cert contaría 4 en vez de los 6 que declara el
+# entrypoint. Lo que se afirma acá es la declaración, no una activación puntual.
+STGN=$(resuelto env.staging --profile cert --profile restore -f envs/staging.yaml)
+
+igual "resuelve sin error" "0" "$(docker compose --env-file tests/fixtures/env.staging -f envs/staging.yaml config -q >/dev/null 2>&1; echo $?)"
+igual "declara 6 secrets" "6" "$(printf '%s\n' "$STGN" | contar_secrets)"
+igual "sus stacks, y solo esos" "certbot cloudflared nginx odoo postgres " \
+  "$(servicios env.staging --profile cert -f envs/staging.yaml)"
+
+# ports: !reset [] — el ingreso entra por el túnel, y el :80 de la LAN ya lo tiene producción.
+igual "no publica ningún puerto" "" "$(printf '%s\n' "$STGN" | bloque nginx | binds)"
+
+# Se siembra con datos reales de clientes. Son las dos mitades de la misma
+# protección: un .env clonado de producción no alcanza para mandarles correo.
+no_contiene "odoo sin la credencial SMTP"                        "zeptomail_smtp_password" "$(printf '%s\n' "$STGN" | bloque odoo)"
+contiene    "un odoo.conf clonado no alcanza para mandar correo" 'ODOO_DISABLE_SMTP: "1"'  "$(printf '%s\n' "$STGN" | bloque odoo)"
+
+# dnsmasq no se incluye, y no alcanzaba con no activarle el perfil: corre sobre el
+# 53 con el stack de red del host y un .env copiado de producción lo levantaría.
+no_contiene "dnsmasq no está ni con el perfil activo" "dnsmasq" \
+  "$(COMPOSE_PROFILES=lan servicios env.staging -f envs/staging.yaml)"
+
+# =====================================================================
+titulo "prueba restaura, pero NO respalda"
+# =====================================================================
+
+# El trío que sostiene la garantía, y es estructural: timers.sh deriva qué units
+# corresponden de la composición SIN perfiles. Con backup ahí, un timers-install en
+# prueba dejaría una corrida nocturna escribiendo en el repositorio de producción.
+
+no_contiene "backup fuera de la composición por defecto" "backup" \
+  "$(servicios env.staging -f envs/staging.yaml)"
+
+no_contiene "y fuera de la que consulta timers.sh" "backup" \
+  "$(servicios env.staging --profile cert -f envs/staging.yaml)"
+
+contiene "pero alcanzable para restaurar" "backup" \
+  "$(servicios env.staging --profile restore -f envs/staging.yaml)"
+
+# El contraste: en producción sí está por defecto, y por eso sus timers se instalan.
+contiene "en producción sí está por defecto" "backup" \
+  "$(servicios env.production -f envs/production.yaml)"
+
+# =====================================================================
 titulo "dnsmasq entra solo si el cliente tiene LAN"
 # =====================================================================
 
@@ -235,7 +283,7 @@ igual "con COMPOSE_PROFILES=lan sí está" "alloy backup cloudflared dnsmasq gra
 # avisa por cada variable sin default que no esté declarada, así que ese warning
 # —vacío en las cuatro— es la prueba de que ninguna plantilla se quedó atrás.
 
-for caso in "producción:prod:docker/compose.yaml" "staging:stag:docker/compose.staging.yaml" "development:dev:docker/compose.dev.yaml" "development (envs/):development:envs/development.yaml" "producción (envs/):production:envs/production.yaml"; do
+for caso in "producción:prod:docker/compose.yaml" "staging:stag:docker/compose.staging.yaml" "development:dev:docker/compose.dev.yaml" "development (envs/):development:envs/development.yaml" "producción (envs/):production:envs/production.yaml" "prueba (envs/):staging:envs/staging.yaml"; do
   nombre="${caso%%:*}"; resto="${caso#*:}"; plantilla="${resto%%:*}"; entrypoint="${resto#*:}"
   igual "$nombre no deja variables sin declarar en su plantilla" "" \
     "$(docker compose --env-file ".env.$plantilla.example" -f "$entrypoint" config -q 2>&1 | grep -i 'is not set' | tr '\n' ' ')"

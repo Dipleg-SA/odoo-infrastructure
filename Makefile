@@ -294,7 +294,7 @@ backup-run: require-backups ## Corre el backup diario (dump + filestore en un sn
 backup-integrity: require-backups ## Verifica la integridad del repositorio (restic check)
 	stacks/backup/scripts/backup.sh check
 
-restore: require-backups ## Restaura filestore y base desde un snapshot — SNAPSHOT=latest
+restore: require-restore ## Restaura filestore y base desde un snapshot — SNAPSHOT=latest
 	stacks/backup/scripts/restore.sh $(or $(SNAPSHOT),latest)
 
 backups-up: ## Levanta la capa backups (restic; pgBackRest vive dentro de postgres)
@@ -436,8 +436,17 @@ require-backups:
 	@. scripts/lib/ui.sh; docker compose config --services 2>/dev/null | grep -qx backup || \
 	  { ui_bad "este stack no incluye la capa de backups" "es exclusiva de producción — revisar COMPOSE_FILE en .env" >&2; exit 2; }
 
+# --- Respaldar vs restaurar ---
+# Dos guardas y no una: respaldar es de producción, restaurar es de los dos entornos.
+# La diferencia sale de la composición, no de una lista — el entrypoint de prueba le
+# pone profiles: [restore] al servicio backup, así que queda fuera del default (y de
+# lo que ve timers.sh) pero sigue alcanzable para restaurar.
+#
+# El grep acepta restore-db además de backup mientras exista el árbol viejo, que
+# separa las dos direcciones en servicios distintos. Se simplifica en la Etapa 7.
+
 require-restore:
-	@. scripts/lib/ui.sh; docker compose --profile restore config --services 2>/dev/null | grep -qx restore-db || \
+	@. scripts/lib/ui.sh; docker compose --profile restore config --services 2>/dev/null | grep -qxE 'restore-db|backup' || \
 	  { ui_bad "este stack no incluye la capa de restore" "revisar COMPOSE_FILE en .env" >&2; exit 2; }
 
 # --- Backups ---
