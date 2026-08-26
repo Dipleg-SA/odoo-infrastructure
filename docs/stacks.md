@@ -18,7 +18,7 @@ es el caso real de producción y prueba.
 | Nombre de proyecto | `production`              | `staging`               | `development-<feature>` |
 | Entrypoint         | `envs/production.yaml`    | `envs/staging.yaml`     | `envs/development.yaml` |
 | Rama de addons     | default del Dockerfile    | `<versión>-stag`        | `feat/*`                |
-| Proxy              | nginx con TLS, en la LAN  | nginx con TLS, sin publicar | nginx sin TLS, loopback |
+| Proxy              | nginx con TLS, en la LAN  | nginx con TLS, en loopback  | nginx sin TLS, loopback |
 | Túnel y certbot    | sí                        | sí                      | no                      |
 | DNS local          | solo con servidor local   | no                      | no                      |
 | Respalda           | sí                        | **no**, solo restaura   | no                      |
@@ -71,7 +71,7 @@ Acá está lo que colisiona:
 
 | Recurso | Quién lo toma | Qué pasa con un segundo entorno |
 |---|---|---|
-| `:80` y `:443` de la LAN | nginx de producción | prueba **no publica puertos**: entra por el túnel, que sale hacia afuera |
+| `:80` y `:443` de la LAN | nginx de producción | prueba publica en `127.0.0.1:8080`/`:8443`, y development en `:8081` |
 | `:53` en `network_mode: host` | dnsmasq | no admite un segundo de ninguna forma — por eso prueba **no lo incluye**, y no alcanza con no activarle el perfil |
 | `:3001` de la UI de Grafana | grafana de producción | prueba no lleva observabilidad |
 | units de systemd | las de cada checkout | van prefijadas con el nombre del proyecto, así que no se pisan |

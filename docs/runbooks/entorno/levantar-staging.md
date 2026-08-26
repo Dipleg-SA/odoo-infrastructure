@@ -249,7 +249,7 @@ Los stacks ausentes salen omitidos, no en rojo. Lo que sí tiene que pasar: el c
 
 ## Apéndice — lo que no se corre en el servidor
 
-Uno solo: staging no publica ningún puerto y no tiene `dnsmasq`, así que el único camino de ingreso es el túnel. Desde cualquier máquina fuera de la LAN:
+El ingreso público entra solo por el túnel: prueba no tiene `dnsmasq` y su publicación es en loopback, para llegar por túnel SSH desde el propio servidor. Desde cualquier máquina fuera de la LAN:
 
 ```bash
 HOST_STAG='el-hostname-de-staging'

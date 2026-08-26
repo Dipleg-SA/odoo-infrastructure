@@ -43,6 +43,10 @@ igual "solo proxy, datos y aplicación" "nginx odoo postgres " "$(servicios env.
 # server-plain no escucha en el 443: publicarlo ataría un puerto para nada.
 igual "publica solo el 80, en loopback" "127.0.0.1 " "$(printf '%s\n' "$DEVN" | bloque nginx | binds)"
 
+# 8081 y no 8080: prueba puede convivir en el mismo host, y ese es suyo.
+igual "en un puerto que no le pisa a prueba" "8081 " \
+  "$(printf '%s\n' "$DEVN" | bloque nginx | sed -n 's/^ *published: "//p' | tr -d '"' | tr '\n' ' ')"
+
 contiene    "monta el config sin TLS" "server-plain.conf" "$(printf '%s\n' "$DEVN" | bloque nginx)"
 no_contiene "y ninguna con TLS" "server-tls" "$DEVN"
 
@@ -114,8 +118,13 @@ igual "declara 6 secrets" "6" "$(printf '%s\n' "$STGN" | contar_secrets)"
 igual "sus stacks, y solo esos" "certbot cloudflared nginx odoo postgres " \
   "$(servicios env.staging --profile cert -f envs/staging.yaml)"
 
-# ports: !reset [] — el ingreso entra por el túnel, y el :80 de la LAN ya lo tiene producción.
-igual "no publica ningún puerto" "" "$(printf '%s\n' "$STGN" | bloque nginx | binds)"
+# Loopback y no la LAN: el :80 y el :443 de LOCAL_IP los tiene producción, que
+# convive en el mismo servidor. El ingreso público no pasa por acá — entra por el
+# túnel, que alcanza a nginx por nombre dentro de la red edge.
+igual "publica en loopback, no en la LAN" "127.0.0.1 127.0.0.1 " \
+  "$(printf '%s\n' "$STGN" | bloque nginx | binds)"
+igual "y en los puertos que no usa producción" "8080 8443 " \
+  "$(printf '%s\n' "$STGN" | bloque nginx | sed -n 's/^ *published: "//p' | tr -d '"' | tr '\n' ' ')"
 
 # Se siembra con datos reales de clientes. Son las dos mitades de la misma
 # protección: un .env clonado de producción no alcanza para mandarles correo.

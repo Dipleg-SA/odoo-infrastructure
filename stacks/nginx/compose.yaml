@@ -19,9 +19,9 @@ services:
       - edge
       - app
     # --- Binds ---
-    # Nivel 3 (LAN) por default; un entorno que no atiende la red local los borra
-    # con `ports: !reset []` en su entrypoint. cloudflared NO pasa por acá: llega
-    # por la red edge, por nombre de contenedor.
+    # Nivel 3 (LAN) por default; un entorno que no atiende la red local los
+    # reemplaza por loopback con `ports: !override` en su entrypoint. cloudflared
+    # NO pasa por acá: llega por la red edge, por nombre de contenedor.
 
     # El último default es loopback y no vacío: sin LOCAL_IP, un bind vacío publica
     # en 0.0.0.0 — falla abierta. Loopback falla cerrada y se nota igual de rápido.

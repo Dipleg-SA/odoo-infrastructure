@@ -51,11 +51,15 @@ include:
   - ../stacks/backup/compose.yaml
 
 services:
-  # --- Sin puertos publicados ---
-  # cloudflared llega al proxy por la red edge; el :80 y el :443 de la LAN los tiene producción.
+  # --- Loopback, no la LAN ---
+  # El :80 y el :443 de la LAN los tiene producción, así que prueba publica en
+  # 127.0.0.1 y se llega por túnel SSH. El ingreso público no pasa por acá:
+  # cloudflared alcanza al proxy por la red edge, por nombre de contenedor.
 
   nginx:
-    ports: !reset []
+    ports: !override
+      - "127.0.0.1:${HTTP_PORT:-8080}:80"
+      - "127.0.0.1:${HTTPS_PORT:-8443}:443"
 
   # --- Sin correo saliente ---
   # Se siembra con datos reales de clientes: con SMTP les mandaría correo de verdad.

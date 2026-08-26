@@ -11,12 +11,19 @@
 # con un ssl_certificate ausente. Lo emite certbot, que con DNS-01 no necesita
 # que nginx esté vivo (ver INSTALL.md).
 
+# --- Redirección al hostname canónico ---
+# $server_name y NO $host: $host devuelve lo que el cliente escribió y descarta el
+# puerto, así que entrar por IP o por un puerto no estándar redirige a un destino
+# donde el certificado no coincide o donde no escucha nadie. Se midió: por
+# 127.0.0.1:8080, $host da https://127.0.0.1 (puerto 443, vacío) y $http_host da
+# https://127.0.0.1:8080 (el puerto HTTP). $server_name da el hostname real.
+
 server {
   listen 80;
   listen [::]:80;
   server_name TU_DOMINIO;
 
-  return 301 https://$host$request_uri;
+  return 301 https://$server_name$request_uri;
 }
 
 server {

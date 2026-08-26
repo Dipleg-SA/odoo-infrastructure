@@ -198,7 +198,7 @@ make up
 
 ```bash
 make verify
-curl -s -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:${HTTP_PORT:-8080}/web/login"
+curl -s -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:${HTTP_PORT:-8081}/web/login"
 ```
 
 Tiene que dar `200`. Si esta es una shell nueva, cargá `.env` antes: `set -a; . ./.env; set +a`.

@@ -337,8 +337,10 @@ Se descartó incluir todos los stacks en los tres entornos y apagar `backup` con
 que separa los dos mecanismos está en «Acceso: LAN o solo túnel» — no es una excepción,
 depende de qué pasa cuando algo se activa por accidente.
 
-Producción y prueba conviven en un servidor. No colisionan porque el nginx de prueba no
-publica puertos — se alcanza por el túnel, que sale hacia afuera y no necesita ninguno.
+Producción y prueba conviven en un servidor. No colisionan porque el `:80` y el `:443`
+de la LAN los tiene producción, y prueba publica en loopback —`127.0.0.1:8080` y
+`:8443`—, alcanzable por túnel SSH. El ingreso público de prueba no pasa por ahí: entra
+por el túnel, que llega a nginx por nombre dentro de su red.
 
 El entrypoint no solo elige stacks: también **ajusta los que eligió**, con `!reset` y
 `!override` al lado del `include:` que los trajo. Es la pieza que permite que un stack
