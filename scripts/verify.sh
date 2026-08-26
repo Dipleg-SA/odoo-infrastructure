@@ -1048,6 +1048,17 @@ resumen() {
 
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 
+# --- Ruteo al árbol nuevo ---
+# Este verificador es el del árbol docker/: sus rutas y sus capas son las de ahí.
+# Contra una composición de envs/ daría falsos —chequea pgbouncer, lee el odoo.conf
+# viejo— así que le pasa el trabajo al orquestador de stacks/. Única decisión de
+# ruteo del repo: make verify, make <capa>-verify y capa.sh entran todos por acá.
+# Se borra con docker/, en la Etapa 7.
+
+case "${COMPOSE_FILE:-}" in
+  envs/*) exec scripts/verify-stacks.sh "${1:-all}" ;;
+esac
+
 case "${1:-all}" in
   host)          v_host ;;
   edge)          v_edge ;;

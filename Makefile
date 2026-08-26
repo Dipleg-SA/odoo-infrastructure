@@ -6,8 +6,8 @@
         require-modules require-backups require-restore require-root test verify host-verify \
         edge-up edge-down edge-restart edge-logs edge-ps edge-verify edge-nuke \
         db-up db-down db-restart db-logs db-ps db-verify db-nuke \
-        postgres-up postgres-down postgres-logs postgres-ps \
-        nginx-up nginx-down nginx-logs nginx-ps \
+        postgres-up postgres-down postgres-logs postgres-ps postgres-verify \
+        nginx-up nginx-down nginx-logs nginx-ps nginx-verify \
         odoo-up odoo-down odoo-restart odoo-logs odoo-ps odoo-verify odoo-nuke \
         backups-up backups-down backups-restart backups-logs backups-ps backups-verify backups-nuke \
         observability-up observability-down observability-restart observability-logs observability-ps observability-verify observability-nuke
@@ -189,6 +189,9 @@ postgres-logs: ## Sigue los logs de postgres
 postgres-ps: ## Lista el contenedor de postgres
 	@docker compose ps postgres
 
+postgres-verify: ## Verifica postgres
+	scripts/verify.sh postgres
+
 nginx-up: ## Levanta nginx
 	@. scripts/lib/ui.sh; ui_run "nginx-up" docker compose up -d nginx
 
@@ -200,6 +203,9 @@ nginx-logs: ## Sigue los logs de nginx
 
 nginx-ps: ## Lista el contenedor de nginx
 	@docker compose ps nginx
+
+nginx-verify: ## Verifica nginx
+	scripts/verify.sh nginx
 
 backups-up: ## Levanta la capa backups (restic; pgBackRest vive dentro de postgres)
 	scripts/capa.sh backups up

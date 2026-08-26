@@ -12,7 +12,7 @@ STUB_DIR=$(mktemp -d); export STUB_DIR
 trap 'rm -rf "$STUB_DIR"' EXIT
 PATH="$PWD/tests/stubs:$PATH"
 
-. scripts/verify.sh
+. scripts/lib/verify.sh
 . tests/lib.sh
 
 config_fixture() { cat > "$STUB_DIR/config"; }
