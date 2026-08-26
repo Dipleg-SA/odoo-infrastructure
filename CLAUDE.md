@@ -50,6 +50,7 @@ Están duplicados por necesidad —hay formatos que no interpolan variables— y
 
 ## Rarezas de herramienta que cuestan horas
 
+- **Un `--profile` explícito REEMPLAZA a `COMPOSE_PROFILES`, no se suma.** Enumerar la composición con `--profile cert` descarta el `lan` que trajo el `.env` del operador. Para preguntar por todo hay que fusionar en la variable: `COMPOSE_PROFILES="cert,restore${COMPOSE_PROFILES:+,$COMPOSE_PROFILES}"`.
 - **Un servicio con `profiles:` inactivo no se valida.** `docker compose config` sale exit 0 sin haberlo mirado: un falso verde, no una prueba de que ese archivo esté bien.
 - **`include:` resuelve las rutas relativas de cada archivo incluido contra *su propia* carpeta**, no contra la del que lo incluye. También acepta que cada archivo nombre su propio `env_file`, y el mismo archivo corriendo solo lee ese mismo entorno desde su carpeta.
 - **`docker compose run` acepta `--user`**, así que una operación puntual puede elevarse en la invocación sin que el servicio se declare root.

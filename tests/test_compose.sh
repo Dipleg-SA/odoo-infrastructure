@@ -173,13 +173,46 @@ contiene "nginx construye con tag por proyecto" "local/nginx:test-development" "
 contiene "un odoo.conf clonado no alcanza para mandar correo" 'ODOO_DISABLE_SMTP: "1"' "$(printf '%s\n' "$DEVN" | bloque odoo)"
 
 # =====================================================================
+titulo "producción — envs/production.yaml"
+# =====================================================================
+
+PRODN=$(resuelto env.production --profile cert -f envs/production.yaml)
+
+igual "resuelve sin error" "0" "$(docker compose --env-file tests/fixtures/env.production -f envs/production.yaml config -q >/dev/null 2>&1; echo $?)"
+igual "declara 5 secrets" "5" "$(printf '%s\n' "$PRODN" | contar_secrets)"
+igual "el borde completo, datos y aplicación" "certbot cloudflared nginx odoo postgres " \
+  "$(servicios env.production --profile cert -f envs/production.yaml)"
+
+# Es el caso base: sin bloque services:, nginx cae a su default de TLS y publica
+# en la LAN. Si esto cambia, algún entorno le está imponiendo su excepción.
+contiene "monta el config con TLS" "server-tls.conf" "$(printf '%s\n' "$PRODN" | bloque nginx)"
+igual "publica en la IP de la LAN, no en loopback" "10.0.0.2 10.0.0.2 " \
+  "$(printf '%s\n' "$PRODN" | bloque nginx | binds)"
+
+# certbot escribe el certificado que nginx lee: el volumen lo declara el entorno,
+# porque dos declaraciones divergentes del mismo recurso se fusionan en silencio.
+contiene "certbot escribe el volumen del certificado" "letsencrypt" "$(printf '%s\n' "$PRODN" | bloque certbot)"
+
+# =====================================================================
+titulo "dnsmasq entra solo si el cliente tiene LAN"
+# =====================================================================
+
+# La única variación por cliente del diseño, y vive en el .env — no en un
+# entrypoint aparte. Sin la clave, un deploy en VPS no levanta un DNS que no usa.
+igual "sin COMPOSE_PROFILES no está" "cloudflared nginx odoo postgres " \
+  "$(servicios env.production -f envs/production.yaml)"
+
+igual "con COMPOSE_PROFILES=lan sí está" "cloudflared dnsmasq nginx odoo postgres " \
+  "$(COMPOSE_PROFILES=lan servicios env.production -f envs/production.yaml)"
+
+# =====================================================================
 
 # Una plantilla por entorno es una copia por entorno: lo que puede pasar es que una
 # clave nueva entre en un compose de capa compartido y solo se sume a una. Compose
 # avisa por cada variable sin default que no esté declarada, así que ese warning
 # —vacío en las cuatro— es la prueba de que ninguna plantilla se quedó atrás.
 
-for caso in "producción:prod:docker/compose.yaml" "staging:stag:docker/compose.staging.yaml" "development:dev:docker/compose.dev.yaml" "development (envs/):development:envs/development.yaml"; do
+for caso in "producción:prod:docker/compose.yaml" "staging:stag:docker/compose.staging.yaml" "development:dev:docker/compose.dev.yaml" "development (envs/):development:envs/development.yaml" "producción (envs/):production:envs/production.yaml"; do
   nombre="${caso%%:*}"; resto="${caso#*:}"; plantilla="${resto%%:*}"; entrypoint="${resto#*:}"
   igual "$nombre no deja variables sin declarar en su plantilla" "" \
     "$(docker compose --env-file ".env.$plantilla.example" -f "$entrypoint" config -q 2>&1 | grep -i 'is not set' | tr '\n' ' ')"

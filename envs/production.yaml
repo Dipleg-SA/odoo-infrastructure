@@ -1,0 +1,45 @@
+# Entrypoint de producción: borde completo, datos y aplicación. Es el caso base —
+# no lleva bloque `services:` porque no se aparta de nada: nginx publica en la LAN,
+# NGINX_MODE cae a tls y Odoo manda correo. Los !override son de los otros entornos.
+#
+# El nombre del stack NO se declara acá — sale de COMPOSE_PROJECT_NAME en .env,
+# junto a COMPOSE_FILE, para que los entornos usen el mismo mecanismo.
+#
+# dnsmasq entra solo si el .env de este checkout trae COMPOSE_PROFILES=lan: un
+# deploy en VPS no tiene red local que resolver.
+
+networks:
+  edge:
+  app:
+
+# --- Volumen compartido ---
+# certbot escribe el certificado, nginx lo lee :ro. Lo declara el entorno y no
+# uno de los dos stacks, como redes y secrets: dos declaraciones divergentes del
+# mismo recurso se fusionan en silencio, con exit 0.
+
+volumes:
+  letsencrypt:
+
+# --- Solo los secrets de los stacks que lleva ---
+# Compose falla si un `file:` declarado no existe, y declarar de más obliga a
+# fabricar archivos inertes que secrets-check después exige completar.
+
+secrets:
+  cloudflare_api_token:
+    file: ../secrets/cloudflare_api_token
+  cloudflare_tunnel_token:
+    file: ../secrets/cloudflare_tunnel_token
+  postgres_password:
+    file: ../secrets/postgres_password
+  odoo_admin_password:
+    file: ../secrets/odoo_admin_password
+  zeptomail_smtp_password:
+    file: ../secrets/zeptomail_smtp_password
+
+include:
+  - ../stacks/nginx/compose.yaml
+  - ../stacks/certbot/compose.yaml
+  - ../stacks/cloudflared/compose.yaml
+  - ../stacks/dnsmasq/compose.yaml
+  - ../stacks/postgres/compose.yaml
+  - ../stacks/odoo/compose.yaml

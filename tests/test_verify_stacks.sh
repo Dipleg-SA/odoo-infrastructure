@@ -53,6 +53,29 @@ contiene "nombra que no está en este stack" "no está en este stack" "$SALIDA"
 no_contiene "y no corre sus chequeos" "odoo sirve en :8069" "$SALIDA"
 
 # =====================================================================
+titulo "perfiles — el .env del operador se suma, no se pierde"
+# =====================================================================
+
+# Un --profile explícito REEMPLAZA a COMPOSE_PROFILES en vez de sumarse. Con
+# flags, un deploy con COMPOSE_PROFILES=lan perdía dnsmasq de la lista de
+# servicios y su verify no corría nunca: quedaba omitido como "no está en este
+# stack" sobre un contenedor que sí estaba declarado.
+#
+# Los dos fixtures del stub separan las dos formas de preguntar: 'servicios'
+# responde a la consulta CON --profile y 'servicios-sin-perfil' a la que no los
+# lleva. Poniéndoles listas distintas, la aserción distingue cuál se usó — con
+# una sola lista pasaría igual con el bug puesto, que es como se descubrió.
+
+printf '%s\n' 'nginx' 'odoo' 'postgres' > "$STUB_DIR/servicios"
+printf '%s\n' 'nginx' 'odoo' 'postgres' 'dnsmasq' > "$STUB_DIR/servicios-sin-perfil"
+SALIDA=$(COMPOSE_PROFILES=lan orquestador all)
+
+contiene    "con COMPOSE_PROFILES=lan, dnsmasq se verifica" "dnsmasq.conf" "$SALIDA"
+no_contiene "y no se lo da por ausente" "stack dnsmasq (no está en este stack)" "$SALIDA"
+
+rm -f "$STUB_DIR/servicios-sin-perfil"
+
+# =====================================================================
 titulo "agregación — un solo resumen para todos los stacks"
 # =====================================================================
 

@@ -46,3 +46,9 @@ real_ip_header CF-Connecting-IP;
 
 limit_req_zone $binary_remote_addr zone=login:10m rate=2r/s;
 limit_req_log_level warn;
+
+# 429 y no el 503 que nginx devuelve por default: 503 es "servicio caído" y se
+# confunde con una avería real, tanto en el dashboard como para el cliente que
+# reintenta. 429 dice exactamente lo que pasó — demasiados intentos.
+
+limit_req_status 429;

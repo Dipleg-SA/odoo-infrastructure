@@ -47,5 +47,7 @@ services:
     mem_limit: 128m
     cpus: "0.50"
 
-volumes:
-  letsencrypt:
+# El volumen letsencrypt NO se declara acá: lo comparte con el stack certbot, que
+# escribe lo que este lee. Lo compartido lo declara el entorno, como redes y
+# secrets — dos declaraciones divergentes del mismo recurso se fusionan en
+# silencio, con exit 0.

@@ -29,23 +29,35 @@ Se descartó que el entrypoint fuera del cliente (gitignoreado, bootstrapeado co
 config más): agrega un archivo que puede quedar viejo cuando el repo suma un stack, sin
 comprar nada.
 
-## La unidad: un stack = un contenedor que corre
+## La unidad: un stack = un contenedor con cosas propias
 
 Un stack es **una carpeta con un contenedor** y todo lo suyo adentro: su `compose.yaml`,
-su `Dockerfile` si lo necesita, sus configs, su `.env` y sus scripts.
+su imagen, sus configs, su `.env`, sus scripts y sus units.
 
 ```
-odoo · postgres · nginx · cloudflared · backup
+odoo · postgres · nginx · certbot · cloudflared · backup
 prometheus · loki · grafana · alloy
 ```
 
 Más `dnsmasq`, opcional según la topología del cliente — ver «Acceso: LAN o solo túnel».
 
-La palabra operativa es **que corre**. Un contenedor con `profiles:` no arranca con `up`:
-es una operación de una vez, no un proceso. Darle carpeta de stack con su `.env`, su
-`verify.sh` y su config es andamiaje para algo que vive treinta segundos. **Los one-off
-van adentro del stack al que sirven** — `certbot` dentro de `nginx`, que es a quien le
-escribe el certificado.
+La palabra operativa es **propias**, no «que corre». La primera versión de esta regla
+decía que un contenedor con `profiles:` no era un stack, porque una operación de una vez
+no justifica carpeta propia. `certbot` la desmintió: corre treinta segundos por vez, y
+aun así tiene imagen, `wrapper.sh`, el secret `cloudflare_api_token`, la unit
+`cert-renew`, dos targets del Makefile y sus propios chequeos. Esos archivos existen en
+cualquier carpeta donde lo pongas.
+
+> **No es un stack lo que no tiene nada propio.** Eso —y solo eso— vive adentro del que
+> sirve. Si tiene imagen, config y superficie operativa, es un stack, corra siempre o a
+> demanda.
+
+Dejarlo adentro de `nginx` costaba dos cosas concretas: una convención de anidado
+(`image/<servicio>/Dockerfile`) para el único caso de once stacks con más de un
+contenedor, y romper el descubrimiento de las units — `cert-renew` se instala solo si
+`certbot` está en la composición, y con la unit en `stacks/nginx/systemd/` la carpeta
+dueña (`nginx`, siempre presente) no coincide con el servicio que la habilita. Con
+`stacks/certbot/`, carpeta y servicio coinciden y la regla es una sola para todas.
 
 Cada entrypoint de entorno compone los stacks con `include:`, listando **todos** los que
 lleva, explícitamente. No hay nivel intermedio de agregación por capa.
@@ -71,7 +83,7 @@ reabre la discusión de a qué grupo pertenece.
 
 | Recurso | Dueño |
 |---|---|
-| Redes, secrets, volúmenes compartidos entre stacks | entrypoint del entorno |
+| Redes, secrets, volúmenes compartidos entre stacks (`letsencrypt`) | entrypoint del entorno |
 | Volúmenes propios, imagen, config, `.env`, scripts | el stack |
 | Qué stacks entran, y qué se les ajusta (`!reset`, `!override`) | entrypoint del entorno |
 
@@ -393,15 +405,20 @@ odoo-infrastructure/
 │   │   │   └── postgresql.conf
 │   │   └── verify.sh
 │   │
-│   ├── nginx/                   ← incluye certbot, su one-off
+│   ├── nginx/
 │   │   ├── compose.yaml
 │   │   ├── image/Dockerfile     ← FROM nginx:1.31.3-alpine, sin capas propias
 │   │   ├── config/
 │   │   │   ├── 00-http.conf.example · server-tls.conf.example · odoo.locations.example
 │   │   │   └── server-plain.conf    ← versionado tal cual: no lleva nada por deployment
-│   │   ├── scripts/certbot-wrapper.sh
-│   │   ├── systemd/cert-renew.{service,timer}
 │   │   ├── .env.example         ← LOCAL_IP, HTTP_PORT, HTTPS_PORT
+│   │   └── verify.sh
+│   │
+│   ├── certbot/                 ← profiles: [cert] — one-off, pero con todo lo suyo
+│   │   ├── compose.yaml
+│   │   ├── image/Dockerfile
+│   │   ├── scripts/wrapper.sh   ← bind-mount, no COPY: es runtime, no build
+│   │   ├── systemd/cert-renew.{service,timer}
 │   │   └── verify.sh
 │   │
 │   ├── cloudflared/
@@ -446,7 +463,7 @@ odoo-infrastructure/
 
 ### Adentro de un stack: image/, config/, scripts/
 
-Tres carpetas, mismo criterio en las diez: **por qué existe el archivo, no qué tipo de
+Tres carpetas, mismo criterio en las once: **por qué existe el archivo, no qué tipo de
 archivo es**.
 
 - **`image/`** — lo que participa del build: el `Dockerfile` y todo lo que ese
@@ -466,7 +483,7 @@ oficial.** `postgres` y `nginx` son casos así: dos líneas, un `FROM` pineado y
 Es deliberado — la alternativa es `image: postgres:17.10` directo en el compose, sin
 build, que dice exactamente lo mismo en una línea y sin capa extra. El costo real: dejar
 de pullear el tag oficial y pasar a construir sobre él en cada checkout, y `make up`
-sobre un checkout nuevo necesita un `build` antes del primer `up` para los diez stacks,
+sobre un checkout nuevo necesita un `build` antes del primer `up` para los once stacks,
 no solo para los que de verdad compilan algo. Se paga a cambio de que ningún stack sea la
 excepción — el día que `postgres` necesite algo instalado, es una línea en un archivo que
 ya existe, no una carpeta nueva.
@@ -475,7 +492,7 @@ ya existe, no una carpeta nueva.
 
 **Todos los stacks están a la misma profundidad.** `stacks/<nombre>/`, sin excepción. Por
 eso la ruta de un stack a cualquier cosa compartida es siempre `../../`, idéntica en los
-diez — no hay que contar carpetas.
+once — no hay que contar carpetas.
 
 **El nombre del stack es el nombre del contenedor.** No hay traducción entre lo que decís
 (`make grafana-logs`), lo que ves (`stacks/grafana/`) y lo que corre.

@@ -8,6 +8,13 @@ networks:
   edge:
   app:
 
+# --- Volumen compartido ---
+# nginx lo monta aunque acá no haya certbot que lo escriba: el stack es genérico
+# y es el entorno el que lo recorta. Un volumen vacío no cuesta nada.
+
+volumes:
+  letsencrypt:
+
 # --- Dos secrets, los dos generados ---
 # secrets-init.sh los saca de openssl: un checkout nuevo no pide ningún valor a mano.
 

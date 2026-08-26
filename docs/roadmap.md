@@ -1,7 +1,7 @@
 # Roadmap de construcción
 
 Plan para escribir el árbol que describe [modular-architecture.md](modular-architecture.md):
-diez stacks bajo `stacks/`, un entrypoint por entorno en `envs/`.
+once stacks bajo `stacks/`, un entrypoint por entorno en `envs/`.
 
 **No es una migración, es una construcción.** No hay ningún deployment corriendo, así que
 no hay datos que proteger, ni cutover, ni vuelta atrás que preparar. Las piezas que el
@@ -70,7 +70,10 @@ mirar. Mutá una aserción y comprobá que **falla**.
 Lo que le falta a `envs/production.yaml` para servir tráfico.
 
 - `stacks/cloudflared/`.
-- `certbot` adentro de `stacks/nginx/`, como one-off, con su unit de renovación.
+- `stacks/certbot/` como stack propio, con su unit de renovación. Se evaluó dejarlo
+  adentro de `nginx` por ser un one-off; tiene imagen, secret, script, unit y chequeos
+  propios, así que el principio se refinó — ver
+  [modular-architecture.md](modular-architecture.md#la-unidad-un-stack--un-contenedor-con-cosas-propias).
 - `stacks/dnsmasq/` con `profiles: [lan]`, y `COMPOSE_PROFILES` en las plantillas de `.env`.
 - Los configs de nginx que sí varían por deployment: `00-http.conf`, `server-tls.conf`,
   `odoo.locations`, cada uno con su `.example`.

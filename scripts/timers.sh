@@ -14,8 +14,21 @@ if [ -f .env ]; then
 fi
 
 VERBO="${1:-}"
-ORIGEN="docker/host/systemd"
 DESTINO="${SYSTEMD_DIR:-/etc/systemd/system}"
+
+# --- Dónde vive cada unit ---
+# Se busca, no se fija: en el árbol nuevo la unit vive con su stack —
+# stacks/certbot/systemd/cert-renew.service— y la plantilla de aviso, que es
+# transversal, en host/systemd/. docker/host/systemd va último para que el árbol
+# viejo siga instalando mientras exista. Se borra con él, en la Etapa 7.
+
+ubicar() {
+  local archivo="$1" d
+  for d in stacks/*/systemd host/systemd docker/host/systemd; do
+    [ -f "$d/$archivo" ] && { printf '%s' "$d/$archivo"; return 0; }
+  done
+  return 1
+}
 
 # --- Prefijo del nombre ---
 # El proyecto va adelante: las units apuntan a un checkout, no a un stack, y sin
@@ -60,7 +73,11 @@ notify() { printf '%s-notify@\n' "$PROYECTO"; }
 # del checkout y el prefijo del OnFailure=, que nombra otra unit de este mismo stack.
 
 instalar_archivo() {
-  local origen="$1" destino="$2"
+  local archivo="$1" destino="$2" origen
+  if ! origen=$(ubicar "$archivo"); then
+    ui_bad "no se encontró la unit $archivo" "buscada en stacks/*/systemd, host/systemd y docker/host/systemd" >&2
+    return 1
+  fi
   sed -e "s|CAMBIAR-en-deploy|$PWD|g" \
       -e "s|^OnFailure=|OnFailure=$PROYECTO-|" \
       "$origen" > "$destino" || return $?
@@ -101,13 +118,13 @@ install() {
   fi
 
   for base in $lista; do
-    instalar_archivo "$ORIGEN/$base.service" "$DESTINO/$PROYECTO-$base.service" || return $?
-    instalar_archivo "$ORIGEN/$base.timer"   "$DESTINO/$PROYECTO-$base.timer"   || return $?
+    instalar_archivo "$base.service" "$DESTINO/$PROYECTO-$base.service" || return $?
+    instalar_archivo "$base.timer"   "$DESTINO/$PROYECTO-$base.timer"   || return $?
     ui_ok "instalada: $PROYECTO-$base.{service,timer}"
   done
 
   # Sin la plantilla de aviso, una corrida que falle no le avisa a nadie.
-  instalar_archivo "$ORIGEN/notify@.service" "$DESTINO/$PROYECTO-notify@.service" || return $?
+  instalar_archivo "notify@.service" "$DESTINO/$PROYECTO-notify@.service" || return $?
   ui_ok "instalada: $PROYECTO-notify@.service"
 
   systemctl daemon-reload || return $?
