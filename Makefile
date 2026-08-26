@@ -6,6 +6,8 @@
         require-modules require-backups require-restore require-root test verify host-verify \
         edge-up edge-down edge-restart edge-logs edge-ps edge-verify edge-nuke \
         db-up db-down db-restart db-logs db-ps db-verify db-nuke \
+        postgres-up postgres-down postgres-logs postgres-ps \
+        nginx-up nginx-down nginx-logs nginx-ps \
         odoo-up odoo-down odoo-restart odoo-logs odoo-ps odoo-verify odoo-nuke \
         backups-up backups-down backups-restart backups-logs backups-ps backups-verify backups-nuke \
         observability-up observability-down observability-restart observability-logs observability-ps observability-verify observability-nuke
@@ -169,6 +171,35 @@ odoo-verify: ## Verifica la capa odoo
 
 odoo-nuke: ## Borra containers/imágenes/volúmenes de odoo — confirmación: tipear 'nuke'
 	scripts/capa.sh odoo nuke
+
+# --- Stacks nuevos (envs/) ---
+# Un stack es un solo compose.yaml: docker compose directo alcanza, sin el
+# dispatcher de capa.sh, que agrega VARIOS archivos por capa —problema que acá
+# no existe—. Se suman a medida que el roadmap los construye.
+
+postgres-up: ## Levanta postgres
+	@. scripts/lib/ui.sh; ui_run "postgres-up" docker compose up -d postgres
+
+postgres-down: ## Baja postgres
+	@. scripts/lib/ui.sh; ui_run "postgres-down" docker compose rm -sf postgres
+
+postgres-logs: ## Sigue los logs de postgres
+	@docker compose logs -f postgres
+
+postgres-ps: ## Lista el contenedor de postgres
+	@docker compose ps postgres
+
+nginx-up: ## Levanta nginx
+	@. scripts/lib/ui.sh; ui_run "nginx-up" docker compose up -d nginx
+
+nginx-down: ## Baja nginx
+	@. scripts/lib/ui.sh; ui_run "nginx-down" docker compose rm -sf nginx
+
+nginx-logs: ## Sigue los logs de nginx
+	@docker compose logs -f nginx
+
+nginx-ps: ## Lista el contenedor de nginx
+	@docker compose ps nginx
 
 backups-up: ## Levanta la capa backups (restic; pgBackRest vive dentro de postgres)
 	scripts/capa.sh backups up

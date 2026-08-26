@@ -33,11 +33,14 @@ de `CLAUDE.md` dice cuál es cuál.
 El esqueleto y los tres stacks que lo componen.
 
 - `envs/development.yaml`: redes, secrets y los tres `include:`.
-- `stacks/postgres/` — imagen oficial, sin `Dockerfile`. `postgresql.conf` con su
-  `.example`, sin `archive_mode`.
-- `stacks/odoo/` — `Dockerfile`, `entrypoint.sh`, `odoo.conf` con `db_maxconn = 15` y sin
-  `bus_alt_connection`. Apunta a `postgres:5432`.
-- `stacks/nginx/` — `server-plain.conf` versionado, publicando `127.0.0.1:8080`.
+- Cada stack con su `image/Dockerfile` y su `config/`, aunque no compile nada propio —
+  ver [modular-architecture.md](modular-architecture.md#adentro-de-un-stack-image-config-scripts).
+- `stacks/postgres/` — `image/Dockerfile` es solo `FROM postgres:17.10`.
+  `config/postgresql.conf` con su `.example`, sin `archive_mode`.
+- `stacks/odoo/` — `image/{Dockerfile,entrypoint.sh}`, `config/odoo.conf` con
+  `db_maxconn = 15` y sin `bus_alt_connection`. Apunta a `postgres:5432`.
+- `stacks/nginx/` — `image/Dockerfile` es solo `FROM nginx:1.31.3-alpine`.
+  `config/server-plain.conf` versionado, publicando `127.0.0.1:8080`.
 - Los targets `<stack>-up/down/logs/ps` del `Makefile` pasan a derivarse de la composición.
 
 **Verificación, y es real porque corre local.** `make up` levanta los tres, Odoo responde

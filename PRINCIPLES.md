@@ -78,6 +78,7 @@ Una regla enuncia una **restricción**, no una forma del árbol. Un principio qu
 ## Convenciones de nombres
 
 - **Un stack se llama como su contenedor.** No hay traducción entre lo que se tipea, lo que se ve en el árbol y lo que corre.
+- **Un stack siempre construye su imagen**, aunque el `Dockerfile` sea solo un `FROM` pineado: nunca un `image:` de un tag público sin `build:` al lado. Ningún stack es la excepción a simple vista, y el día que uno necesite algo instalado es una línea en un archivo que ya existe.
 - Servicios de Compose: minúsculas, singular donde se pueda.
 - Secretos: un archivo por credencial bajo `secrets/`, `640`, grupo del GID que lo consume.
 - Tags de imagen: siempre versión explícita.

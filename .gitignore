@@ -39,6 +39,15 @@ docker/observability/grafana/provisioning/alerting/contact-points.yaml
 docker/app/odoo/odoo.conf
 docker/backups/r2.env
 
+# --- Config real de nginx y postgres (árbol nuevo, stacks/) ---
+# Mismo criterio que arriba: solo el .example de cada uno se versiona.
+
+stacks/nginx/config/00-http.conf
+stacks/nginx/config/odoo.locations
+stacks/nginx/config/server-tls.conf
+stacks/postgres/config/postgresql.conf
+stacks/odoo/config/odoo.conf
+
 # --- Clones locales ---
 # Repos externos clonados a mano para pruebas, no versionados.
 

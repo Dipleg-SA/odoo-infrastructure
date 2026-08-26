@@ -146,15 +146,40 @@ for caso in "producción:$PROD" "staging:$STG" "development:$DEV"; do
 done
 
 # =====================================================================
-titulo "las tres plantillas de .env"
+titulo "las cuatro plantillas de .env"
+# =====================================================================
+titulo "development — envs/development.yaml"
+# =====================================================================
+
+DEVN=$(resuelto env.development -f envs/development.yaml)
+
+igual "resuelve sin error" "0" "$(docker compose --env-file tests/fixtures/env.development -f envs/development.yaml config -q >/dev/null 2>&1; echo $?)"
+igual "declara 2 secrets" "2" "$(printf '%s\n' "$DEVN" | contar_secrets)"
+igual "solo proxy, datos y aplicación" "nginx odoo postgres " "$(servicios env.development -f envs/development.yaml)"
+
+# server-plain no escucha en el 443: publicarlo ataría un puerto para nada.
+igual "publica solo el 80, en loopback" "127.0.0.1 " "$(printf '%s\n' "$DEVN" | bloque nginx | binds)"
+
+contiene    "monta el config sin TLS" "server-plain.conf" "$(printf '%s\n' "$DEVN" | bloque nginx)"
+no_contiene "y ninguna con TLS" "server-tls" "$DEVN"
+
+# Sin pooler: la simplificación de esta etapa. Postgres y nginx sí buildean —
+# cada stack tiene su Dockerfile aunque no le sume nada a la imagen oficial—,
+# con el mismo tag por proyecto que ya usaba odoo.
+no_contiene "sin pgbouncer" "pgbouncer" "$DEVN"
+contiene "postgres construye con tag por proyecto" "local/postgres:test-development" "$(printf '%s\n' "$DEVN" | bloque postgres)"
+contiene "nginx construye con tag por proyecto" "local/nginx:test-development" "$(printf '%s\n' "$DEVN" | bloque nginx)"
+
+contiene "un odoo.conf clonado no alcanza para mandar correo" 'ODOO_DISABLE_SMTP: "1"' "$(printf '%s\n' "$DEVN" | bloque odoo)"
+
 # =====================================================================
 
 # Una plantilla por entorno es una copia por entorno: lo que puede pasar es que una
 # clave nueva entre en un compose de capa compartido y solo se sume a una. Compose
 # avisa por cada variable sin default que no esté declarada, así que ese warning
-# —vacío en las tres— es la prueba de que ninguna plantilla se quedó atrás.
+# —vacío en las cuatro— es la prueba de que ninguna plantilla se quedó atrás.
 
-for caso in "producción:prod:docker/compose.yaml" "staging:stag:docker/compose.staging.yaml" "development:dev:docker/compose.dev.yaml"; do
+for caso in "producción:prod:docker/compose.yaml" "staging:stag:docker/compose.staging.yaml" "development:dev:docker/compose.dev.yaml" "development (envs/):development:envs/development.yaml"; do
   nombre="${caso%%:*}"; resto="${caso#*:}"; plantilla="${resto%%:*}"; entrypoint="${resto#*:}"
   igual "$nombre no deja variables sin declarar en su plantilla" "" \
     "$(docker compose --env-file ".env.$plantilla.example" -f "$entrypoint" config -q 2>&1 | grep -i 'is not set' | tr '\n' ' ')"

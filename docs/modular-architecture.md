@@ -374,50 +374,58 @@ odoo-infrastructure/
 │   ├── staging.yaml
 │   └── development.yaml
 │
-├── stacks/
+├── stacks/                       ← cada stack: compose.yaml en la raíz, image/ y config/ adentro
 │   ├── odoo/
 │   │   ├── compose.yaml
-│   │   ├── Dockerfile
-│   │   ├── entrypoint.sh
-│   │   ├── odoo.conf.example    ← versionado
-│   │   ├── odoo.conf            ← real, gitignoreado, `cp` desde el .example
+│   │   ├── image/
+│   │   │   ├── Dockerfile
+│   │   │   └── entrypoint.sh    ← COPYado por el Dockerfile, vive junto a él
+│   │   ├── config/
+│   │   │   ├── odoo.conf.example    ← versionado
+│   │   │   └── odoo.conf            ← real, gitignoreado, `cp` desde el .example
 │   │   └── verify.sh
 │   │
-│   ├── postgres/                ← sin Dockerfile: imagen oficial
+│   ├── postgres/
 │   │   ├── compose.yaml
-│   │   ├── postgresql.conf.example
-│   │   ├── postgresql.conf
+│   │   ├── image/Dockerfile     ← FROM postgres:17.10, sin capas propias
+│   │   ├── config/
+│   │   │   ├── postgresql.conf.example
+│   │   │   └── postgresql.conf
 │   │   └── verify.sh
 │   │
 │   ├── nginx/                   ← incluye certbot, su one-off
 │   │   ├── compose.yaml
-│   │   ├── 00-http.conf.example · server-tls.conf.example · odoo.locations.example
-│   │   ├── server-plain.conf    ← versionado tal cual: no lleva nada por deployment
-│   │   ├── certbot-wrapper.sh
+│   │   ├── image/Dockerfile     ← FROM nginx:1.31.3-alpine, sin capas propias
+│   │   ├── config/
+│   │   │   ├── 00-http.conf.example · server-tls.conf.example · odoo.locations.example
+│   │   │   └── server-plain.conf    ← versionado tal cual: no lleva nada por deployment
+│   │   ├── scripts/certbot-wrapper.sh
 │   │   ├── systemd/cert-renew.{service,timer}
 │   │   ├── .env.example         ← LOCAL_IP, HTTP_PORT, HTTPS_PORT
 │   │   └── verify.sh
 │   │
 │   ├── cloudflared/
 │   │   ├── compose.yaml
-│   │   ├── config.yaml.example · config.yaml
+│   │   ├── image/Dockerfile
+│   │   ├── config/{config.yaml.example,config.yaml}
 │   │   └── verify.sh
 │   │
 │   ├── dnsmasq/                 ← profiles: [lan]
 │   │   ├── compose.yaml
-│   │   ├── Dockerfile
-│   │   ├── dnsmasq.conf.example · dnsmasq.conf
+│   │   ├── image/Dockerfile
+│   │   ├── config/{dnsmasq.conf.example,dnsmasq.conf}
 │   │   └── verify.sh
 │   │
 │   ├── backup/                  ← respaldar y restaurar, mismo contenedor
 │   │   ├── compose.yaml
-│   │   ├── backup.sh · restore.sh
-│   │   ├── r2.env.example · r2.env
+│   │   ├── image/Dockerfile
+│   │   ├── scripts/{backup.sh,restore.sh}
+│   │   ├── config/{r2.env.example,r2.env}
 │   │   ├── systemd/backup-{daily,monthly}.{service,timer}
 │   │   └── verify.sh
 │   │
 │   ├── prometheus/ · loki/ · grafana/ · alloy/
-│   │       cada uno: compose.yaml · su config (.example + real) · verify.sh
+│   │       cada uno: compose.yaml · image/Dockerfile · config/ (.example + real) · verify.sh
 │   │
 ├── scripts/                     ← solo lo transversal
 │   ├── verify.sh                ← orquesta: corre el de cada stack presente
@@ -435,6 +443,33 @@ odoo-infrastructure/
 ├── tests/
 └── docs/
 ```
+
+### Adentro de un stack: image/, config/, scripts/
+
+Tres carpetas, mismo criterio en las diez: **por qué existe el archivo, no qué tipo de
+archivo es**.
+
+- **`image/`** — lo que participa del build: el `Dockerfile` y todo lo que ese
+  `Dockerfile` hace `COPY` (el `entrypoint.sh` de `odoo` vive ahí, al lado, no en
+  `scripts/`, porque se copia adentro de la imagen).
+- **`config/`** — lo que la herramienta lee en runtime: `.example` versionado, real
+  gitignoreado al lado.
+- **`scripts/`** — lo que un humano o un timer invocan desde el host, sin pasar por el
+  build: `backup.sh`, `certbot-wrapper.sh`. No existe si el stack no tiene nada así.
+
+`compose.yaml` se queda en la raíz del stack, nunca adentro de una subcarpeta: es lo que
+`envs/*.yaml` nombra por `include:`, y ese camino tiene que ser predecible sin mirar
+adentro de cada stack.
+
+**Todo stack tiene `image/Dockerfile`, incluso sin nada que agregarle a la imagen
+oficial.** `postgres` y `nginx` son casos así: dos líneas, un `FROM` pineado y nada más.
+Es deliberado — la alternativa es `image: postgres:17.10` directo en el compose, sin
+build, que dice exactamente lo mismo en una línea y sin capa extra. El costo real: dejar
+de pullear el tag oficial y pasar a construir sobre él en cada checkout, y `make up`
+sobre un checkout nuevo necesita un `build` antes del primer `up` para los diez stacks,
+no solo para los que de verdad compilan algo. Se paga a cambio de que ningún stack sea la
+excepción — el día que `postgres` necesite algo instalado, es una línea en un archivo que
+ya existe, no una carpeta nueva.
 
 ### Lo que hace que esto se lea solo
 
