@@ -64,3 +64,6 @@ addons/third-party/*
 !addons/enterprise/
 addons/enterprise/*
 !addons/enterprise/.gitkeep
+
+# Examples
+.stacks
