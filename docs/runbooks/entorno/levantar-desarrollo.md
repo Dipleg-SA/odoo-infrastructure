@@ -71,6 +71,12 @@ set -a; . ./.env; set +a
 `secrets-init` no imprime ningún pendiente: los tres salen de `openssl`.
 
 ```bash
+make config-init
+```
+
+Bootstrapea de una sola vez los config reales de los stacks activos —nginx, postgres, odoo— desde su `.example`. De acá en más, cada bloque solo edita el suyo con `nano` cuando corresponde.
+
+```bash
 make host-verify
 ```
 
@@ -82,13 +88,7 @@ Chequea la versión de Compose, `.env` sin claves vacías, la identidad declarad
 
 **Objetivo** — nginx sirviendo en loopback, en texto plano.
 
-**A mano** — bootstrapeá los dos archivos reales de nginx que este stack sí monta (gitignoreados; `server-plain.conf` no hace falta, ya viene versionado):
-
-```bash
-make config-init
-```
-
-Los valores del `.example` ya sirven tal cual (rate-limit, CIDR de Docker); no hace falta editarlos salvo que tu red los necesite distintos. `NGINX_MODE` no se declara: `envs/development.yaml` fija la plantilla sin TLS en el entrypoint. Si dependiera de la variable, un `.env` sin la clave montaría la plantilla con TLS y nginx no arrancaría — no hay certificado.
+**A mano** — nada: los dos archivos reales de nginx que este stack sí monta (`server-plain.conf` no hace falta, ya viene versionado) ya los bootstrapeó `config-init` en el bloque 2. Los valores del `.example` ya sirven tal cual (rate-limit, CIDR de Docker); no hace falta editarlos salvo que tu red los necesite distintos. `NGINX_MODE` no se declara: `envs/development.yaml` fija la plantilla sin TLS en el entrypoint. Si dependiera de la variable, un `.env` sin la clave montaría la plantilla con TLS y nginx no arrancaría — no hay certificado.
 
 ```bash
 make nginx-up
@@ -108,13 +108,7 @@ Omite el certificado, el `server_name` y el 443, los tres derivados de que este 
 
 **Objetivo** — la base corriendo y vacía.
 
-**A mano** — bootstrapeá `postgresql.conf` (gitignoreado):
-
-```bash
-make config-init
-```
-
-No necesita edición, solo bootstrap.
+**A mano** — nada: `postgresql.conf` ya lo bootstrapeó `config-init` en el bloque 2, y no necesita edición.
 
 ```bash
 make postgres-up
@@ -129,10 +123,9 @@ Exige el servicio `healthy`, que acepte conexiones y que las de Odoo entren en `
 
 **Objetivo** — el árbol de addons de tu rama en disco y la imagen de Odoo construida.
 
-**A mano** — completar `addons/addons.txt`. Si todavía no declaraste ningún repo propio, ver [crear-fork](../modulos/crear-fork.md).
+**A mano** — completar `addons/addons.txt`, que `config-init` ya bootstrapeó en el bloque 2. Si todavía no declaraste ningún repo propio, ver [crear-fork](../modulos/crear-fork.md).
 
 ```bash
-make config-init
 ${EDITOR:-nano} addons/addons.txt
 ```
 
@@ -152,13 +145,7 @@ Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, tod
 
 **Objetivo** — Odoo sirviendo por nginx en loopback.
 
-**A mano** — bootstrapeá `odoo.conf` (gitignoreado):
-
-```bash
-make config-init
-```
-
-No hace falta editar `smtp_server`/`port`/`user`: `ODOO_DISABLE_SMTP=1`, forzado en `compose.dev.yaml`, los deja vacíos sin importar lo que traiga el `.example`.
+**A mano** — `odoo.conf` ya lo bootstrapeó `config-init` en el bloque 2. No hace falta editar `smtp_server`/`port`/`user`: `ODOO_DISABLE_SMTP=1`, forzado en `compose.dev.yaml`, los deja vacíos sin importar lo que traiga el `.example`.
 
 ```bash
 make odoo-up && make odoo-logs

@@ -44,11 +44,7 @@ Todo lo demás ya está: la versión de Docker Engine/Compose y su arranque auto
 
 **Objetivo** — el repo clonado en su propio directorio, con `.env` y los 8 secrets de este entrypoint cargados y validados. Nada levantado todavía.
 
-**A mano** — `.env.staging.example` deja vacías las claves de este entorno y explica cada una donde se edita. Bootstrapeá además `r2.env` (gitignoreado):
-
-```bash
-make config-init
-```
+**A mano** — `.env.staging.example` deja vacías las claves de este entorno y explica cada una donde se edita. Más abajo, `config-init` bootstrapea `r2.env` (gitignoreado) junto con el resto.
 
 Lleva el **bucket y endpoint de R2 de producción**, letra por letra, porque es su
 repositorio el que se restaura. `PUBLIC_HOSTNAME` sí es de `.env`, y es el de prueba,
@@ -96,6 +92,12 @@ set -a; . ./.env; set +a
 ```
 
 ```bash
+make config-init
+```
+
+Bootstrapea de una sola vez `r2.env`, y los config de nginx, postgres y odoo — de acá en más, cada bloque solo edita el suyo.
+
+```bash
 make host-verify
 ```
 
@@ -107,11 +109,7 @@ Repite los chequeos de host —ya deberían pasar, es el mismo servidor— y agr
 
 **Objetivo** — el certificado propio de staging emitido, nginx sirviendo con él y el túnel propio conectado.
 
-**A mano** — el Tunnel se creó en el bloque 1. Falta bootstrapear los archivos reales de nginx (gitignoreados):
-
-```bash
-make config-init
-```
+**A mano** — el Tunnel se creó en el bloque 1; los archivos reales de nginx ya los bootstrapeó `config-init` en el bloque 2.
 
 Reemplazá `TU_DOMINIO` por el hostname público de staging (las cuatro apariciones en `server-tls.conf`) — es distinto del de producción. Sin `dnsmasq` en este stack, no hace falta tocar `stacks/dnsmasq/`.
 
@@ -136,13 +134,7 @@ Cubre los dos servicios `healthy`, que `server-tls.conf` no tenga el placeholder
 
 **Objetivo** — la base y el filestore sembrados desde el repositorio de backups de producción — el mismo restore que exige el simulacro semestral.
 
-**A mano** — bootstrapeá `postgresql.conf` (gitignoreado):
-
-```bash
-make config-init
-```
-
-No necesita edición, solo bootstrap.
+**A mano** — nada: `postgresql.conf` ya lo bootstrapeó `config-init` en el bloque 2, y no necesita edición.
 
 ```bash
 make postgres-up
@@ -169,10 +161,9 @@ Igual que en producción: el servicio `healthy`, ningún puerto publicado, y las
 
 **Objetivo** — el árbol de módulos de la rama `-stag` en disco y la imagen de Odoo construida.
 
-**A mano** — completar `addons/addons.txt` con los mismos repos que producción; la rama la elige `ADDONS_BRANCH` en `.env`, no el manifiesto.
+**A mano** — completar `addons/addons.txt`, que `config-init` ya bootstrapeó en el bloque 2, con los mismos repos que producción; la rama la elige `ADDONS_BRANCH` en `.env`, no el manifiesto.
 
 ```bash
-make config-init
 nano addons/addons.txt
 ```
 
@@ -192,13 +183,7 @@ Encabeza con la rama declarada (`<versión>-stag`) y sigue con una fila por repo
 
 **Objetivo** — Odoo sirviendo por el hostname de staging, con los datos de producción adentro.
 
-**A mano** — bootstrapeá `odoo.conf` (gitignoreado):
-
-```bash
-make config-init
-```
-
-No hace falta editar `smtp_server`/`port`/`user`: `ODOO_DISABLE_SMTP=1` los fuerza vacíos, sin importar lo que traiga el `.example`. La base no arranca vacía, así que no hay `-i base` ni contraseña de `admin` por defecto: **las credenciales son las de producción**, y eso incluye a los usuarios reales. Es la razón por la que este stack fuerza `ODOO_DISABLE_SMTP=1`.
+**A mano** — `odoo.conf` ya lo bootstrapeó `config-init` en el bloque 2. No hace falta editar `smtp_server`/`port`/`user`: `ODOO_DISABLE_SMTP=1` los fuerza vacíos, sin importar lo que traiga el `.example`. La base no arranca vacía, así que no hay `-i base` ni contraseña de `admin` por defecto: **las credenciales son las de producción**, y eso incluye a los usuarios reales. Es la razón por la que este stack fuerza `ODOO_DISABLE_SMTP=1`.
 
 ```bash
 make odoo-up && make odoo-logs

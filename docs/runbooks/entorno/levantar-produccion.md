@@ -51,7 +51,7 @@ Dos cosas que parecen prerrequisitos y no lo son, porque necesitan el repositori
 
 **Objetivo** — el repo clonado en el último release, con `.env` y los 11 secrets cargados y validados, y el daemon de Docker ya rotando logs. Nada levantado todavía.
 
-**A mano** — `.env.production.example` deja seis claves vacías y explica cada una donde se edita; no hay una segunda lista acá. Dos salen directo de los prerrequisitos (`SMTP_USER`, `ALERT_EMAIL_FROM`) y las otras cuatro se completan con lo que devuelve el segundo comando. Dos trampas: `LOCAL_IP` tiene que ser una IP real de una interfaz existente —`dnsmasq` bindea exactamente ahí y si no, queda `unhealthy`— y `SMTP_HOST` es la que más se olvida, porque ningún prerrequisito la deja anotada. Ninguna puede quedar vacía: Compose interpola una variable vacía sin fallar y el síntoma aparece capas después. El bucket y el endpoint de R2 **no** van acá: se editan directo en `r2.env` (bloque 7), bootstrapeado desde su `.example`.
+**A mano** — `.env.production.example` deja seis claves vacías y explica cada una donde se edita; no hay una segunda lista acá. Dos salen directo de los prerrequisitos (`SMTP_USER`, `ALERT_EMAIL_FROM`) y las otras cuatro se completan con lo que devuelve el segundo comando. Dos trampas: `LOCAL_IP` tiene que ser una IP real de una interfaz existente —`dnsmasq` bindea exactamente ahí y si no, queda `unhealthy`— y `SMTP_HOST` es la que más se olvida, porque ningún prerrequisito la deja anotada. Ninguna puede quedar vacía: Compose interpola una variable vacía sin fallar y el síntoma aparece capas después. El bucket y el endpoint de R2 **no** van acá: se editan directo en `r2.env` (bloque 7) — `config-init`, más abajo, ya lo bootstrapea junto con el resto.
 
 `secrets-init` deja **11 archivos**: 5 generados que no se tocan nunca y 6 con el marcador `CAMBIAR`, que se llenan con los valores de los prerrequisitos. Tres detalles de formato:
 
@@ -94,6 +94,12 @@ set -a; . ./.env; set +a
 `secrets-perms` deja cada archivo en `640` con el grupo del proceso no-root que lo lee, y necesita root porque `chgrp` a un GID ajeno lo exige. El `set -a` carga `.env` en **esta** shell: si abrís una terminal nueva, repetilo.
 
 ```bash
+make config-init
+```
+
+Bootstrapea de una sola vez los config reales de los stacks activos —nginx, dnsmasq, postgres, odoo, r2.env, grafana— desde su `.example`. De acá en más, cada bloque solo edita el suyo con `nano` cuando corresponde.
+
+```bash
 sudo make host-init
 ```
 
@@ -111,11 +117,7 @@ Cubre versión de Compose, arranque automático de Docker, la rotación de logs 
 
 **Objetivo** — el certificado emitido, nginx sirviendo con él, el Tunnel conectado y `dnsmasq` resolviendo el hostname a la IP local para la LAN.
 
-**A mano** — el Tunnel y su Public Hostname ya quedaron configurados en [crear-tunnel-cloudflare](crear-tunnel-cloudflare.md). Falta bootstrapear los archivos reales de nginx y dnsmasq (gitignoreados, no vienen del checkout):
-
-```bash
-make config-init
-```
+**A mano** — el Tunnel y su Public Hostname ya quedaron configurados en [crear-tunnel-cloudflare](crear-tunnel-cloudflare.md); los archivos reales de nginx y dnsmasq ya los bootstrapeó `config-init` en el bloque 2.
 
 Reemplazá `TU_DOMINIO` por tu hostname público en `server-tls.conf` (las cuatro apariciones) y en `dnsmasq.conf`, y `TU_IP_LOCAL` por la IP de este servidor en la LAN — los mismos valores que `PUBLIC_HOSTNAME`/`LOCAL_IP` en tu `.env`. `00-http.conf` y `odoo.locations` ya traen valores razonables (rate-limit, CIDR de Docker); tocalos solo si tu LAN cae en `172.16.0.0/12`.
 
@@ -143,13 +145,7 @@ nginx no publica ninguna UI: su estado se lee del log (JSON, `make nginx-logs`) 
 
 **Objetivo** — la base corriendo, con su config real y su presupuesto de conexiones coherente.
 
-**A mano** — bootstrapeá `postgresql.conf` (gitignoreado):
-
-```bash
-make config-init
-```
-
-No necesita edición, solo bootstrap: los valores de tuning son ratios sobre el
+**A mano** — nada: `postgresql.conf` ya lo bootstrapeó `config-init` en el bloque 2, y no necesita edición. Los valores de tuning son ratios sobre el
 `mem_limit` del contenedor, no sobre la RAM del host. Si bajás ese cap, revisá la tabla
 entera —se calcularon juntos—, no la fila que parece afectada.
 
@@ -175,10 +171,9 @@ rechaza.** Los dos valores viven en archivos de herramientas distintas y nada m�
 
 **Objetivo** — el árbol de módulos en disco y la imagen de Odoo construida. El bloque 6 no arranca sin esto: el entrypoint aborta si el `addons_path` queda vacío.
 
-**A mano** — completar `addons/addons.txt` con tus repos, uno por línea (`URL categoría`). Si no tenés ninguno todavía, podés dejarlo vacío y volver después (ver [crear-fork](../modulos/crear-fork.md)).
+**A mano** — completar `addons/addons.txt`, que `config-init` ya bootstrapeó en el bloque 2, con tus repos, uno por línea (`URL categoría`). Si no tenés ninguno todavía, podés dejarlo vacío y volver después (ver [crear-fork](../modulos/crear-fork.md)).
 
 ```bash
-make config-init
 nano addons/addons.txt
 ```
 
@@ -202,11 +197,7 @@ Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, tod
 
 **Objetivo** — Odoo sirviendo por el hostname público con certificado propio. Acá se cierra el 502 que dejó el bloque 3.
 
-**A mano** — bootstrapeá `odoo.conf` (gitignoreado) antes de levantar:
-
-```bash
-make config-init
-```
+**A mano** — `odoo.conf` ya lo bootstrapeó `config-init` en el bloque 2.
 
 Reemplazá `TU_SMTP_HOST`/`TU_SMTP_PORT`/`TU_SMTP_USER` con los mismos valores que `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER` en tu `.env`. No interpola: si dejás el placeholder, Odoo intenta mandar por un host que no existe en vez de quedar sin SMTP.
 
@@ -234,11 +225,7 @@ Cubre el servicio `healthy`, los logs sin errores de permisos, Odoo respondiendo
 
 **Objetivo** — el backup corriendo, probado una vez de punta a punta, y avisando por mail si falla.
 
-**A mano** — bootstrapeá `r2.env` (gitignoreado):
-
-```bash
-make config-init
-```
+**A mano** — `r2.env` ya lo bootstrapeó `config-init` en el bloque 2.
 
 Reemplazá `TU_ENDPOINT` y `TU_BUCKET` con los valores reales de R2. Este bloque va
 después del 6 porque su verificación exige un snapshot, y un snapshot exige que exista
@@ -288,11 +275,7 @@ sudo make notify-test
 
 **Objetivo** — métricas de host, contenedores y base, logs centralizados, y las siete alertas vivas **y llegando por mail**.
 
-**A mano** — bootstrapeá `grafana.ini` y `contact-points.yaml` (gitignoreados), y la prueba de entrega de las alertas en la UI de Grafana. El acceso está en el apéndice porque el `3001` solo escucha en loopback.
-
-```bash
-make config-init
-```
+**A mano** — `grafana.ini` y `contact-points.yaml` ya los bootstrapeó `config-init` en el bloque 2; falta la prueba de entrega de las alertas en la UI de Grafana. El acceso está en el apéndice porque el `3001` solo escucha en loopback.
 
 Reemplazá `TU_SMTP_HOST`/`TU_SMTP_PORT`/`TU_SMTP_USER`/`TU_EMAIL_ALERTA_FROM` en `grafana.ini` y `TU_EMAIL_ALERTA_TO` en `contact-points.yaml` — los mismos valores que `SMTP_*`/`ALERT_EMAIL_*` en tu `.env`. Ninguno de los dos interpola desde `.env`: si dejás el placeholder, Grafana lo rechaza al arrancar (`from_address` inválido) o manda el correo a una dirección que no existe.
 
