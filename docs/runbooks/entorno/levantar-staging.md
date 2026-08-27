@@ -121,18 +121,21 @@ Repite los chequeos de host —ya deberían pasar, es el mismo servidor— y agr
 
 ```bash
 make cert-issue && make nginx-up
+make cloudflared-up
 sudo make timers-install
 ```
 
-**Primero el certificado, después el proxy:** nginx no arranca si el archivo no existe, y con DNS-01 certbot no necesita que nginx esté vivo para emitirlo. El hostname de staging va a dar 502 hasta el bloque 6.
+**Primero el certificado, después el proxy:** nginx no arranca si el archivo no existe, y con DNS-01 certbot no necesita que nginx esté vivo para emitirlo. `cloudflared` va en línea propia y no encadenado con `&&`: no depende del certificado ni de que nginx haya arrancado. El hostname de staging va a dar 502 hasta el bloque 6.
 
 `timers-install` va acá y no más adelante porque **la renovación del certificado es la única unit que le corresponde a este stack** — no respalda, así que no lleva timers de backup. Se instala con el nombre del proyecto adelante (`staging-cert-renew.timer`), así que no pisa las de producción. Sin esto, el certificado de staging vence a los 90 días.
 
 ```bash
 make nginx-verify
+make certbot-verify
+make cloudflared-verify
 ```
 
-Cubre los dos servicios `healthy`, que `server-tls.conf` no tenga el placeholder de `.example` sin reemplazar, el `server_name`, los días que le quedan al certificado, el timer de renovación recién instalado, las conexiones del Tunnel y el log de nginx sin errores. `dnsmasq` sale como omitido: este stack no lo trae.
+`nginx-verify` cubre el servicio `healthy`, que `server-tls.conf` no tenga el placeholder de `.example` sin reemplazar, el `server_name` y el log de nginx sin errores. Los días que le quedan al certificado y el timer de renovación recién instalado los cubre `certbot-verify`, aparte; las conexiones del Tunnel y el token de Cloudflare los cubre `cloudflared-verify` — nginx no sabe nada de ninguno de los dos. `dnsmasq` sale como omitido: este stack no lo trae.
 
 ---
 

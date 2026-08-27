@@ -129,19 +129,28 @@ Cubre versión de Compose, arranque automático de Docker, la rotación de logs 
 
 ```bash
 make cert-issue && make nginx-up
+make cloudflared-up
+# Solo si este stack lleva LAN (COMPOSE_PROFILES=lan en tu .env):
+make dnsmasq-up
 ```
 
 **El orden importa y es al revés de lo intuitivo: primero el certificado, después el proxy.** nginx no arranca si el archivo del certificado no existe, y con DNS-01 certbot no necesita que nginx esté vivo para emitirlo — valida contra la API de Cloudflare, no contra el puerto 80. Por eso son dos comandos encadenados y no `make up`.
+
+`cloudflared` y `dnsmasq` van en líneas propias y no encadenados con `&&`: ninguno de los dos depende del certificado ni de que nginx haya arrancado. **Corré la línea de `dnsmasq` solo si tu `.env` tiene `COMPOSE_PROFILES=lan` descomentado** — medido: nombrarlo explícito en `up`/`run` salta el filtro de `profiles:` aunque el perfil esté inactivo, así que en un VPS sin LAN no falla con "no such service" como parecería razonable esperar. Lo que pasa en cambio depende de si `dnsmasq.conf` ya existe: si LAN nunca estuvo activo en este checkout, `config-init` nunca lo bootstrapeó, Docker monta un directorio vacío en su lugar y el contenedor no llega a arrancar —reintenta en loop, molesto pero inofensivo, el `53` nunca se bindea—; si el archivo sí quedó de una activación anterior, arranca de verdad con `network_mode: host` y queda escuchando en `${LOCAL_IP}:53` sin que lo hayas pedido.
 
 **El hostname público va a dar 502 al terminar este bloque, y está bien.** nginx ya sirve con el certificado real, pero su upstream —Odoo— no existe hasta el bloque 6.
 
 ```bash
 make nginx-verify
+make certbot-verify
+make cloudflared-verify
+# Solo si este stack lleva LAN:
+make dnsmasq-verify
 ```
 
-Cubre los tres servicios `healthy`, que la config renderizada no tenga variables sin sustituir, que el `server_name` sea tu hostname, que el `proxy_pass` vaya por variable con el resolver de Docker declarado, los días que le quedan al certificado, **el timer de renovación activo**, las conexiones del Tunnel, el log de nginx sin errores, los binds y el token de Cloudflare.
+`nginx-verify` cubre el servicio `healthy`, que la config renderizada no tenga variables sin sustituir, que el `server_name` sea tu hostname, que el `proxy_pass` vaya por variable con el resolver de Docker declarado, el log de nginx sin errores y los binds. Los días que le quedan al certificado y el timer de renovación los cubre `certbot-verify`, aparte; las conexiones del Tunnel y el token de Cloudflare los cubre `cloudflared-verify` — nginx no sabe nada de ninguno de los dos.
 
-El timer todavía no existe: lo instala `sudo make timers-install` en el bloque 7, junto con los de backup. Es el único chequeo de este bloque que queda rojo hasta entonces.
+El timer todavía no existe: lo instala `sudo make timers-install` en el bloque 7, junto con los de backup. Es el único chequeo de `certbot-verify` que queda rojo hasta entonces.
 
 nginx no publica ninguna UI: su estado se lee del log (JSON, `make nginx-logs`) y de `make nginx-verify`. Los dos chequeos que no se pueden correr en el servidor están en el apéndice.
 
