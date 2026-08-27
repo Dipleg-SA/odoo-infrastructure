@@ -5,11 +5,11 @@
 # Reemplazá TU_DOMINIO por el hostname público real de este deployment, en
 # las cuatro líneas de abajo. Es el mismo valor que PUBLIC_HOSTNAME en el
 # .env de este checkout — lo necesitan dnsmasq y cert.sh, que no leen este
-# archivo. make edge-verify cruza los dos.
+# archivo. make nginx-verify cruza los dos.
 #
 # El certificado tiene que existir ANTES del primer arranque — nginx no levanta
 # con un ssl_certificate ausente. Lo emite certbot, que con DNS-01 no necesita
-# que nginx esté vivo (ver INSTALL.md).
+# que nginx esté vivo (ver docs/runbooks/entorno/levantar-produccion.md).
 
 # --- Redirección al hostname canónico ---
 # $server_name y NO $host: $host devuelve lo que el cliente escribió y descarta el

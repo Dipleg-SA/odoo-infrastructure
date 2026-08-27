@@ -15,8 +15,12 @@ v_postgres() {
   # --- Acepta conexiones ---
   # pg_isready es lo mínimo: si esto falla, todo lo de Odoo miente sobre su causa.
 
-  expect "postgres acepta conexiones" "accepting connections" \
-    docker compose exec -T postgres pg_isready
+  if ! corriendo postgres; then
+    omitir "postgres acepta conexiones" "$(motivo postgres)"
+  else
+    expect "postgres acepta conexiones" "accepting connections" \
+      docker compose exec -T postgres pg_isready
+  fi
 
   # --- Permisos del secret ---
   # POSTGRES_PASSWORD_FILE apunta a un secret montado: un 600 root-owned lo deja

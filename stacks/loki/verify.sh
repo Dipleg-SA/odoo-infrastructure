@@ -27,8 +27,14 @@ v_loki() {
   # La consulta sale desde prometheus y no desde el host: loki no publica puerto,
   # así que preguntarle desde afuera daría un falso rojo.
 
-  expect "Loki recibe logs por contenedor" "odoo" docker compose exec -T prometheus \
-    wget -qO- 'http://loki:3100/loki/api/v1/label/container/values'
+  # El request sale de prometheus, así que su estado también condiciona: sin la
+  # guarda, un prometheus caído se reporta como si Loki no recibiera logs.
+  if ! corriendo prometheus; then
+    omitir "Loki recibe logs por contenedor" "$(motivo prometheus)"
+  else
+    expect "Loki recibe logs por contenedor" "odoo" docker compose exec -T prometheus \
+      wget -qO- 'http://loki:3100/loki/api/v1/label/container/values'
+  fi
 
   # --- Binds ---
 

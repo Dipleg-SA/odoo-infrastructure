@@ -270,6 +270,21 @@ no_contiene "y borra sus dos archivos" "staging-backup-daily" "$(ls "$ROOT_STAG/
 igual "instala tres archivos, no siete" "3" "$(ls "$ROOT_STAG/systemd" | wc -l | tr -d ' ')"
 no_contiene "y no toca las units del otro checkout" "production-" "$(ls "$ROOT_STAG/systemd")"
 
+# --- El checkout vecino cuyo nombre empieza igual ---
+# El glob del prefijo no distingue 'staging-' de 'staging-qa-': sin cruzar el
+# resto contra las bases conocidas, este install desactivaba y borraba las units
+# del otro deployment, que es exactamente lo que el prefijo existe para evitar.
+
+reset_stub
+printf 'postgres\nodoo\ncertbot\n' > "$STUB_DIR/servicios"
+: > "$ROOT_STAG/systemd/staging-qa-cert-renew.timer"
+: > "$ROOT_STAG/systemd/staging-qa-cert-renew.service"
+
+SALIDA=$(timers "$ROOT_STAG" install)
+contiene    "deja en pie las units del vecino con prefijo compartido" \
+  "staging-qa-cert-renew.timer" "$(ls "$ROOT_STAG/systemd")"
+no_contiene "y no las desactiva" "disable --now staging-qa" "$(llamadas)"
+
 # --- Development: ni una ---
 
 ROOT_DEV=$(crear_root_timers development-sale)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Corrida de backup. Se invoca a mano (make backup / make backup-check) o desde los
+# Corrida de backup. Se invoca a mano (make backup-run / make backup-integrity) o desde los
 # timers de systemd. Cualquier paso que falle aborta la corrida entera, lo que deja
 # exit code != 0 y dispara el OnFailure= de la unit.
 #

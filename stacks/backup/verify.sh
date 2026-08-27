@@ -97,7 +97,7 @@ v_backup() {
   if ! respalda; then
     omitir "registro de addons del snapshot presente" "este entorno no escribe snapshots"
   elif [ -s state/meta/addons.txt ]; then ok "registro de addons del snapshot presente"
-  else aviso "registro de addons del snapshot presente" "state/meta/addons.txt vacío — lo escribe make backup"; fi
+  else aviso "registro de addons del snapshot presente" "state/meta/addons.txt vacío — lo escribe make backup-run"; fi
 
   # --- Timers ---
   # El diario respalda y purga; el mensual verifica integridad del repositorio.

@@ -369,4 +369,28 @@ printf 'postgres\nodoo\n' > "$STUB_DIR/servicios"
 contiene "sin la capa, se omite en vez de fallar" \
   "no corresponde a este stack" "$(timer_activo cert-renew 2>&1)"
 
+# =====================================================================
+titulo "alloy_salud — el parser que decide si un componente dejó de emitir"
+# =====================================================================
+# El único derivador que no vive en lib/: es de stacks/alloy/verify.sh, pero se
+# ejercita igual que el resto porque el error que tuvo —un patrón sin anclar— no
+# lo ve nadie hasta que Alloy se rompe de verdad y el chequeo igual da verde.
+
+. stacks/alloy/verify.sh
+
+SANOS='{"name":"a","health":{"state":"healthy"}},{"name":"b","health":{"state":"healthy"}}'
+igual "cuenta los componentes y ninguno roto" "2 0" "$(alloy_salud "$SANOS")"
+
+# 'healthy' suelto matchea DENTRO de "unhealthy": sin anclar el valor entero, este
+# caso devolvía 0 rotos y el chequeo declaraba sano justo lo que existe para atrapar.
+MIXTO='{"health":{"state":"healthy"}},{"health":{"state":"unhealthy"}},{"health":{"state":"exited"}}'
+igual "un unhealthy cuenta como roto, igual que un exited" "3 2" "$(alloy_salud "$MIXTO")"
+
+igual "un unhealthy solo no pasa por sano" "1 1" \
+  "$(alloy_salud '{"health":{"state":"unhealthy"}}')"
+
+# Grepear la clave equivocada daba cero coincidencias y el chequeo pasaba siempre:
+# total en 0 es lo que hace que v_alloy falle en vez de dar verde sobre nada.
+igual "una respuesta sin componentes no se disimula" "0 0" "$(alloy_salud '{"otra":"cosa"}')"
+
 resumen

@@ -83,15 +83,33 @@ instalar_archivo() {
   chmod 644 "$destino"
 }
 
+# --- Bases que este árbol conoce ---
+# Del mismo lugar del que salen las units, no de una lista aparte. Sin esto, el
+# glob del prefijo no alcanza para decir de quién es una unit.
+
+conocidas() {
+  local archivo
+  for archivo in stacks/*/systemd/*.timer; do
+    [ -e "$archivo" ] || continue
+    basename "$archivo" .timer
+  done
+}
+
 # --- Units que dejaron de corresponder ---
 # El stack pudo perder una capa desde la última instalación: la unit vieja sigue
 # enabled y dispara igual, contra un checkout que ya no la puede atender.
+#
+# El glob del prefijo no distingue 'odoo-' de 'odoo-staging-': sin cruzar contra
+# las bases conocidas, este bucle borra las units del checkout vecino cuyo nombre
+# de proyecto empieza igual — justo lo que el prefijo existe para evitar.
 
 limpiar_sobrantes() {
-  local lista="$1" archivo base
+  local lista="$1" archivo base todas
+  todas=$(conocidas)
   for archivo in "$DESTINO/$PROYECTO-"*.timer; do
     [ -e "$archivo" ] || continue
     base=$(basename "$archivo" .timer); base="${base#"$PROYECTO"-}"
+    printf '%s\n' "$todas" | grep -qx "$base" || continue
     printf '%s\n' $lista | grep -qx "$base" && continue
     systemctl disable --now "$PROYECTO-$base.timer" >/dev/null 2>&1
     rm -f "$DESTINO/$PROYECTO-$base.timer" "$DESTINO/$PROYECTO-$base.service"

@@ -37,8 +37,12 @@ v_odoo() {
       docker compose exec -T odoo grep "^smtp_server = .\+" /tmp/odoo-runtime.conf
   fi
 
-  expect "odoo sirve en :8069" "200" docker compose exec -T odoo \
-    curl -sS -o /dev/null -w '%{http_code}' http://localhost:8069/web/login
+  if ! corriendo odoo; then
+    omitir "odoo sirve en :8069" "$(motivo odoo)"
+  else
+    expect "odoo sirve en :8069" "200" docker compose exec -T odoo \
+      curl -sS -o /dev/null -w '%{http_code}' http://localhost:8069/web/login
+  fi
 
   # --- Árbol de addons ---
   # Llegan por bind-mount: su presencia ya no la garantiza la imagen.

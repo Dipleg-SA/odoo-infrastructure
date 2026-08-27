@@ -7,6 +7,24 @@
 REGLAS=stacks/grafana/config/provisioning/alerting/rules.yaml
 BACKUP_COMPOSE=stacks/backup/compose.yaml
 
+# --- Cuántos componentes hay y cuántos no están sanos ---
+# Función aparte para poder ejercitarla sin Alloy arriba: los dos greps de acá ya
+# pasaron dos veces por el mismo error —contar la clave equivocada, y excluir un
+# patrón sin anclar— y las dos veces el chequeo pasaba dijera lo que dijera Alloy.
+#
+# El estado va anidado en "health":{"state":...}, no en una clave "health_type" de
+# primer nivel: se midió contra la API real. wc -l y no grep -c porque la API
+# devuelve todo el JSON en UNA línea. Y el patrón excluido va anclado al valor
+# entero: 'healthy' suelto matchea dentro de "unhealthy", que es justo el estado
+# que este chequeo existe para encontrar.
+
+alloy_salud() {
+  local comp="$1" total rotos
+  total=$(printf '%s' "$comp" | grep -o '"health":{"state":"' | wc -l | tr -d ' ')
+  rotos=$(printf '%s' "$comp" | grep -o '"health":{"state":"[a-z]*"' | grep -vc '"state":"healthy"' || true)
+  printf '%s %s\n' "${total:-0}" "${rotos:-0}"
+}
+
 v_alloy() {
   titulo "alloy"
 
@@ -24,14 +42,8 @@ v_alloy() {
        'exec 3<>/dev/tcp/127.0.0.1/12345 && printf "GET /api/v0/web/components HTTP/1.0\r\n\r\n" >&3 && cat <&3' 2>/dev/null); then
     bad "todos los componentes de Alloy sanos" "no se pudo consultar la API de componentes"
   else
-    # El estado va anidado en "health":{"state":...}, no en una clave "health_type"
-    # de primer nivel — se midió contra la API real. Grepear la clave equivocada
-    # daba cero coincidencias y el chequeo pasaba siempre, dijera lo que dijera Alloy.
     local total
-    # wc -l y no grep -c: la API devuelve todo el JSON en UNA línea, así que
-    # grep -c contaba líneas —siempre 1— en vez de componentes.
-    total=$(printf '%s' "$comp" | grep -o '"health":{"state":"' | wc -l | tr -d ' ')
-    rotos=$(printf '%s' "$comp" | grep -o '"health":{"state":"[a-z]*"' | grep -vc 'healthy' || true)
+    read -r total rotos <<< "$(alloy_salud "$comp")"
     if [ "${total:-0}" -eq 0 ]; then
       bad "todos los componentes de Alloy sanos" "la API no devolvió ningún componente"
     elif [ "${rotos:-0}" -eq 0 ]; then

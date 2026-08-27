@@ -19,7 +19,7 @@ server=8.8.8.8
 # Reemplazá TU_IP_LOCAL por la IP del servidor en la LAN y TU_DOMINIO por el
 # hostname público real — los mismos valores que LOCAL_IP/PUBLIC_HOSTNAME en
 # el .env de este checkout, que los necesitan nginx y cert.sh (no leen este
-# archivo). make edge-verify cruza los dos.
+# archivo). make dnsmasq-verify cruza los dos.
 
 listen-address=TU_IP_LOCAL
 address=/TU_DOMINIO/TU_IP_LOCAL
