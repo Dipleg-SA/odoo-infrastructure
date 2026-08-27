@@ -161,7 +161,7 @@ Se evalúa herramienta por herramienta, no como stack cerrado.
 
 **Provisioning como código.** Datasources, dashboards y recursos de alerting se definen como archivos versionados junto al resto de la infraestructura. Resuelve el riesgo de perderlos si el contenedor se recrea, sin necesidad de un backup aparte. Consecuencia asumida: quedan de solo lectura en la UI, y un cambio se hace editando el archivo.
 
-**Los umbrales de las alertas van literales, y no es un pendiente.** Grafana no ofrece mecanismo para parametrizarlos: el provisioning de alerting es YAML plano, sin la interpolación que sí tienen datasources y dashboards. Se probaron las dos formas contra la imagen del stack: `${VAR}` dentro de `params` ni siquiera parsea (`did not find expected ',' or ']'`, y la regla entera no se provisiona), y `"$__env{VAR}"` pasa como cadena literal a un campo que espera un número. Como el valor vive en el archivo de config de la herramienta, la regla del stack aplica sin excepción: si no se puede parametrizar por el mecanismo de esa herramienta, se versiona literal. El único umbral que se cruza con el de otro archivo —el de «backup viejo» contra `RESTIC_MAX_AGE`, fijo en `stacks/backup/compose.yaml`— lo verifica `make prometheus-verify`.
+**Los umbrales de las alertas van literales, y no es un pendiente.** Grafana no ofrece mecanismo para parametrizarlos: el provisioning de alerting es YAML plano, sin la interpolación que sí tienen datasources y dashboards. Se probaron las dos formas contra la imagen del stack: `${VAR}` dentro de `params` ni siquiera parsea (`did not find expected ',' or ']'`, y la regla entera no se provisiona), y `"$__env{VAR}"` pasa como cadena literal a un campo que espera un número. Como el valor vive en el archivo de config de la herramienta, la regla del stack aplica sin excepción: si no se puede parametrizar por el mecanismo de esa herramienta, se versiona literal. El único umbral que se cruza con el de otro archivo —el de «backup viejo» contra `RESTIC_MAX_AGE`, fijo en `stacks/backup/compose.yaml`— lo verifica `make alloy-verify`, que es el stack dueño de que la alerta avise antes de que el healthcheck marque rojo.
 
 ---
 
@@ -205,7 +205,7 @@ Esto no prohíbe montar el socket `:ro` para descubrimiento u observación, que 
 
 ## Redes de Docker
 
-**Tres redes por función:** `edge` (el túnel, el proxy y el almacén de métricas, que necesita alcanzarlos por pull), `app` (aplicación, pooler, base, backup, el proxy como puente y el agente de observabilidad, que entra a alcanzar la base) y `observability` (métricas, logs, dashboards y el agente).
+**Tres redes por función:** `edge` (el túnel, el proxy, el emisor de certificados y el almacén de métricas, que necesita alcanzarlos por pull), `app` (aplicación, base, backup, el proxy como puente y el agente de observabilidad, que entra a alcanzar la base) y `observability` (métricas, logs, dashboards y el agente).
 
 Reduce el radio de impacto si un contenedor se compromete, con un mecanismo nativo de Compose y sin herramienta nueva. Dos consecuencias que un boceto ingenuo de tres redes no prevé: el almacén de métricas necesita membresía en `edge`, porque la topología híbrida lo obliga a scrapear el proxy y el túnel por pull directo; y el servicio de DNS local no está en ninguna red de Docker, porque corre en `network_mode: host`.
 
@@ -224,10 +224,12 @@ Contrapartida escrita del principio de correr como no-root: se registra quién n
 
 ## Modularización de Compose
 
-`envs/production.yaml` no es monolítico: declara los recursos compartidos —`networks:` y `secrets:`— y usa `include:` para sumar un módulo por capa.
+`envs/production.yaml` no es monolítico: declara los recursos compartidos —`networks:`, `secrets:` y los volúmenes que dos stacks comparten— y usa `include:` para sumar **un archivo por stack**.
 
-- **Motivo:** un archivo por capa mantiene acotado el diff de cada cambio y hace auditable de un vistazo qué contenedores pertenecen a qué capa. Más fácil de revisar y de razonar sobre el radio de impacto que un archivo de cientos de líneas con todo mezclado.
+- **Motivo:** un archivo por stack mantiene acotado el diff de cada cambio y hace auditable de un vistazo qué contenedores lleva ese entorno. Más fácil de revisar y de razonar sobre el radio de impacto que un archivo de cientos de líneas con todo mezclado.
 - **Mecanismo:** `include:` en vez de encadenar `-f` a mano en cada invocación, lo que evita que una invocación se olvide un archivo y levante un subconjunto incompleto sin avisar.
 - **Naming:** nunca `compose.override.yaml`. Ese nombre dispara el autoload especial de Compose —se aplica implícitamente sin pedirlo— y confunde la semántica: esto es modularización, con servicios distintos que no se solapan, no override de ambiente.
 
-**Los entornos no productivos no son parte de esa cadena.** Staging es la misma cadena de módulos instanciada con otro nombre de proyecto más un archivo chico que pisa puertos y nombres; desarrollo es un módulo propio, standalone, sin túnel ni proxy ni backups. Los dos quedan deliberadamente **fuera del `include:` por defecto**: incluirlos por costumbre en una corrida de servidor arriesgaría exponer puertos de debug.
+**Se descartó un nivel intermedio de agregación por capa** (un archivo `edge.yaml` que incluyera nginx, certbot, cloudflared y dnsmasq). El motivo es medido y está en [modular-architecture.md](modular-architecture.md#la-unidad-un-stack--un-contenedor-con-cosas-propias): de cinco capas solo tres podían usarlo, porque prueba y desarrollo necesitan subconjuntos y **Compose no sabe quitar un servicio de un archivo ya incluido**.
+
+**Cada entorno tiene su propio entrypoint completo**, no un archivo chico que pise al de producción: `envs/staging.yaml` y `envs/development.yaml` listan sus propios `include:`, sus propios secrets y sus propios ajustes con `!override`. Cuál se levanta lo dice `COMPOSE_FILE` en el `.env` del checkout, así que no existe una cadena por defecto de la que un entorno pueda quedar dentro por descuido.

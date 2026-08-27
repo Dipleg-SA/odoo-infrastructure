@@ -25,7 +25,8 @@ Un stack es un contenedor con todo lo suyo en su carpeta: `compose.yaml`, `image
 
 ```bash
 cp .env.production.example .env   # o .env.staging.example / .env.development.example
-make secrets-init
+make secrets-init                 # los secrets que declare esta composición
+make config-init                  # los config reales, desde su .example
 ```
 
 El recorrido completo —qué cuentas hacen falta, en qué orden se levanta cada capa y cómo se verifica— está en [`docs/runbooks/entorno/levantar-produccion.md`](docs/runbooks/entorno/levantar-produccion.md). Cada bloque trae su verificación ejecutable, y son los mismos en los tres entornos.

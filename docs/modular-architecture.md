@@ -184,8 +184,9 @@ que alguien se acuerde de mirar.
 
 ### Lo que se elimina con esta decisión
 
-- **La imagen propia de Postgres.** El `Dockerfile` existía solo para instalar
-  pgbackrest: `postgres` pasa a la imagen oficial, sin build, sin tag por proyecto.
+- **Las capas propias de la imagen de Postgres.** El `Dockerfile` instalaba pgbackrest;
+  sin eso queda un `FROM postgres:17.10` pelado. El archivo **no** desaparece: todo stack
+  construye su imagen, incluso sin nada que agregarle — ver «Adentro de un stack».
 - `archive_mode`/`archive_command`, y con eso el principio de "un entorno que no
   respalda no archiva WAL" más los `-c archive_mode=off` forzados en staging y development.
 - El secret `pgbackrest_r2_credentials`, `pgbackrest.conf` y su `.example`.
@@ -370,13 +371,6 @@ desacopla, solo los esconde detrás de un `../`.
 **Frecuencia del snapshot.** Diario es el default de Odoo.sh y el punto de partida
 razonable. Cuál es el RPO tolerable para un deployment concreto es del operador.
 
-## Pendiente
-
-`CLAUDE.md` y `PRINCIPLES.md` describen la arquitectura anterior en prosa y quedan
-invalidados por este documento. La deduplicación entre esos dos archivos —hoy repiten
-once reglas, varias casi textuales— conviene hacerla con esta forma ya implementada, no
-antes.
-
 ## La estructura
 
 ```
@@ -424,10 +418,9 @@ odoo-infrastructure/
 │   │   ├── systemd/cert-renew.{service,timer}
 │   │   └── verify.sh
 │   │
-│   ├── cloudflared/
+│   ├── cloudflared/             ← sin config/: el túnel entra por secret, no por archivo
 │   │   ├── compose.yaml
 │   │   ├── image/Dockerfile
-│   │   ├── config/{config.yaml.example,config.yaml}
 │   │   └── verify.sh
 │   │
 │   ├── dnsmasq/                 ← profiles: [lan]
@@ -449,9 +442,10 @@ odoo-infrastructure/
 │   │       sin valores por deployment) · verify.sh
 │   │
 ├── scripts/                     ← solo lo transversal
-│   ├── verify.sh                ← orquesta: corre el de cada stack presente
+│   ├── verify-stacks.sh         ← orquesta: corre el de cada stack presente
+│   ├── verify-host.sh           ← lo que es del SO, no de ningún stack
 │   ├── secrets-init.sh · secrets-perms.sh · config-init.sh
-│   ├── addons.sh
+│   ├── addons.sh · pydeps.sh · integrity-check.sh · failure-notify.sh
 │   ├── timers.sh
 │   └── lib/{ui.sh,verify.sh,compose.sh}
 │
@@ -476,7 +470,8 @@ archivo es**.
 - **`config/`** — lo que la herramienta lee en runtime: `.example` versionado, real
   gitignoreado al lado.
 - **`scripts/`** — lo que un humano o un timer invocan desde el host, sin pasar por el
-  build: `backup.sh`, `certbot-wrapper.sh`. No existe si el stack no tiene nada así.
+  build: `backup.sh` de backup, `wrapper.sh` de certbot. No existe si el stack no tiene
+  nada así.
 
 `compose.yaml` se queda en la raíz del stack, nunca adentro de una subcarpeta: es lo que
 `envs/*.yaml` nombra por `include:`, y ese camino tiene que ser predecible sin mirar
@@ -505,10 +500,14 @@ once — no hay que contar carpetas.
 gesto en la misma carpeta, y una verificación puede afirmar que ningún `.example` quedó
 sin copiar sin saber nada de cada herramienta.
 
-**Los timers viven con su stack.** `cert-renew` con nginx, los de backup con backup: un
-stack trae todo lo suyo, incluido lo que se instala fuera del checkout. Arriba queda solo
-`notify@.service`, que cualquier timer usa.
+**Los timers viven con su stack.** `cert-renew` con certbot, los de backup con backup: un
+stack trae todo lo suyo, incluido lo que se instala fuera del checkout. Es lo que hace que
+`timers.sh` derive qué units corresponden preguntándole a la composición — la carpeta
+dueña de la unit es el servicio que la habilita. Arriba queda solo `notify@.service`, que
+cualquier timer usa.
 
-**Casi ningún stack tiene `.env`.** Es la regla de configuración funcionando: los tags
-van pineados literales en el compose, y lo que no interpola Compose vive en el config de
-su herramienta. `nginx` es de los pocos que necesita uno, porque publica puertos.
+**Ningún stack tiene `.env` propio.** Es la regla de configuración funcionando: los tags
+van pineados literales en el compose, lo que Compose sí interpola —puertos, nombres— sale
+del `.env` de la raíz vía el entrypoint del entorno, y lo demás vive en el config de su
+herramienta. El único `env_file:` del repositorio es el de `backup`, y no es un `.env` de
+stack sino `config/r2.env`: las credenciales de R2 en el formato que restic parsea.

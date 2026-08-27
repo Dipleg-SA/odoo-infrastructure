@@ -382,8 +382,8 @@ addons: ## Muestra el estado de los addons
 	@. scripts/lib/ui.sh; ui_run "addons" scripts/addons.sh status
 
 # --- Imágenes propias ---
-# Las que este stack construye (odoo, postgres y dnsmasq donde esté). El build de
-# odoo no clona nada: el árbol de addons entra por bind-mount, no por capa de imagen.
+# Todo stack construye la suya, aunque el Dockerfile sea un FROM pineado y nada más.
+# El build de odoo no clona nada: los addons entran por bind-mount, no por capa.
 
 build: ## Construye las imágenes propias de este stack
 	@. scripts/lib/ui.sh; ui_run "build" docker compose build

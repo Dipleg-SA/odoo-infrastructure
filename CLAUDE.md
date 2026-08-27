@@ -30,7 +30,7 @@ Para scripts, `bash -n` y después correrlos de verdad. **Correr `make verify` e
 
 ## Cosas que no se deducen leyendo un archivo solo
 
-- **`entrypoint.sh` de Odoo genera config en runtime.** El `addons_path` sale de un glob sobre cuatro categorías en orden de precedencia (`enterprise > custom-addons > oca > third-party`), y `admin_passwd` y `smtp_password` se appendean al conf desde su secret. `smtp_server`/`port`/`user` no: son literales del `odoo.conf` real por checkout.
+- **`entrypoint.sh` de Odoo genera config en runtime.** El `addons_path` sale de un glob sobre cuatro categorías en orden de precedencia (`enterprise > custom-addons > oca > third-party`); `admin_passwd` y `smtp_password` se appendean al conf desde su secret, y `smtp_server`/`port`/`user` desde `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER` del `.env`. Por eso `odoo.conf` se versiona tal cual, sin `.example`: no le queda ningún valor por deployment. `ODOO_DISABLE_SMTP=1` gana sobre el `.env` y fuerza `smtp_server` vacío.
 - **La imagen de Odoo lee sus pines de un contexto de build aparte.** `requirements.txt` queda fuera del contexto de build, así que llega por `additional_contexts` y `COPY --from`. El corchete de `requirements.tx[t]` no es un typo: hace el `COPY` opcional —con cero matches, un glob normal aborta el build— para que un checkout sin pines buildee igual. El `RUN` que lo instala va condicionado con `if`, no con `&&`: un `;` ahí dejaría que un `pip install` fallado devuelva 0 y produzca una imagen sin dependencias.
 - **Las units de systemd llevan el nombre del proyecto adelante**, y `scripts/timers.sh` es dueño único de ese nombre y de qué units corresponden — lo deriva de la composición, no de una lista. Las verificaciones le preguntan en vez de repetir nombres, y con eso dos checkouts en el mismo host no se pisan las units.
 - **Cada stack es dueño de qué se chequea y qué se espera de él.** El `verify` de arriba orquesta: corre el de cada stack presente y junta resultados, sin saber qué espera ninguno. `docs/runbooks/` nombra el comando; los valores esperados no se duplican en la documentación.
@@ -43,13 +43,18 @@ Están duplicados por necesidad —hay formatos que no interpolan variables— y
 |---|---|---|
 | categorías en `addons.sh` | bucle `for category` en el entrypoint de Odoo | los módulos se clonan y nunca se cargan |
 | rama de addons en `.env` | tag `FROM odoo:` del Dockerfile | ramas de una versión montadas en un Odoo de otra |
-| edad máxima del respaldo | `OnCalendar` del timer que lo dispara | el contenedor queda unhealthy para siempre |
+| umbral de la alerta de backup viejo | `RESTIC_MAX_AGE` del healthcheck | el contenedor se pone rojo antes de que nadie reciba el aviso |
 | GID de cada secret | usuario real del contenedor que lo lee | el consumidor no puede leerlo |
+
+Uno más, real pero **sin verificación que lo cruce**: `RESTIC_MAX_AGE` es cadencia del
+`OnCalendar` más margen, así que mover el timer sin tocarlo deja el contenedor unhealthy
+para siempre. Vive en los comentarios de los dos archivos y en ningún chequeo.
 
 ## Rarezas de herramienta que cuestan horas
 
 - **Un `--profile` explícito REEMPLAZA a `COMPOSE_PROFILES`, no se suma.** Enumerar la composición con `--profile cert` descarta el `lan` que trajo el `.env` del operador. Para preguntar por todo hay que fusionar en la variable: `COMPOSE_PROFILES="cert,restore${COMPOSE_PROFILES:+,$COMPOSE_PROFILES}"`.
 - **Un servicio con `profiles:` inactivo no se valida.** `docker compose config` sale exit 0 sin haberlo mirado: un falso verde, no una prueba de que ese archivo esté bien.
+- **Nombrar un servicio con `profiles:` explícito en `up`/`run` salta el filtro del perfil**, aunque esté inactivo — es lo que hace posible el restore de staging sin activar nada, y también significa que `docker compose up dnsmasq` en un VPS sin LAN no falla con "no such service" como parecería razonable esperar. Lo que pasa en cambio depende de si su config ya existe: si nunca se bootstrapeó, Docker monta un directorio vacío y el contenedor no arranca; si quedó de una activación anterior, arranca de verdad y queda escuchando en el `53` del host.
 - **`include:` resuelve las rutas relativas de cada archivo incluido contra *su propia* carpeta**, no contra la del que lo incluye. También acepta que cada archivo nombre su propio `env_file`, y el mismo archivo corriendo solo lee ese mismo entorno desde su carpeta.
 - **`docker compose run` acepta `--user`**, así que una operación puntual puede elevarse en la invocación sin que el servicio se declare root.
 - `docker compose port` devuelve `invalid IP:0` con exit 0 para un puerto **no** publicado — no cadena vacía.
