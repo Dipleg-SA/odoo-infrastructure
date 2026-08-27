@@ -114,10 +114,7 @@ Cubre versión de Compose, arranque automático de Docker, la rotación de logs 
 **A mano** — el Tunnel y su Public Hostname ya quedaron configurados en [crear-tunnel-cloudflare](crear-tunnel-cloudflare.md). Falta bootstrapear los archivos reales de nginx y dnsmasq (gitignoreados, no vienen del checkout):
 
 ```bash
-cp stacks/nginx/config/00-http.conf.example stacks/nginx/config/00-http.conf
-cp stacks/nginx/config/odoo.locations.example stacks/nginx/config/odoo.locations
-cp stacks/nginx/config/server-tls.conf.example stacks/nginx/config/server-tls.conf
-cp stacks/dnsmasq/config/dnsmasq.conf.example stacks/dnsmasq/config/dnsmasq.conf
+make config-init
 ```
 
 Reemplazá `TU_DOMINIO` por tu hostname público en `server-tls.conf` (las cuatro apariciones) y en `dnsmasq.conf`, y `TU_IP_LOCAL` por la IP de este servidor en la LAN — los mismos valores que `PUBLIC_HOSTNAME`/`LOCAL_IP` en tu `.env`. `00-http.conf` y `odoo.locations` ya traen valores razonables (rate-limit, CIDR de Docker); tocalos solo si tu LAN cae en `172.16.0.0/12`.
@@ -149,7 +146,7 @@ nginx no publica ninguna UI: su estado se lee del log (JSON, `make nginx-logs`) 
 **A mano** — bootstrapeá `postgresql.conf` (gitignoreado):
 
 ```bash
-cp stacks/postgres/config/postgresql.conf.example stacks/postgres/config/postgresql.conf
+make config-init
 ```
 
 No necesita edición, solo bootstrap: los valores de tuning son ratios sobre el
@@ -181,8 +178,7 @@ rechaza.** Los dos valores viven en archivos de herramientas distintas y nada m�
 **A mano** — completar `addons/addons.txt` con tus repos, uno por línea (`URL categoría`). Si no tenés ninguno todavía, podés dejarlo vacío y volver después (ver [crear-fork](../modulos/crear-fork.md)).
 
 ```bash
-cp addons/addons.txt.example addons/addons.txt
-cp addons/requirements.txt.example addons/requirements.txt
+make config-init
 nano addons/addons.txt
 ```
 
@@ -209,7 +205,7 @@ Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, tod
 **A mano** — bootstrapeá `odoo.conf` (gitignoreado) antes de levantar:
 
 ```bash
-cp stacks/odoo/config/odoo.conf.example stacks/odoo/config/odoo.conf
+make config-init
 ```
 
 Reemplazá `TU_SMTP_HOST`/`TU_SMTP_PORT`/`TU_SMTP_USER` con los mismos valores que `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER` en tu `.env`. No interpola: si dejás el placeholder, Odoo intenta mandar por un host que no existe en vez de quedar sin SMTP.
@@ -241,7 +237,7 @@ Cubre el servicio `healthy`, los logs sin errores de permisos, Odoo respondiendo
 **A mano** — bootstrapeá `r2.env` (gitignoreado):
 
 ```bash
-cp stacks/backup/config/r2.env.example stacks/backup/config/r2.env
+make config-init
 ```
 
 Reemplazá `TU_ENDPOINT` y `TU_BUCKET` con los valores reales de R2. Este bloque va
@@ -295,9 +291,7 @@ sudo make notify-test
 **A mano** — bootstrapeá `grafana.ini` y `contact-points.yaml` (gitignoreados), y la prueba de entrega de las alertas en la UI de Grafana. El acceso está en el apéndice porque el `3001` solo escucha en loopback.
 
 ```bash
-cp stacks/grafana/config/grafana.ini.example stacks/grafana/config/grafana.ini
-cp stacks/grafana/config/provisioning/alerting/contact-points.yaml.example \
-   stacks/grafana/config/provisioning/alerting/contact-points.yaml
+make config-init
 ```
 
 Reemplazá `TU_SMTP_HOST`/`TU_SMTP_PORT`/`TU_SMTP_USER`/`TU_EMAIL_ALERTA_FROM` en `grafana.ini` y `TU_EMAIL_ALERTA_TO` en `contact-points.yaml` — los mismos valores que `SMTP_*`/`ALERT_EMAIL_*` en tu `.env`. Ninguno de los dos interpola desde `.env`: si dejás el placeholder, Grafana lo rechaza al arrancar (`from_address` inválido) o manda el correo a una dirección que no existe.

@@ -5,6 +5,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 . scripts/lib/ui.sh
+. scripts/lib/compose.sh
 
 # --- Umask ---
 # Lo que se cree acá nace 600; secrets-perms le pone 640 y el grupo consumidor.
@@ -20,9 +21,11 @@ creados=()
 # ya declara los suyos —11 producción, 8 staging, 3 development— y una segunda
 # lista acá divergiría. Sin esto, un stack chico nace con archivos inertes que
 # secrets-check después exige completar.
+#
+# configuracion() fusiona los perfiles en la variable, no con --profile: un
+# --profile explícito reemplaza a COMPOSE_PROFILES en vez de sumarse.
 
-DECLARADOS=$(docker compose --profile cert --profile restore config 2>/dev/null \
-  | sed -n 's|^ *file: .*/secrets/\([a-z0-9_]*\)$|\1|p')
+DECLARADOS=$(configuracion | sed -n 's|^ *file: .*/secrets/\([a-z0-9_]*\)$|\1|p')
 
 if [ -z "$DECLARADOS" ]; then
   ui_bad "no se pudo leer los secrets de la composición" "revisar COMPOSE_FILE en .env" >&2

@@ -1,5 +1,5 @@
 .PHONY: help up down logs ps nuke build \
-        secrets-init secrets-perms secrets-check \
+        secrets-init secrets-perms secrets-check config-init \
         host-init host-verify timers-install notify-test monitoring-role \
         cert-issue cert-renew \
         backup-run backup-integrity restore \
@@ -28,8 +28,8 @@ help:
 	  /^[a-zA-Z0-9_-]+:.*##/ {printf "  \033[36m%-23s\033[0m %s\n", $$1, substr($$0, index($$0,"##")+2)}' $(MAKEFILE_LIST)
 
 # --- Inicialización de un deploy nuevo ---
-# En orden: secrets-init, cargar los valores a mano, secrets-perms, secrets-check.
-# Los tres scripts ya imprimen su propio ▶/✓/✗: el target no lo duplica.
+# En orden: secrets-init y config-init, cargar los valores a mano, secrets-perms,
+# secrets-check. Los scripts ya imprimen su propio ▶/✓/✗: el target no lo duplica.
 
 secrets-init: ## Genera los secrets iniciales (valores dummy a completar a mano)
 	scripts/secrets-init.sh
@@ -42,6 +42,13 @@ secrets-perms: ## Aplica permisos de secrets (requiere root)
 
 secrets-check: ## Verifica permisos de secrets
 	scripts/secrets-perms.sh --check
+
+# --- Config real de cada stack activo ---
+# Mismo mecanismo que secrets-init, pero para los .conf/.ini/.yaml gitignoreados de
+# stacks/*/config/ y addons/: un cp idempotente desde el .example de cada uno.
+
+config-init: ## Bootstrapea los config reales desde su .example
+	scripts/config-init.sh
 
 # --- Config de sistema operativo ---
 # Lo único del repo que se instala FUERA del checkout, y por eso pide root: la

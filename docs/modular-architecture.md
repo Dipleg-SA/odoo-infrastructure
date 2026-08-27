@@ -349,7 +349,9 @@ sirva a tres entornos sin llevar un solo condicional adentro.
 ## Scripts
 
 Cada stack trae los scripts que operan ese stack — `postgres/verify.sh`,
-`backup/backup.sh`. Arriba quedan solo los transversales: `secrets-init.sh`,
+`backup/backup.sh`. Arriba quedan solo los transversales: `secrets-init.sh` y
+`config-init.sh` bootstrapean lo gitignoreado desde su `.example` —el primero
+pregunta qué secret declara la composición, el segundo qué stack está activo—,
 `addons.sh`, y un `verify` que **orquesta**: corre el de cada stack presente y junta
 resultados, sin saber qué espera ninguno.
 
@@ -447,10 +449,10 @@ odoo-infrastructure/
 │   │
 ├── scripts/                     ← solo lo transversal
 │   ├── verify.sh                ← orquesta: corre el de cada stack presente
-│   ├── secrets-init.sh · secrets-perms.sh
+│   ├── secrets-init.sh · secrets-perms.sh · config-init.sh
 │   ├── addons.sh
 │   ├── timers.sh
-│   └── lib/ui.sh
+│   └── lib/{ui.sh,verify.sh,compose.sh}
 │
 ├── host/
 │   ├── daemon.json              ← rotación de logs, global al daemon

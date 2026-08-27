@@ -11,6 +11,7 @@ set -uo pipefail
 # Dos niveles: este archivo vive en scripts/lib/, todo lo demás se nombra desde el root.
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 . scripts/lib/ui.sh
+. scripts/lib/compose.sh
 
 # --- Guarda de doble sourceo ---
 # El orquestador sourcea el verify de cada stack, y cada uno sourcea esta librería.
@@ -69,16 +70,10 @@ vacio() {
 # Le pregunta a la composición, como las guardas del Makefile: qué stacks trae cada
 # entorno ya lo dice su entrypoint. Un stack que este entorno no lleva no es un fallo.
 #
-# Los perfiles se fusionan en la VARIABLE, no con --profile: un --profile explícito
-# REEMPLAZA a COMPOSE_PROFILES en vez de sumarse — se midió. Con flags, un deploy
-# con COMPOSE_PROFILES=lan perdía dnsmasq de esta lista y nunca se verificaba.
-#
-# cert y restore van siempre porque son operaciones a demanda: el perfil las
-# mantiene fuera de `up`, pero son parte del stack igual. Lo que traiga el
-# operador —lan— es topología, y ahí sí manda su .env.
+# La fusión de perfiles vive en scripts/lib/compose.sh, compartida con secrets-init.sh
+# y config-init.sh: los tres necesitaban la misma consulta.
 
-SERVICIOS=$(COMPOSE_PROFILES="cert,restore${COMPOSE_PROFILES:+,$COMPOSE_PROFILES}" \
-  docker compose config --services 2>/dev/null)
+SERVICIOS=$(servicios_activos)
 
 # Sin composición no se aborta: es el estado que la capa host existe para
 # diagnosticar. Se responde que sí a todo y cada chequeo reporta su propio fallo.

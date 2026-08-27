@@ -18,7 +18,7 @@ PATH="$REPO_ROOT/tests/stubs:$PATH"
 crear_root() {
   local root="$TMP/$1"; shift
   mkdir -p "$root/scripts/lib" "$root/state/textfile" "$root/secrets"
-  cp "$REPO_ROOT/scripts/lib/ui.sh" "$root/scripts/lib/"
+  cp "$REPO_ROOT/scripts/lib/ui.sh" "$REPO_ROOT/scripts/lib/compose.sh" "$root/scripts/lib/"
   for s in "$@"; do cp "$REPO_ROOT/scripts/$s" "$root/scripts/"; done
   printf 'PUBLIC_HOSTNAME=odoo.example.test\n' > "$root/.env"
   printf '%s' "$root"
@@ -149,6 +149,55 @@ contiene "y nombra el GID esperado" "esperado 65532" "$SALIDA"
 
 rm -rf "$ROOT/secrets"
 sale_con "sin secrets/ aborta" 1 bash -c "cd '$ROOT' && ./scripts/secrets-perms.sh --check"
+
+# =====================================================================
+titulo "config-init.sh — qué stack está activo decide qué bootstrapea"
+# =====================================================================
+
+ROOT=$(crear_root config config-init.sh)
+reset_stub
+
+# Dos stacks activos, uno con dos .example (uno anidado) y otro sin config/ propia.
+mkdir -p "$ROOT/stacks/nginx/config" "$ROOT/stacks/grafana/config/provisioning/alerting" "$ROOT/addons"
+printf 'default;\n' > "$ROOT/stacks/nginx/config/00-http.conf.example"
+printf 'de-mas;\n' > "$ROOT/stacks/nginx/config/odoo.locations.example"
+printf 'TU_EMAIL_ALERTA_TO\n' > "$ROOT/stacks/grafana/config/provisioning/alerting/contact-points.yaml.example"
+printf 'odoo.txt\n' > "$ROOT/addons/addons.txt.example"
+printf 'requirements\n' > "$ROOT/addons/requirements.txt.example"
+printf '%s\n' 'nginx' 'grafana' > "$STUB_DIR/servicios"
+
+SALIDA=$( (cd "$ROOT" && ./scripts/config-init.sh 2>&1) )
+igual "crea los 2 de nginx"        "0" "$([ -f "$ROOT/stacks/nginx/config/00-http.conf" ] && [ -f "$ROOT/stacks/nginx/config/odoo.locations" ]; echo $?)"
+igual "y el anidado de grafana"    "0" "$([ -f "$ROOT/stacks/grafana/config/provisioning/alerting/contact-points.yaml" ]; echo $?)"
+igual "sin odoo, sin addons" "" "$(ls "$ROOT/addons" 2>/dev/null | grep -v example || true)"
+
+# --- Idempotencia: no pisa lo cargado a mano ---
+
+printf 'editado a mano\n' > "$ROOT/stacks/nginx/config/00-http.conf"
+SALIDA=$( (cd "$ROOT" && ./scripts/config-init.sh 2>&1) )
+igual    "no pisa un archivo ya cargado" "editado a mano" "$(cat "$ROOT/stacks/nginx/config/00-http.conf")"
+contiene "y lo dice"                     "skip (ya existe)" "$SALIDA"
+
+# --- Odoo activo: addons entra ---
+
+printf '%s\n' 'nginx' 'grafana' 'odoo' > "$STUB_DIR/servicios"
+SALIDA=$( (cd "$ROOT" && ./scripts/config-init.sh 2>&1) )
+igual "bootstrapea los 2 de addons" "0" \
+  "$([ -f "$ROOT/addons/addons.txt" ] && [ -f "$ROOT/addons/requirements.txt" ]; echo $?)"
+
+# --- Un stack ausente no deja rastro ---
+# dnsmasq no está entre los activos: su .example no se toca.
+
+mkdir -p "$ROOT/stacks/dnsmasq/config"
+printf 'TU_IP_LOCAL\n' > "$ROOT/stacks/dnsmasq/config/dnsmasq.conf.example"
+( cd "$ROOT" && ./scripts/config-init.sh >/dev/null 2>&1 )
+igual "un stack fuera de la composición no bootstrapea" "1" \
+  "$([ -f "$ROOT/stacks/dnsmasq/config/dnsmasq.conf" ]; echo $?)"
+
+# --- Sin composición legible ---
+
+rm -f "$STUB_DIR/servicios"
+sale_con "sin composición legible aborta" 1 bash -c "cd '$ROOT' && ./scripts/config-init.sh"
 
 # =====================================================================
 titulo "timers.sh — qué units corresponden y con qué nombre"

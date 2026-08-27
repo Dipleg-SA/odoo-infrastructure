@@ -85,8 +85,7 @@ Chequea la versión de Compose, `.env` sin claves vacías, la identidad declarad
 **A mano** — bootstrapeá los dos archivos reales de nginx que este stack sí monta (gitignoreados; `server-plain.conf` no hace falta, ya viene versionado):
 
 ```bash
-cp stacks/nginx/config/00-http.conf.example stacks/nginx/config/00-http.conf
-cp stacks/nginx/config/odoo.locations.example stacks/nginx/config/odoo.locations
+make config-init
 ```
 
 Los valores del `.example` ya sirven tal cual (rate-limit, CIDR de Docker); no hace falta editarlos salvo que tu red los necesite distintos. `NGINX_MODE` no se declara: `envs/development.yaml` fija la plantilla sin TLS en el entrypoint. Si dependiera de la variable, un `.env` sin la clave montaría la plantilla con TLS y nginx no arrancaría — no hay certificado.
@@ -112,7 +111,7 @@ Omite el certificado, el `server_name` y el 443, los tres derivados de que este 
 **A mano** — bootstrapeá `postgresql.conf` (gitignoreado):
 
 ```bash
-cp stacks/postgres/config/postgresql.conf.example stacks/postgres/config/postgresql.conf
+make config-init
 ```
 
 No necesita edición, solo bootstrap.
@@ -133,8 +132,7 @@ Exige el servicio `healthy`, que acepte conexiones y que las de Odoo entren en `
 **A mano** — completar `addons/addons.txt`. Si todavía no declaraste ningún repo propio, ver [crear-fork](../modulos/crear-fork.md).
 
 ```bash
-cp addons/addons.txt.example addons/addons.txt
-cp addons/requirements.txt.example addons/requirements.txt
+make config-init
 ${EDITOR:-nano} addons/addons.txt
 ```
 
@@ -157,7 +155,7 @@ Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, tod
 **A mano** — bootstrapeá `odoo.conf` (gitignoreado):
 
 ```bash
-cp stacks/odoo/config/odoo.conf.example stacks/odoo/config/odoo.conf
+make config-init
 ```
 
 No hace falta editar `smtp_server`/`port`/`user`: `ODOO_DISABLE_SMTP=1`, forzado en `compose.dev.yaml`, los deja vacíos sin importar lo que traiga el `.example`.

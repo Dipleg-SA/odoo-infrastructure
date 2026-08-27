@@ -47,7 +47,7 @@ Todo lo demás ya está: la versión de Docker Engine/Compose y su arranque auto
 **A mano** — `.env.staging.example` deja vacías las claves de este entorno y explica cada una donde se edita. Bootstrapeá además `r2.env` (gitignoreado):
 
 ```bash
-cp stacks/backup/config/r2.env.example stacks/backup/config/r2.env
+make config-init
 ```
 
 Lleva el **bucket y endpoint de R2 de producción**, letra por letra, porque es su
@@ -110,9 +110,7 @@ Repite los chequeos de host —ya deberían pasar, es el mismo servidor— y agr
 **A mano** — el Tunnel se creó en el bloque 1. Falta bootstrapear los archivos reales de nginx (gitignoreados):
 
 ```bash
-cp stacks/nginx/config/00-http.conf.example stacks/nginx/config/00-http.conf
-cp stacks/nginx/config/odoo.locations.example stacks/nginx/config/odoo.locations
-cp stacks/nginx/config/server-tls.conf.example stacks/nginx/config/server-tls.conf
+make config-init
 ```
 
 Reemplazá `TU_DOMINIO` por el hostname público de staging (las cuatro apariciones en `server-tls.conf`) — es distinto del de producción. Sin `dnsmasq` en este stack, no hace falta tocar `stacks/dnsmasq/`.
@@ -141,7 +139,7 @@ Cubre los dos servicios `healthy`, que `server-tls.conf` no tenga el placeholder
 **A mano** — bootstrapeá `postgresql.conf` (gitignoreado):
 
 ```bash
-cp stacks/postgres/config/postgresql.conf.example stacks/postgres/config/postgresql.conf
+make config-init
 ```
 
 No necesita edición, solo bootstrap.
@@ -174,8 +172,7 @@ Igual que en producción: el servicio `healthy`, ningún puerto publicado, y las
 **A mano** — completar `addons/addons.txt` con los mismos repos que producción; la rama la elige `ADDONS_BRANCH` en `.env`, no el manifiesto.
 
 ```bash
-cp addons/addons.txt.example addons/addons.txt
-cp addons/requirements.txt.example addons/requirements.txt
+make config-init
 nano addons/addons.txt
 ```
 
@@ -198,7 +195,7 @@ Encabeza con la rama declarada (`<versión>-stag`) y sigue con una fila por repo
 **A mano** — bootstrapeá `odoo.conf` (gitignoreado):
 
 ```bash
-cp stacks/odoo/config/odoo.conf.example stacks/odoo/config/odoo.conf
+make config-init
 ```
 
 No hace falta editar `smtp_server`/`port`/`user`: `ODOO_DISABLE_SMTP=1` los fuerza vacíos, sin importar lo que traiga el `.example`. La base no arranca vacía, así que no hay `-i base` ni contraseña de `admin` por defecto: **las credenciales son las de producción**, y eso incluye a los usuarios reales. Es la razón por la que este stack fuerza `ODOO_DISABLE_SMTP=1`.
