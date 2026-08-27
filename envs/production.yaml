@@ -1,0 +1,76 @@
+# Entrypoint de producción: borde completo, datos y aplicación. Es el caso base —
+# lo único que ajusta son los binds de nginx, que ningún stack declara: NGINX_MODE
+# cae a tls y Odoo manda correo, sin apartarse de nada más.
+#
+# El nombre del stack NO se declara acá — sale de COMPOSE_PROJECT_NAME en .env,
+# junto a COMPOSE_FILE, para que los entornos usen el mismo mecanismo.
+#
+# dnsmasq entra solo si el .env de este checkout trae COMPOSE_PROFILES=lan: un
+# deploy en VPS no tiene red local que resolver.
+
+networks:
+  edge:
+  app:
+  observability:
+
+# --- Volumen compartido ---
+# certbot escribe el certificado, nginx lo lee :ro. Lo declara el entorno y no
+# uno de los dos stacks, como redes y secrets: dos declaraciones divergentes del
+# mismo recurso se fusionan en silencio, con exit 0.
+
+volumes:
+  letsencrypt:
+  # postgres escribe el dump acá, backup lo lee para meterlo en el mismo snapshot
+  # que el filestore. Compartido entre dos stacks, así que lo declara el entorno.
+  dumps:
+
+# --- Solo los secrets de los stacks que lleva ---
+# Compose falla si un `file:` declarado no existe, y declarar de más obliga a
+# fabricar archivos inertes que secrets-check después exige completar.
+
+secrets:
+  cloudflare_api_token:
+    file: ../secrets/cloudflare_api_token
+  cloudflare_tunnel_token:
+    file: ../secrets/cloudflare_tunnel_token
+  postgres_password:
+    file: ../secrets/postgres_password
+  odoo_admin_password:
+    file: ../secrets/odoo_admin_password
+  zeptomail_smtp_password:
+    file: ../secrets/zeptomail_smtp_password
+  restic_password:
+    file: ../secrets/restic_password
+  restic_r2_credentials:
+    file: ../secrets/restic_r2_credentials
+  # Grafana corre 472:0, así que el grupo 472 del archivo le llega por group_add
+  # en el servicio, no por su gid primario.
+  grafana_admin_password:
+    file: ../secrets/grafana_admin_password
+  # Rol de solo lectura propio del monitoreo, no la credencial de la aplicación.
+  postgres_exporter_password:
+    file: ../secrets/postgres_exporter_password
+
+include:
+  - ../stacks/nginx/compose.yaml
+  - ../stacks/certbot/compose.yaml
+  - ../stacks/cloudflared/compose.yaml
+  - ../stacks/dnsmasq/compose.yaml
+  - ../stacks/postgres/compose.yaml
+  - ../stacks/odoo/compose.yaml
+  - ../stacks/backup/compose.yaml
+  - ../stacks/prometheus/compose.yaml
+  - ../stacks/loki/compose.yaml
+  - ../stacks/grafana/compose.yaml
+  - ../stacks/alloy/compose.yaml
+
+services:
+  # --- El único que atiende la LAN ---
+  # Nivel 3: los puertos salen del .env de este deployment y con `:?` un .env sin
+  # la clave aborta — vacío publicaría un puerto al azar con exit 0. Sin LOCAL_IP
+  # el bind cae a loopback y no a 0.0.0.0: falla cerrada.
+
+  nginx:
+    ports:
+      - "${LOCAL_IP:-127.0.0.1}:${HTTP_PORT:?falta HTTP_PORT en .env}:80"
+      - "${LOCAL_IP:-127.0.0.1}:${HTTPS_PORT:?falta HTTPS_PORT en .env}:443"

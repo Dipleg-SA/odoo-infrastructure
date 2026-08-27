@@ -14,7 +14,7 @@ systemctl list-timers "$UNIDAD.timer"
 journalctl -u "$UNIDAD.service" -n 30
 ```
 
-Si `timers.sh units` no lista ninguna, el stack nunca instaló la unit: `sudo make timers-install`. Es el caso que deja el certificado sin renovar desde el día uno, y el que `make edge-verify` marca en rojo.
+Si `timers.sh units` no lista ninguna, el stack nunca instaló la unit: `sudo make timers-install`. Es el caso que deja el certificado sin renovar desde el día uno, y el que `make nginx-verify` marca en rojo.
 
 Un fallo manda mail por el `OnFailure=`, igual que los backups.
 
@@ -22,7 +22,7 @@ Hay un caso que el timer **no** cubre y la alerta tampoco: que certbot renueve b
 
 ## Fix
 
-`scripts/cert.sh renew` hace el reload como parte de la corrida; si hace falta forzarlo:
+`stacks/certbot/scripts/cert.sh renew` hace el reload como parte de la corrida; si hace falta forzarlo:
 
 ```bash
 docker compose exec nginx nginx -s reload

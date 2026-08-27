@@ -4,11 +4,11 @@
 
 Puesta en marcha de un deploy de producción nuevo — desde el repositorio clonado hasta el sistema listo para recibir el primer dato real de un usuario.
 
-Los tres entornos se levantan con los **mismos nueve bloques y los mismos comandos**: `capa.sh` resuelve qué servicios trae cada stack, así que `make edge-up` levanta tres contenedores acá y uno en desarrollo. Lo que cambia es qué bloques corresponden. Para el segundo y el tercer stack sobre este mismo servidor, ver [levantar-staging](levantar-staging.md) y [levantar-desarrollo](levantar-desarrollo.md).
+Los tres entornos se levantan con los **mismos bloques y los mismos comandos**. Lo que cambia es qué stacks trae cada entorno, y eso lo dice su entrypoint: `make nginx-up` levanta lo mismo en los tres, pero producción además tiene `certbot`, `cloudflared` y la observabilidad. Para el segundo y el tercer stack sobre este mismo servidor, ver [levantar-staging](levantar-staging.md) y [levantar-desarrollo](levantar-desarrollo.md).
 
 ## Objetivo
 
-Once servicios corriendo, verificados capa por capa, con el certificado real, los backups probados una vez de punta a punta y las alertas llegando por mail. El deploy termina en el primer dato que carga un usuario — todo lo anterior es descartable.
+Los once stacks corriendo, verificados uno por uno, con el certificado real, los backups probados una vez de punta a punta y las alertas llegando por mail. El deploy termina en el primer dato que carga un usuario — todo lo anterior es descartable.
 
 | Bloque | Deja | Prod | Stag | Dev |
 |---|---|:-:|:-:|:-:|
@@ -36,8 +36,8 @@ El orden no es negociable: cada bloque depende de que el anterior haya cerrado, 
 |---|---|---|
 | Zona de Cloudflare + token de API | [crear-zona-cloudflare](crear-zona-cloudflare.md) | `secrets/cloudflare_api_token` |
 | Tunnel de Cloudflare | [crear-tunnel-cloudflare](crear-tunnel-cloudflare.md) | `secrets/cloudflare_tunnel_token` |
-| ZeptoMail | [configurar-zeptomail](configurar-zeptomail.md) | `secrets/zeptomail_smtp_password` · `SMTP_USER` · `ALERT_EMAIL_FROM` |
-| Bucket de R2 + credenciales | [crear-bucket-r2](crear-bucket-r2.md) | `secrets/pgbackrest_r2_credentials` · `secrets/restic_r2_credentials` · `secrets/restic_password` · `R2_ENDPOINT` · `R2_BUCKET` |
+| ZeptoMail | [configurar-zeptomail](configurar-zeptomail.md) | `secrets/zeptomail_smtp_password` · `SMTP_USER` · `SMTP_HOST` · `ALERT_EMAIL_FROM` · `ALERT_EMAIL_TO` |
+| Bucket de R2 + credenciales | [crear-bucket-r2](crear-bucket-r2.md) | `secrets/restic_r2_credentials` · `secrets/restic_password` · el bucket/endpoint van a `stacks/backup/config/r2.env` (bloque 2), no a `.env` |
 | Token de git de solo lectura | [crear-token-git-lectura](crear-token-git-lectura.md) | `~/.git-credentials` del servidor |
 | Docker Engine y Compose, habilitados al arranque | [configurar-docker-host](configurar-docker-host.md) | El host listo para correr el stack |
 
@@ -49,14 +49,14 @@ Dos cosas que parecen prerrequisitos y no lo son, porque necesitan el repositori
 
 ## 2 · Repositorio
 
-**Objetivo** — el repo clonado en el último release, con `.env` y los 11 secrets cargados y validados, y el daemon de Docker ya rotando logs. Nada levantado todavía.
+**Objetivo** — el repo clonado en el último release, con `.env` y los 9 secrets cargados y validados, y el daemon de Docker ya rotando logs. Nada levantado todavía.
 
-**A mano** — `.env.prod.example` deja nueve claves vacías y explica cada una donde se edita; no hay una segunda lista acá. Cuatro salen directo de los prerrequisitos (`R2_ENDPOINT`, `R2_BUCKET`, `SMTP_USER`, `ALERT_EMAIL_FROM`) y las otras cinco se completan con lo que devuelve el segundo comando. Dos trampas: `LOCAL_IP` tiene que ser una IP real de una interfaz existente —`dnsmasq` bindea exactamente ahí y si no, queda `unhealthy`— y `SMTP_HOST` es la que más se olvida, porque ningún prerrequisito la deja anotada. Ninguna puede quedar vacía: Compose interpola una variable vacía sin fallar y el síntoma aparece capas después.
+**A mano** — `.env.production.example` deja seis claves vacías y explica cada una donde se edita; no hay una segunda lista acá. Dos salen directo de los prerrequisitos (`SMTP_USER`, `ALERT_EMAIL_FROM`); `LOCAL_IP` sale del segundo comando de abajo; `PUBLIC_HOSTNAME`, `SMTP_HOST` y `ALERT_EMAIL_TO` se completan a mano. Dos trampas: `LOCAL_IP` tiene que ser una IP real de una interfaz existente —`dnsmasq` bindea exactamente ahí y si no, queda `unhealthy`— y `SMTP_HOST` es la que más se olvida, porque ningún prerrequisito la deja anotada. Ninguna puede quedar vacía **ni ausente**: `host-verify` cruza contra `.env.production.example` y marca las dos cosas — Compose interpola una variable vacía sin fallar y el síntoma aparece capas después. El bucket y el endpoint de R2 **no** van acá: se editan directo en `r2.env`, más abajo en este mismo bloque, apenas `config-init` lo bootstrapea.
 
-`secrets-init` deja **11 archivos**: 5 generados que no se tocan nunca y 6 con el marcador `CAMBIAR`, que se llenan con los valores de los prerrequisitos. Tres detalles de formato:
+`secrets-init` deja **9 archivos**: 4 generados que no se tocan nunca y 5 con el marcador `CAMBIAR`, que se llenan con los valores de los prerrequisitos. Cuántos son sale de la composición, no de esta lista — un stack sin observabilidad declara menos. Tres detalles de formato:
 
 - `cloudflare_api_token`: sin comillas y **sin salto de línea final** — `nano -L`. Cloudflare emite dos formatos según cuándo lo creaste: 40 caracteres el viejo, `cfut_...` (~46) el nuevo — los dos son válidos.
-- `pgbackrest_r2_credentials` y `restic_r2_credentials` ya vienen con su esqueleto INI. **La misma clave de R2 va en los dos**, en sintaxis distinta: al rotarla hay que tocar ambos (ver [rotar-credenciales-r2](../credenciales/rotar-credenciales-r2.md)).
+- `restic_r2_credentials` ya viene con su esqueleto en el formato de AWS, que es lo que restic parsea (ver [rotar-credenciales-r2](../credenciales/rotar-credenciales-r2.md)).
 - Editor interactivo, nunca `echo >>`: así ningún token queda en el historial de la shell.
 
 ```bash
@@ -67,7 +67,7 @@ git fetch --tags && git checkout "$(git describe --tags --abbrev=0)"
 Al último tag, no al `HEAD` de la rama por defecto: `HEAD` detached es un guard-rail contra corregir código en el servidor.
 
 ```bash
-cp .env.prod.example .env
+cp .env.production.example .env
 echo "LAN:     $(hostname -I | awk '{print $1}')"
 echo "Pública: $(curl -s ifconfig.me)"
 nano .env
@@ -80,7 +80,6 @@ make secrets-init
 nano -L secrets/cloudflare_api_token   # -L: sin salto de línea final
 nano secrets/cloudflare_tunnel_token
 nano secrets/zeptomail_smtp_password
-nano secrets/pgbackrest_r2_credentials
 nano secrets/restic_r2_credentials
 nano secrets/restic_password
 ```
@@ -95,6 +94,20 @@ set -a; . ./.env; set +a
 `secrets-perms` deja cada archivo en `640` con el grupo del proceso no-root que lo lee, y necesita root porque `chgrp` a un GID ajeno lo exige. El `set -a` carga `.env` en **esta** shell: si abrís una terminal nueva, repetilo.
 
 ```bash
+make config-init
+```
+
+Bootstrapea de una sola vez los config reales de los stacks que todavía los necesitan desde su `.example`. `postgresql.conf`, `00-http.conf` y `odoo.locations` sirven tal cual; `odoo.conf`, `grafana.ini` y `contact-points.yaml` ya no bootstrapean nada —SMTP y el destinatario de alertas llegan por `.env`, no se editan a mano en ningún archivo—; quedan tres con un placeholder real:
+
+```bash
+nano stacks/nginx/config/server-tls.conf       # TU_DOMINIO → PUBLIC_HOSTNAME (4 apariciones)
+nano stacks/dnsmasq/config/dnsmasq.conf        # TU_DOMINIO → PUBLIC_HOSTNAME, TU_IP_LOCAL → LOCAL_IP
+nano stacks/backup/config/r2.env               # TU_ENDPOINT y TU_BUCKET, del prerrequisito de R2
+```
+
+Todos los valores son los mismos que ya cargaste en `.env`, salvo los de R2: esos van directo a `r2.env`, nunca a `.env` (ver bloque 1).
+
+```bash
 sudo make host-init
 ```
 
@@ -104,7 +117,7 @@ sudo make host-init
 make host-verify
 ```
 
-Cubre versión de Compose, arranque automático de Docker, la rotación de logs recién aplicada, `.env` sin claves vacías, la identidad declarada del stack, permisos y GID de los 11 secrets, y la superficie publicada del host.
+Cubre versión de Compose, arranque automático de Docker, la rotación de logs recién aplicada, `.env` sin claves vacías, la identidad declarada del stack, permisos y GID de los 9 secrets, y la superficie publicada del host.
 
 ---
 
@@ -112,47 +125,60 @@ Cubre versión de Compose, arranque automático de Docker, la rotación de logs 
 
 **Objetivo** — el certificado emitido, nginx sirviendo con él, el Tunnel conectado y `dnsmasq` resolviendo el hostname a la IP local para la LAN.
 
-**A mano** — ninguno: el Tunnel y su Public Hostname ya quedaron configurados en [crear-tunnel-cloudflare](crear-tunnel-cloudflare.md).
+**A mano** — el Tunnel y su Public Hostname ya quedaron configurados en [crear-tunnel-cloudflare](crear-tunnel-cloudflare.md); `server-tls.conf` y `dnsmasq.conf` ya los bootstrapeaste y editaste en el bloque 2. `00-http.conf` y `odoo.locations` ya traen valores razonables (rate-limit, CIDR de Docker); tocalos solo si tu LAN cae en `172.16.0.0/12`.
 
 ```bash
-make cert-issue && make edge-up
+make cert-issue && make nginx-up
+make cloudflared-up
+# Solo si este stack lleva LAN (COMPOSE_PROFILES=lan en tu .env):
+make dnsmasq-up
 ```
 
 **El orden importa y es al revés de lo intuitivo: primero el certificado, después el proxy.** nginx no arranca si el archivo del certificado no existe, y con DNS-01 certbot no necesita que nginx esté vivo para emitirlo — valida contra la API de Cloudflare, no contra el puerto 80. Por eso son dos comandos encadenados y no `make up`.
 
+`cloudflared` y `dnsmasq` van en líneas propias y no encadenados con `&&`: ninguno de los dos depende del certificado ni de que nginx haya arrancado. **Corré la línea de `dnsmasq` solo si tu `.env` tiene `COMPOSE_PROFILES=lan` descomentado** — medido: nombrarlo explícito en `up`/`run` salta el filtro de `profiles:` aunque el perfil esté inactivo, así que en un VPS sin LAN no falla con "no such service" como parecería razonable esperar. Lo que pasa en cambio depende de si `dnsmasq.conf` ya existe: si LAN nunca estuvo activo en este checkout, `config-init` nunca lo bootstrapeó, Docker monta un directorio vacío en su lugar y el contenedor no llega a arrancar —reintenta en loop, molesto pero inofensivo, el `53` nunca se bindea—; si el archivo sí quedó de una activación anterior, arranca de verdad con `network_mode: host` y queda escuchando en `${LOCAL_IP}:53` sin que lo hayas pedido.
+
 **El hostname público va a dar 502 al terminar este bloque, y está bien.** nginx ya sirve con el certificado real, pero su upstream —Odoo— no existe hasta el bloque 6.
 
 ```bash
-make edge-verify
+make nginx-verify
+make certbot-verify
+make cloudflared-verify
+# Solo si este stack lleva LAN:
+make dnsmasq-verify
 ```
 
-Cubre los tres servicios `healthy`, que la config renderizada no tenga variables sin sustituir, que el `server_name` sea tu hostname, que el `proxy_pass` vaya por variable con el resolver de Docker declarado, los días que le quedan al certificado, **el timer de renovación activo**, las conexiones del Tunnel, el log de nginx sin errores, los binds y el token de Cloudflare.
+`nginx-verify` cubre el servicio `healthy`, que la config renderizada no tenga variables sin sustituir, que el `server_name` sea tu hostname, que el `proxy_pass` vaya por variable con el resolver de Docker declarado, el log de nginx sin errores y los binds. Los días que le quedan al certificado y el timer de renovación los cubre `certbot-verify`, aparte; las conexiones del Tunnel y el token de Cloudflare los cubre `cloudflared-verify` — nginx no sabe nada de ninguno de los dos.
 
-El timer todavía no existe: lo instala `sudo make timers-install` en el bloque 7, junto con los de backup. Es el único chequeo de este bloque que queda rojo hasta entonces.
+El timer todavía no existe: lo instala `sudo make timers-install` en el bloque 7, junto con los de backup. Es el único chequeo de `certbot-verify` que queda rojo hasta entonces.
 
-nginx no publica ninguna UI: su estado se lee del log (JSON, `make edge-logs`) y de `make edge-verify`. Los dos chequeos que no se pueden correr en el servidor están en el apéndice.
+nginx no publica ninguna UI: su estado se lee del log (JSON, `make nginx-logs`) y de `make nginx-verify`. Los dos chequeos que no se pueden correr en el servidor están en el apéndice.
 
 ---
 
 ## 4 · Database
 
-**Objetivo** — la base corriendo y **ya respaldándose**, antes de que exista un solo dato adentro.
+**Objetivo** — la base corriendo, con su config real y su presupuesto de conexiones coherente.
 
-**A mano** — ninguno.
-
-```bash
-make db-up && make stanza-init
-```
-
-**La ventana entre los dos comandos tiene que ser cero, y por eso van encadenados.** Postgres arranca con `archive_mode = on`, así que cada archivado falla hasta que la stanza exista y los WAL se acumulan en `pg_wal`. `stanza-init` crea la stanza y corre el `check`, que fuerza un switch de WAL y lo sigue hasta R2 — es también donde se prueba por primera vez la credencial de R2. Si falla, mirá el endpoint (va sin esquema), el bucket y la clave.
-
-El rol `odoo` y su password son **definitivos**: el bloque 6 reusa esa misma credencial sin rotarla.
+**A mano** — nada: `postgresql.conf` ya lo bootstrapeó `config-init` en el bloque 2, y no necesita edición. Los valores de tuning son ratios sobre el
+`mem_limit` del contenedor, no sobre la RAM del host. Si bajás ese cap, revisá la tabla
+entera —se calcularon juntos—, no la fila que parece afectada.
 
 ```bash
-make db-verify
+make postgres-up
 ```
 
-Cubre los dos servicios `healthy`, `archive_mode` y `archive_command`, la stanza cifrada en R2, que no haya WAL pendiente, los logs sin errores de permisos, que ningún puerto esté publicado, y la **autenticación real a través de PgBouncer** — `pg_isready` solo pregunta si el puerto responde, así que un `auth_file` ilegible lo pasa igual.
+El rol `odoo` y su password son **definitivos**: el bloque 6 reusa esa misma credencial
+sin rotarla.
+
+```bash
+make postgres-verify
+```
+
+Cubre el servicio `healthy`, que acepte conexiones, los logs sin errores de permisos,
+que el puerto no esté publicado, y que las conexiones que Odoo puede abrir —`db_maxconn`
+por sus procesos— entren en `max_connections`. **Sin pooler, pasarse no encola: Postgres
+rechaza.** Los dos valores viven en archivos de herramientas distintas y nada más los ata.
 
 ---
 
@@ -160,11 +186,9 @@ Cubre los dos servicios `healthy`, `archive_mode` y `archive_command`, la stanza
 
 **Objetivo** — el árbol de módulos en disco y la imagen de Odoo construida. El bloque 6 no arranca sin esto: el entrypoint aborta si el `addons_path` queda vacío.
 
-**A mano** — completar `addons/addons.txt` con tus repos, uno por línea (`URL categoría`). Al menos el que provee `bus_alt_connection`, que es obligatorio aunque no tengas módulos propios todavía; si no tenés ninguno, forkealo primero (ver [crear-fork](../modulos/crear-fork.md)).
+**A mano** — completar `addons/addons.txt`, que `config-init` ya bootstrapeó en el bloque 2, con tus repos, uno por línea (`URL categoría`). Si no tenés ninguno todavía, podés dejarlo vacío y volver después (ver [crear-fork](../modulos/crear-fork.md)).
 
 ```bash
-cp addons/addons.txt.example addons/addons.txt
-cp addons/requirements.txt.example addons/requirements.txt
 nano addons/addons.txt
 ```
 
@@ -188,15 +212,17 @@ Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, tod
 
 **Objetivo** — Odoo sirviendo por el hostname público con certificado propio. Acá se cierra el 502 que dejó el bloque 3.
 
-**A mano** — **la contraseña de `admin`, apenas el sitio responda y antes que cualquier otra cosa.** El `-i base` del primer arranque la deja en `admin`, y para ese momento el sitio ya está publicado en internet por el Tunnel. Entrá a `https://$PUBLIC_HOSTNAME` → Ajustes → Usuarios → `admin` → cambiar contraseña. Es distinta del **master password** (`admin_passwd`), que se gestiona vía `secrets:` y no se toca acá.
+**A mano** — nada: `smtp_server`/`port`/`user` los toma el entrypoint de `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER` en `.env`, que ya cargaste en el bloque 2. `odoo.conf` no tiene nada que editar.
+
+**Y la contraseña de `admin`, apenas el sitio responda y antes que cualquier otra cosa.** El `-i base` del primer arranque la deja en `admin`, y para ese momento el sitio ya está publicado en internet por el Tunnel. Entrá a `https://$PUBLIC_HOSTNAME` → Ajustes → Usuarios → `admin` → cambiar contraseña. Es distinta del **master password** (`admin_passwd`), que se gestiona vía `secrets:` y no se toca acá.
 
 ```bash
 make odoo-up && make odoo-logs
 ```
 
-El entrypoint detecta que la base está vacía y corre `-i base --stop-after-init` conectándose directo a `postgres:5432`, no a PgBouncer: el modo transacción no soporta los advisory locks ni el DDL que necesita una inicialización. Esperá `HTTP service (werkzeug) running` y cortá los logs con Ctrl-C.
+El entrypoint detecta que la base está vacía y corre `-i base --stop-after-init` con la conexión explícita a `postgres:5432`, antes de que el entrypoint oficial arme su propia espera. Esperá `HTTP service (werkzeug) running` y cortá los logs con Ctrl-C.
 
-**Ahora cambiá la contraseña de `admin`.** Después, si corresponde instalar módulos, ver [crear-modulo](../modulos/crear-modulo.md) o [actualizar-modulo](../modulos/actualizar-modulo.md). `bus_alt_connection` no entra en esa lista: se carga por `server_wide_modules` en `odoo.conf`, no por instalación en la base.
+**Ahora cambiá la contraseña de `admin`.** Después, si corresponde instalar módulos, ver [crear-modulo](../modulos/crear-modulo.md) o [actualizar-modulo](../modulos/actualizar-modulo.md).
 
 ```bash
 make odoo-verify
@@ -204,45 +230,51 @@ make odoo-verify
 
 Cubre el servicio `healthy`, los logs sin errores de permisos, Odoo respondiendo en su `:8069`, los worktrees limpios, los módulos server-wide presentes en el árbol, las tres rutas en la config renderizada de nginx, el gestor de bases deshabilitado, los puertos sin publicar, y el certificado que se está sirviendo.
 
-**Y el chatter, con dos sesiones abiertas:** mandá un mensaje y confirmá que aparece solo, sin recargar. Prueba que nginx rutea `/websocket` al worker gevent (`8072`) y que `bus_alt_connection` está activo — sin él, el modo transacción de PgBouncer rompe el `LISTEN/NOTIFY` del bus. Es lo único de este bloque que no se puede automatizar; la cadena pública y el rate-limit están en el apéndice.
+**Y el chatter, con dos sesiones abiertas:** mandá un mensaje y confirmá que aparece solo, sin recargar. Prueba que nginx rutea `/websocket` al worker gevent (`8072`) y que el `LISTEN/NOTIFY` del bus funciona contra la conexión directa a Postgres. Es lo único de este bloque que no se puede automatizar; la cadena pública y el rate-limit están en el apéndice.
 
 ---
 
 ## 7 · Backup
 
-**Objetivo** — las dos mitades del backup corriendo, probadas una vez de punta a punta, y avisando por mail si fallan.
+**Objetivo** — el backup corriendo, probado una vez de punta a punta, y avisando por mail si falla.
 
-**A mano** — ninguno. Como en el bloque 4, lo único propio es el orden: va después del 6 porque su verificación exige un snapshot, y un snapshot exige que exista un filestore.
+**A mano** — nada: `r2.env` ya lo bootstrapeaste y editaste en el bloque 2. Este bloque va
+después del 6 porque su verificación exige un snapshot, y un snapshot exige que exista
+un filestore.
 
 ```bash
-make backups-up && make backup-init
+make backup-up
+docker compose exec -T backup restic init
 sudo make timers-install
 ```
 
 > **Nunca `restic init --force`.** Sobre un repositorio con backups adentro los deja inaccesibles. No existe el caso en el que haga falta.
 
-`timers-install` deriva de la composición qué units le corresponden a **este** stack —los dos timers de backup y el de renovación del certificado— y las instala con el nombre del proyecto adelante (`production-backup-daily.timer`), inyectando la ruta absoluta del checkout. Con eso, un segundo stack en el mismo servidor instala las suyas sin pisar estas. Incluye la unit plantilla de aviso: sin ella, una corrida que falle no avisa.
+`timers-install` deriva de la composición qué units le corresponden a **este** stack —el
+backup diario, la verificación mensual de integridad y la renovación del certificado— y
+las instala con el nombre del proyecto adelante (`production-backup-daily.timer`),
+inyectando la ruta absoluta del checkout. Con eso, un segundo stack en el mismo servidor
+instala las suyas sin pisar estas. Incluye la unit plantilla de aviso: sin ella, una
+corrida que falle no avisa.
+
+**En prueba ese comando no instala los timers de backup**, y eso es estructural: su
+entrypoint le pone `profiles: [restore]` al stack, así que queda fuera de la composición
+que `timers.sh` consulta.
 
 ```bash
-make backup
+make backup-run
 ```
 
-Encadena `pgbackrest check` → `backup --type=diff` → registro de addons → `restic backup` → `forget --prune`. **El orden no es casual:** pgBackRest primero y restic después, siempre.
-
-**Va a parecer trabada y no lo está.** pgBackRest no imprime nada hasta terminar: en una instalación nueva son ~2000 archivos y más de 10 minutos. **No le des Ctrl-C**: un full abortado deja basura parcial. Para ver que avanza, desde otra sesión:
-
-```bash
-docker compose exec -T postgres tail -f /var/log/pgbackrest/*-backup.log
-```
-
-El primero sale `full` y no `diff`: pgBackRest promueve solo cuando no hay un full previo del cual diferir.
+Hace el dump de la base, lo mete **en el mismo snapshot** que el filestore, y aplica la
+retención GFS con `forget --prune`. Que las dos mitades vayan juntas es lo que hace que
+la consistencia sea una propiedad del backup y no un procedimiento que hay que recordar.
 
 ```bash
-make backups-verify
+make backup-verify
 sudo make notify-test
 ```
 
-`backups-verify` cubre el snapshot de restic, el full de pgBackRest, el registro de addons, los dos timers activos con el nombre de este stack, el `OnFailure=` cableado a su plantilla, y que ningún contenedor del perfil `restore` esté corriendo. Si el contenedor sale `health: starting` **no es un fallo**: con `interval: 1h` el primer chequeo que cuenta cae recién a la hora. **No lo recrees para forzarlo** — le cambiarías el hostname, y con eso el grupo `(host, paths)` por el que restic agrupa la retención.
+`backup-verify` cubre que el repositorio sea alcanzable con snapshots de este stack, que el último traiga **las dos mitades** del estado, el registro de addons, y los dos timers activos con el nombre de este checkout. Si el contenedor sale `health: starting` **no es un fallo**: con `interval: 1h` el primer chequeo que cuenta cae recién a la hora. **No lo recrees para forzarlo** — le cambiarías el hostname, y con eso el grupo `(host, paths)` por el que restic agrupa la retención.
 
 `notify-test` dispara la unit de aviso de verdad. Tiene que dar `Result=success` **y llegar el mail**.
 
@@ -254,16 +286,17 @@ sudo make notify-test
 
 **Objetivo** — métricas de host, contenedores y base, logs centralizados, y las siete alertas vivas **y llegando por mail**.
 
-**A mano** — la prueba de entrega de las alertas, en la UI de Grafana. Va al final, y el acceso está en el apéndice porque el `3001` solo escucha en loopback.
+**A mano** — nada de config: SMTP y el destinatario llegan por `GF_SMTP_*`/`ALERT_EMAIL_TO` desde `.env`, que ya cargaste en el bloque 2 — `grafana.ini` y `contact-points.yaml` no tienen nada que editar. Falta la prueba de entrega de las alertas en la UI de Grafana. El acceso está en el apéndice porque el `3001` solo escucha en loopback.
 
 ```bash
-make monitoring-role && make observability-up
+make monitoring-role
+make prometheus-up && make loki-up && make grafana-up && make alloy-up
 ```
 
 `monitoring-role` crea el rol de solo lectura que scrapea Postgres, con la clave de `secrets/postgres_exporter_password`. Es propio a propósito: `pg_monitor` da lectura de las vistas de estadísticas y nada más, así que el agente que tiene el socket de Docker y los logs no porta la credencial de la aplicación. El target es repetible —hace `DROP` y `CREATE`—, así que sirve igual para rotar esa clave.
 
 ```bash
-make observability-verify
+make prometheus-verify
 ```
 
 Cubre los cuatro servicios, que ningún target de Prometheus esté caído, las tres familias de métricas que empuja Alloy, que Loki reciba logs por contenedor, los binds, y que la rotación de logs del daemon haya quedado aplicada al contenedor de Odoo.
@@ -293,7 +326,7 @@ Tienen que quedar **once servicios** y **ninguno** del perfil `restore`.
 - [ ] `make verify` sale con exit `0`
 - [ ] La contraseña de `admin` ya no es `admin`
 - [ ] Odoo mandó un mail propio y llegó
-- [ ] Hay un snapshot de restic y un `full` de pgBackRest de la corrida del bloque 7
+- [ ] Hay un snapshot de restic con las dos mitades del estado, de la corrida del bloque 7
 - [ ] Llegó el mail de prueba del contact point de Grafana
 - [ ] Los chequeos del apéndice están hechos
 - [ ] El simulacro de restore semestral está agendado y leído una vez
@@ -331,7 +364,7 @@ SRV_ADMIN='ip-de-administracion-del-servidor'
 ssh -N -L 3001:127.0.0.1:3001 "<usuario>@$SRV_ADMIN"
 ```
 
-Con el túnel abierto, `http://localhost:3001`. Usuario `admin`, contraseña en `secrets/grafana_admin_password`. Adentro tienen que estar los **5 dashboards** y las **7 reglas de alerta**, provisionadas y de solo lectura. **Y que las alertas lleguen:** Alertas → Contact points → `email-operador` → **Test**, y el mail tiene que llegar a `ALERT_EMAIL_TO`. Si no llega, revisá en orden: saldo de créditos, remitente verificado, y `docker compose logs grafana | grep -i smtp`. Si el `ssh` responde `Permission denied (publickey)`, mirá a qué IP fue: un `127.0.0.1` ahí significa que lo estás corriendo en el servidor contra sí mismo.
+Con el túnel abierto, `http://localhost:3001`. Usuario `admin`, contraseña en `secrets/grafana_admin_password`. Adentro tienen que estar los **5 dashboards** y las **7 reglas de alerta**, provisionadas y de solo lectura. **Y que las alertas lleguen:** Alertas → Contact points → `email-operador` → **Test**, y el mail tiene que llegar a la dirección de `contact-points.yaml` (la misma que `ALERT_EMAIL_TO`). Si no llega, revisá en orden: saldo de créditos, remitente verificado, y `docker compose logs grafana | grep -i smtp`. Si el `ssh` responde `Permission denied (publickey)`, mirá a qué IP fue: un `127.0.0.1` ahí significa que lo estás corriendo en el servidor contra sí mismo.
 
 El rate-limit del login se prueba una sola vez, en el servidor, y va acá porque deja el login en 503 unos segundos:
 

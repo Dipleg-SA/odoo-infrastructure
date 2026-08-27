@@ -1,0 +1,89 @@
+# --- Respaldos ---
+# Un solo contenedor para las dos direcciones: respaldar y restaurar son la misma
+# herramienta sobre el mismo repositorio. Separarlos duplicaba el RESTIC_REPOSITORY
+# en dos stacks sin comprar nada.
+#
+# EXCLUSIVO DEL ENTORNO QUE RESPALDA. Un segundo stack levantado desde estos
+# archivos escribiría en el mismo repositorio y su corrida apagaría la alerta de
+# "backup viejo" del entorno real. Que un entorno de prueba no respalde lo
+# sostienen dos cosas: el timer se instala solo donde corresponde, y su
+# credencial de R2 es de solo lectura — la escritura falla en el proveedor.
+services:
+  backup:
+    build:
+      context: ./image
+    # Tag por proyecto: el nombre de imagen es global al daemon, así que un tag
+    # fijo deja que el build de un stack pise la imagen que corre el otro.
+    image: local/backup:${COMPOSE_PROJECT_NAME}
+    # restic agrupa la retención por (host, paths). Sin hostname explícito Docker usa
+    # el ID del contenedor y cada recreación deja un grupo sin purgar; con uno fijo,
+    # dos stacks distintos caen en el MISMO grupo y el forget --prune de uno alcanza
+    # los snapshots del otro. Derivarlo del proyecto resuelve las dos cosas.
+    hostname: ${COMPOSE_PROJECT_NAME}
+    # Nombre derivado del proyecto: predecible y sin el sufijo -1 del autonaming,
+    # pero sin colisionar si se levanta un segundo stack con otro nombre de proyecto.
+    container_name: ${COMPOSE_PROJECT_NAME}-backup
+    # --- Usuario ---
+    # 100:101 son los uid/gid de Odoo: /var/lib/odoo es 750, así que ni siquiera un
+    # no-root cualquiera puede leerlo. Es la operación recurrente, y va no-root.
+    # El restore necesita root para devolverle a cada archivo su owner original, y
+    # se eleva en la invocación: docker compose run --user 0:0. Ver scripts/restore.sh.
+    user: "100:101"
+    # Proceso vivo para poder colgarle un healthcheck que verifique el repo real.
+    entrypoint: ["sleep"]
+    command: ["infinity"]
+    networks:
+      - app
+    # RESTIC_REPOSITORY real por checkout, gitignoreado — no interpola desde .env.
+    #
+    # required: false porque env_file es el ÚNICO mount que rompe `docker compose
+    # config` cuando el archivo no está: un bind-mount ausente resuelve igual. Sin
+    # esto, un checkout recién clonado no puede ni correr los tests, que existen
+    # justamente para andar sin nada bootstrapeado. Que falte lo detecta
+    # verify.sh, que es de quien es ese trabajo.
+    env_file:
+      - path: ./config/r2.env
+        required: false
+    environment:
+      # Rutas, nunca valores: los principios prohíben secretos en variables.
+      RESTIC_PASSWORD_FILE: /run/secrets/restic_password
+      AWS_SHARED_CREDENTIALS_FILE: /run/secrets/restic_r2_credentials
+      # Caché descartable en /tmp: un volumen nombrado nace root:root y obligaría
+      # a un baile de ownership para algo que se puede reconstruir solo.
+      HOME: /tmp
+      RESTIC_CACHE_DIR: /tmp/restic-cache
+      # Umbral del healthcheck: cadencia del timer + margen, fijo. Si cambiás
+      # OnCalendar en systemd/backup-daily.timer, ajustá esto o el contenedor
+      # queda unhealthy para siempre.
+      RESTIC_MAX_AGE: 129600
+    secrets:
+      - restic_password
+      - restic_r2_credentials
+    volumes:
+      # rw y no ro: este mismo contenedor restaura. Se pierde la garantía de que
+      # solo hubiera un camino de escritura sobre el filestore; a cambio no hay
+      # dos stacks compartiendo repositorio y credenciales.
+      - odoo-data:/data/odoo
+      # El dump que escribe postgres. rw por el mismo motivo que odoo-data: el
+      # restore lo repone desde el snapshot antes de que psql lo cargue.
+      - dumps:/data/dump
+      # Registro de addons del snapshot; lo escribe backup.sh en el host.
+      # Los scripts NO se montan: corren en el host y entran por docker compose exec.
+      - ../../state/meta:/data/meta:ro
+    # Verifica repo alcanzable Y frescura: cubre tanto "el backup falló" como
+    # "el backup nunca corrió", que el OnFailure= por definición no puede ver.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - |
+          ts=$$(restic snapshots --latest 1 --json | grep -o '"time":"[^"]*"' | tail -1 | cut -d'"' -f4)
+          [ -n "$$ts" ] || exit 1
+          norm=$$(echo "$$ts" | sed 's/T/ /; s/\..*//; s/Z//')
+          age=$$(( $$(date -u +%s) - $$(date -u -d "$$norm" +%s) ))
+          [ "$$age" -lt $$RESTIC_MAX_AGE ]
+      interval: 1h
+      timeout: 60s
+      start_period: 5m
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: "1.0"

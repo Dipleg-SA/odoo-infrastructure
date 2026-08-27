@@ -21,7 +21,7 @@ make odoo-verify
 
 `odoo-restart` no sirve para aplicar un cambio de imagen (un `docker compose build` nuevo) ni un cambio en `addons/` que necesite que Odoo relea el `addons_path` desde cero — para eso hace falta `odoo-down` + `odoo-up`.
 
-**El primer arranque de una base vacía tarda más que un restart normal.** El entrypoint detecta que `ir_module_module` no existe y corre `-i base --stop-after-init` directo contra `postgres:5432`, antes de arrancar el servidor apuntando a PgBouncer — es el único caso en el que este comando dispara una instalación, y solo pasa una vez por base.
+**El primer arranque de una base vacía tarda más que un restart normal.** El entrypoint detecta que `ir_module_module` no existe y corre `-i base --stop-after-init` con la conexión explícita a `postgres:5432`, antes de arrancar el servidor — es el único caso en el que este comando dispara una instalación, y solo pasa una vez por base.
 
 ## Verificación
 
@@ -33,6 +33,13 @@ Cubre el servicio `healthy`, los logs sin errores de permisos, Odoo respondiendo
 
 ---
 
-**Destructivo — `make odoo-nuke`.** Borra containers, imágenes **y el volumen `odoo-data`** — el filestore de Odoo, donde viven los adjuntos. Pide tipear `nuke`.
+**Destructivo — sin target, a mano.** Tampoco sobrevivió un nuke acotado a este
+servicio: el único que queda es `make nuke`, **global**, que se lleva `odoo-data`
+junto con `pgdata` y todo lo demás. Para borrar solo el filestore:
 
-Antes de correrlo en producción o staging, confirmá que hay un backup reciente y probado (ver [realizar-backup](../backup-restore/realizar-backup.md)); el filestore se recupera con [restore-pitr](../backup-restore/restore-pitr.md) o [restore-perdida-total](../backup-restore/restore-perdida-total.md), no con este comando. El nombre real del volumen (`<proyecto>_odoo-data`) se imprime antes de la confirmación.
+```bash
+docker compose rm -sf odoo
+docker volume rm "${COMPOSE_PROJECT_NAME}_odoo-data"
+```
+
+Antes de correrlo en producción o staging, confirmá que hay un backup reciente y probado (ver [realizar-backup](../backup-restore/realizar-backup.md)); el filestore se recupera con [restore-perdida-total](../backup-restore/restore-perdida-total.md), no con este comando.

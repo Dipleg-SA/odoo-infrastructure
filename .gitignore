@@ -24,6 +24,20 @@ state/textfile/*
 state/meta/*
 !state/meta/.gitkeep
 
+# --- Config real de cada stack ---
+# Archivos con valores de deployment (hostname, IP local, rate-limit, bucket de
+# R2) escritos a mano; solo su .example se versiona. odoo.conf, grafana.ini y
+# contact-points.yaml salieron de esta lista: desde que SMTP/alertas llegan por
+# .env vía entrypoint/GF_*/provisioning, no les queda ningún valor por
+# deployment — se versionan tal cual, sin .example.
+
+stacks/nginx/config/00-http.conf
+stacks/nginx/config/odoo.locations
+stacks/nginx/config/server-tls.conf
+stacks/postgres/config/postgresql.conf
+stacks/dnsmasq/config/dnsmasq.conf
+stacks/backup/config/r2.env
+
 # --- Clones locales ---
 # Repos externos clonados a mano para pruebas, no versionados.
 
@@ -49,3 +63,6 @@ addons/third-party/*
 !addons/enterprise/
 addons/enterprise/*
 !addons/enterprise/.gitkeep
+
+# Examples
+.stacks

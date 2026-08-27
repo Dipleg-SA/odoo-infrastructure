@@ -1,0 +1,56 @@
+# Entrypoint de development: proxy, datos y aplicación, en la máquina del operador.
+# Ni túnel ni certificados ni dnsmasq; tampoco backups ni observabilidad.
+#
+# El nombre del stack NO se declara acá — sale de COMPOSE_PROJECT_NAME en .env, y
+# tiene que ser único por checkout: dos que lo compartan comparten los volúmenes.
+
+networks:
+  edge:
+  app:
+
+# --- Volumen compartido ---
+# nginx lo monta aunque acá no haya certbot que lo escriba: el stack es genérico
+# y es el entorno el que lo recorta. Un volumen vacío no cuesta nada.
+
+volumes:
+  letsencrypt:
+  # postgres lo monta aunque acá no haya backup que lo lea: el stack es genérico
+  # y es el entorno el que lo recorta. Un volumen vacío no cuesta nada.
+  dumps:
+
+# --- Dos secrets, los dos generados ---
+# secrets-init.sh los saca de openssl: un checkout nuevo no pide ningún valor a mano.
+
+secrets:
+  postgres_password:
+    file: ../secrets/postgres_password
+  odoo_admin_password:
+    file: ../secrets/odoo_admin_password
+
+include:
+  - ../stacks/nginx/compose.yaml
+  - ../stacks/postgres/compose.yaml
+  - ../stacks/odoo/compose.yaml
+
+services:
+  # --- Solo el 80, y en loopback ---
+  # server-plain no escucha en el 443: publicarlo ataría un puerto de la máquina para nada.
+
+  nginx:
+    ports:
+      - "127.0.0.1:${HTTP_PORT:?falta HTTP_PORT en .env}:80"
+    # --- Modo fijado acá, no por NGINX_MODE ---
+    # Si dependiera de NGINX_MODE, un .env sin la clave montaría server-tls.conf y nginx no arranca: no hay cert.
+
+    volumes:
+      - ../stacks/nginx/config/server-plain.conf:/etc/nginx/conf.d/default.conf:ro
+
+  # --- Sin correo saliente ---
+  # Una base de prueba suele venir de un dump con direcciones reales; el riesgo es el de staging.
+
+  odoo:
+    environment:
+      ODOO_DISABLE_SMTP: "1"
+    secrets: !override
+      - postgres_password
+      - odoo_admin_password

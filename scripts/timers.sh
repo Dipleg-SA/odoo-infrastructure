@@ -14,8 +14,20 @@ if [ -f .env ]; then
 fi
 
 VERBO="${1:-}"
-ORIGEN="config/systemd"
 DESTINO="${SYSTEMD_DIR:-/etc/systemd/system}"
+
+# --- Dónde vive cada unit ---
+# Se busca, no se fija: en el árbol nuevo la unit vive con su stack —
+# stacks/certbot/systemd/cert-renew.service— y la plantilla de aviso, que es
+# transversal, en host/systemd/.
+
+ubicar() {
+  local archivo="$1" d
+  for d in stacks/*/systemd host/systemd; do
+    [ -f "$d/$archivo" ] && { printf '%s' "$d/$archivo"; return 0; }
+  done
+  return 1
+}
 
 # --- Prefijo del nombre ---
 # El proyecto va adelante: las units apuntan a un checkout, no a un stack, y sin
@@ -60,22 +72,44 @@ notify() { printf '%s-notify@\n' "$PROYECTO"; }
 # del checkout y el prefijo del OnFailure=, que nombra otra unit de este mismo stack.
 
 instalar_archivo() {
-  local origen="$1" destino="$2"
+  local archivo="$1" destino="$2" origen
+  if ! origen=$(ubicar "$archivo"); then
+    ui_bad "no se encontró la unit $archivo" "buscada en stacks/*/systemd y host/systemd" >&2
+    return 1
+  fi
   sed -e "s|CAMBIAR-en-deploy|$PWD|g" \
       -e "s|^OnFailure=|OnFailure=$PROYECTO-|" \
       "$origen" > "$destino" || return $?
   chmod 644 "$destino"
 }
 
+# --- Bases que este árbol conoce ---
+# Del mismo lugar del que salen las units, no de una lista aparte. Sin esto, el
+# glob del prefijo no alcanza para decir de quién es una unit.
+
+conocidas() {
+  local archivo
+  for archivo in stacks/*/systemd/*.timer; do
+    [ -e "$archivo" ] || continue
+    basename "$archivo" .timer
+  done
+}
+
 # --- Units que dejaron de corresponder ---
 # El stack pudo perder una capa desde la última instalación: la unit vieja sigue
 # enabled y dispara igual, contra un checkout que ya no la puede atender.
+#
+# El glob del prefijo no distingue 'odoo-' de 'odoo-staging-': sin cruzar contra
+# las bases conocidas, este bucle borra las units del checkout vecino cuyo nombre
+# de proyecto empieza igual — justo lo que el prefijo existe para evitar.
 
 limpiar_sobrantes() {
-  local lista="$1" archivo base
+  local lista="$1" archivo base todas
+  todas=$(conocidas)
   for archivo in "$DESTINO/$PROYECTO-"*.timer; do
     [ -e "$archivo" ] || continue
     base=$(basename "$archivo" .timer); base="${base#"$PROYECTO"-}"
+    printf '%s\n' "$todas" | grep -qx "$base" || continue
     printf '%s\n' $lista | grep -qx "$base" && continue
     systemctl disable --now "$PROYECTO-$base.timer" >/dev/null 2>&1
     rm -f "$DESTINO/$PROYECTO-$base.timer" "$DESTINO/$PROYECTO-$base.service"
@@ -101,13 +135,13 @@ install() {
   fi
 
   for base in $lista; do
-    instalar_archivo "$ORIGEN/$base.service" "$DESTINO/$PROYECTO-$base.service" || return $?
-    instalar_archivo "$ORIGEN/$base.timer"   "$DESTINO/$PROYECTO-$base.timer"   || return $?
+    instalar_archivo "$base.service" "$DESTINO/$PROYECTO-$base.service" || return $?
+    instalar_archivo "$base.timer"   "$DESTINO/$PROYECTO-$base.timer"   || return $?
     ui_ok "instalada: $PROYECTO-$base.{service,timer}"
   done
 
   # Sin la plantilla de aviso, una corrida que falle no le avisa a nadie.
-  instalar_archivo "$ORIGEN/notify@.service" "$DESTINO/$PROYECTO-notify@.service" || return $?
+  instalar_archivo "notify@.service" "$DESTINO/$PROYECTO-notify@.service" || return $?
   ui_ok "instalada: $PROYECTO-notify@.service"
 
   systemctl daemon-reload || return $?

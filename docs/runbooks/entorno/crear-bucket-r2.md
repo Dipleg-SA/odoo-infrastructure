@@ -2,7 +2,7 @@
 
 ## Cuándo se usa
 
-Antes de clonar el repositorio — es la credencial más sensible del stack: abre los dos repositorios de backup (pgBackRest y restic), que conviven en el mismo bucket.
+Antes de clonar el repositorio — es la credencial más sensible del stack: abre el repositorio de backups.
 
 ## Objetivo
 
@@ -10,16 +10,15 @@ Un bucket R2 nuevo y vacío, un token `Object Read & Write` acotado a él, y las
 
 ## A mano
 
-1. Cloudflare → R2 → crear un bucket nuevo y vacío. Uno solo: `pgbackrest/` y `restic/` conviven adentro como prefijos separados.
+1. Cloudflare → R2 → crear un bucket nuevo y vacío.
 2. Token de API de R2, permiso `Object Read & Write`, acotado a ese bucket únicamente.
-3. Anotar el endpoint (sin esquema, ej. `<account-id>.r2.cloudflarestorage.com`) y el nombre del bucket — van a `R2_ENDPOINT` y `R2_BUCKET` en `.env`.
+3. Anotar el endpoint (sin esquema, ej. `<account-id>.r2.cloudflarestorage.com`) y el nombre del bucket — no van a `.env`: van a `stacks/backup/config/r2.env`, real por checkout, bootstrapeado desde su `.example` en [levantar-produccion](levantar-produccion.md).
 
 ## Comandos
 
 Las dos passphrases de cifrado se inventan acá, no en R2. Mismo comando, **dos valores distintos**: cifran repositorios separados y terminan en archivos separados.
 
 ```bash
-echo "# 1 → Passphrase de pgBackRest, a secrets/pgbackrest_r2_credentials"
 openssl rand -hex 32
 ```
 
@@ -34,7 +33,7 @@ Hex y no base64: los `/ + =` rompen a cualquier consumidor que arme una URI con 
 
 ## Verificación
 
-No hay forma de probar la clave de R2 todavía — se prueba por primera vez cuando la base esté levantada y corra `pgbackrest check` (ver [levantar-produccion](levantar-produccion.md)). Lo único a confirmar ahora:
+No hay forma de probar la clave de R2 todavía — se prueba por primera vez con `make backup-run` (ver [levantar-produccion](levantar-produccion.md)). Lo único a confirmar ahora:
 
 - [ ] El bucket está vacío y es nuevo — no reusado de otro deployment
 - [ ] El token es `Object Read & Write`, acotado a este bucket, no a la cuenta entera

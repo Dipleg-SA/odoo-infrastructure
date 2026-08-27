@@ -12,7 +12,7 @@ STUB_DIR=$(mktemp -d); export STUB_DIR
 trap 'rm -rf "$STUB_DIR"' EXIT
 PATH="$PWD/tests/stubs:$PATH"
 
-. scripts/verify.sh
+. scripts/lib/verify.sh
 . tests/lib.sh
 
 config_fixture() { cat > "$STUB_DIR/config"; }
@@ -22,10 +22,10 @@ puerto_fixture() { printf '%s\n' "$1" > "$STUB_DIR/port"; }
 titulo "declarado — qué capas trae este stack"
 # =====================================================================
 
-SERVICIOS=$'nginx\nodoo\npostgres\npgbouncer'
+SERVICIOS=$'nginx\nodoo\npostgres\nbackup'
 
 igual "reconoce un servicio del stack"        "0" "$(declarado nginx; echo $?)"
-igual "y rechaza uno que no incluye"          "1" "$(declarado backup; echo $?)"
+igual "y rechaza uno que no incluye"          "1" "$(declarado grafana; echo $?)"
 igual "sin coincidencia parcial"              "1" "$(declarado ngin; echo $?)"
 
 # El daemon caído es lo que la capa host existe para diagnosticar: si acá dijera
@@ -123,13 +123,17 @@ igual "sin composición legible devuelve '?'" "?" "$(bind_declarado nginx 80)"
 titulo "modo_plain — el modo del proxy sale de la plantilla montada"
 # =====================================================================
 
+# Las rutas son las que emite `docker compose config` de verdad: archivos reales
+# bajo stacks/nginx/config/, sin .template — si el fixture usa el nombre viejo, el
+# test pasa con un modo_plain que no matchea nada en el stack real.
+
 config_fixture <<'EOF'
 services:
   nginx:
     volumes:
       - type: bind
-        source: /repo/config/nginx/server-plain.conf.template
-        target: /etc/nginx/templates/default.conf.template
+        source: /repo/stacks/nginx/config/server-plain.conf
+        target: /etc/nginx/conf.d/default.conf
 EOF
 igual "detecta el stack sin TLS" "0" "$(modo_plain; echo $?)"
 
@@ -138,15 +142,139 @@ services:
   nginx:
     volumes:
       - type: bind
-        source: /repo/config/nginx/server-tls.conf.template
-        target: /etc/nginx/templates/default.conf.template
+        source: /repo/stacks/nginx/config/server-tls.conf
+        target: /etc/nginx/conf.d/default.conf
 EOF
 igual "y el que sí lo termina" "1" "$(modo_plain; echo $?)"
 
+# El nombre viejo ya no monta nadie: si vuelve a matchear, el patrón quedó laxo.
+config_fixture <<'EOF'
+services:
+  nginx:
+    volumes:
+      - type: bind
+        source: /repo/config/nginx/server-plain.conf.template
+        target: /etc/nginx/templates/default.conf.template
+EOF
+igual "no matchea la plantilla envsubst que ya no existe" "1" "$(modo_plain; echo $?)"
+
 # NGINX_MODE no participa: development no la declara y el modo se sabe igual.
+config_fixture <<'EOF'
+services:
+  nginx:
+    volumes:
+      - type: bind
+        source: /repo/stacks/nginx/config/server-tls.conf
+        target: /etc/nginx/conf.d/default.conf
+EOF
 export NGINX_MODE=plain
 igual "no lo decide la variable de entorno" "1" "$(modo_plain; echo $?)"
 unset NGINX_MODE
+
+# =====================================================================
+titulo "smtp_activo — quién usa de verdad el smtp_server de odoo.conf"
+# =====================================================================
+
+config_fixture <<'EOF'
+services:
+  odoo:
+    environment:
+      HOST: postgres
+EOF
+igual "producción manda correo" "0" "$(smtp_activo; echo $?)"
+
+config_fixture <<'EOF'
+services:
+  odoo:
+    environment:
+      ODOO_DISABLE_SMTP: "1"
+EOF
+igual "staging y development no" "1" "$(smtp_activo; echo $?)"
+
+# =====================================================================
+titulo "sin_placeholder — el .example sin editar, y el bootstrap sin hacer"
+# =====================================================================
+
+printf 'smtp_server = mail.ejemplo.net\n' > "$STUB_DIR/editado.conf"
+printf 'smtp_server = TU_SMTP_HOST\n'     > "$STUB_DIR/crudo.conf"
+
+contiene "un config editado pasa" "  ok" \
+  "$(sin_placeholder "x" "$STUB_DIR/editado.conf" 'TU_SMTP_HOST|TU_SMTP_PORT')"
+
+contiene "uno con el placeholder falla" "FALLA" \
+  "$(sin_placeholder "x" "$STUB_DIR/crudo.conf" 'TU_SMTP_HOST|TU_SMTP_PORT')"
+
+contiene "y nombra cuál quedó" "TU_SMTP_HOST" \
+  "$(sin_placeholder "x" "$STUB_DIR/crudo.conf" 'TU_SMTP_HOST|TU_SMTP_PORT')"
+
+# El .example de cada herramienta dice "Reemplazá TU_X por..." en un comentario que
+# sigue ahí después de haber cargado el valor. Sin descartar comentarios, el chequeo
+# no podía pasar NUNCA por más que el operador hiciera todo bien — se descubrió con
+# grafana.ini, cuyos valores estaban todos completos y el chequeo seguía en rojo.
+
+printf '; Reemplaza TU_SMTP_HOST por el host real\nsmtp_server = mail.ejemplo.net\n' > "$STUB_DIR/comentado.conf"
+printf '# Reemplaza TU_SMTP_HOST\nsmtp_server = TU_SMTP_HOST\n'                      > "$STUB_DIR/mixto.conf"
+printf '// Reemplaza TU_SMTP_HOST\nsmtp_server = mail.ejemplo.net\n'                 > "$STUB_DIR/alloy.conf"
+
+contiene "el placeholder en un comentario no cuenta" "  ok" \
+  "$(sin_placeholder "x" "$STUB_DIR/comentado.conf" 'TU_SMTP_HOST')"
+
+contiene "ni con el comentario de config.alloy" "  ok" \
+  "$(sin_placeholder "x" "$STUB_DIR/alloy.conf" 'TU_SMTP_HOST')"
+
+# La otra mitad: descartar comentarios no puede tapar un valor sin cargar.
+contiene "pero en un valor sigue fallando" "FALLA" \
+  "$(sin_placeholder "x" "$STUB_DIR/mixto.conf" 'TU_SMTP_HOST')"
+
+# El archivo ausente es el bootstrap sin hacer: un grep que no matchea daría verde
+# justo donde el chequeo existe para atrapar eso, y Compose montaría un directorio.
+
+contiene "el archivo ausente falla, no da verde" "FALLA" \
+  "$(sin_placeholder "x" "$STUB_DIR/no-existe.conf" 'TU_SMTP_HOST')"
+
+no_contiene "y no lo reporta como ok" "  ok" \
+  "$(sin_placeholder "x" "$STUB_DIR/no-existe.conf" 'TU_SMTP_HOST')"
+
+# =====================================================================
+titulo "claves_ausentes — una clave que nunca se escribió, no solo vacía"
+# =====================================================================
+
+# Escenario real: ALERT_EMAIL_FROM nunca se escribió en .env.production.example
+# (no 'ALERT_EMAIL_FROM=', directamente no estaba la línea), así que ningún grep de
+# '^KEY=$' lo atrapaba — host-verify daba verde y notify-test fallaba en el
+# servidor meses después, con el aviso de fallo que se supone que manda ese mismo
+# mecanismo.
+
+printf 'COMPOSE_PROJECT_NAME=production\nPUBLIC_HOSTNAME=\nSMTP_HOST=\nSMTP_USER=\nALERT_EMAIL_FROM=\nALERT_EMAIL_TO=\n#COMPOSE_PROFILES=lan\n' \
+  > "$STUB_DIR/plantilla.example"
+
+printf 'COMPOSE_PROJECT_NAME=production\nPUBLIC_HOSTNAME=odoo.ejemplo.com\nSMTP_HOST=smtp.ejemplo.com\nSMTP_USER=apikey\nALERT_EMAIL_TO=ops@ejemplo.com\n' \
+  > "$STUB_DIR/env-incompleto"
+
+igual "la clave nunca escrita se reporta" "ALERT_EMAIL_FROM" \
+  "$(claves_ausentes "$STUB_DIR/plantilla.example" "$STUB_DIR/env-incompleto")"
+
+printf 'ALERT_EMAIL_FROM=alertas@ejemplo.com\n' >> "$STUB_DIR/env-incompleto"
+
+igual "completa la clave y no falta ninguna" "" \
+  "$(claves_ausentes "$STUB_DIR/plantilla.example" "$STUB_DIR/env-incompleto")"
+
+# Una clave presente pero vacía la sigue atrapando el grep de '^KEY=$' de al lado,
+# no este helper: claves_ausentes exige valor, así que también la marca —
+# redundante con esa otra rama, pero no un falso verde.
+
+printf 'COMPOSE_PROJECT_NAME=production\nSMTP_USER=\n' > "$STUB_DIR/env-vacio"
+igual "una clave presente pero vacía también cuenta como ausente acá" "1" \
+  "$(claves_ausentes "$STUB_DIR/plantilla.example" "$STUB_DIR/env-vacio" | grep -cw SMTP_USER)"
+
+# Una clave que la plantilla nunca declaró — comentada, opcional de verdad — no
+# se exige: distinto de una que sí está pero no se completó.
+
+igual "una clave comentada en la plantilla no se exige" "0" \
+  "$(claves_ausentes "$STUB_DIR/plantilla.example" "$STUB_DIR/env-incompleto" | grep -c COMPOSE_PROFILES)"
+
+igual "sin plantilla, devuelve error en vez de mentir" "1" \
+  "$(claves_ausentes "$STUB_DIR/no-existe.example" "$STUB_DIR/env-incompleto" >/dev/null; echo $?)"
 
 # =====================================================================
 titulo "sano — una capa ausente se omite, no se marca en rojo"
@@ -194,7 +322,7 @@ DAEMON_JSON="$STUB_DIR/daemon.json"; export DAEMON_JSON
 # ausente y 1 sin match, y el llamador solo lo usa como condición de un if.
 veredicto() { if rotacion_aplicada; then echo pasa; else echo falla; fi; }
 
-cp config/docker/daemon.json "$DAEMON_JSON"
+cp host/daemon.json "$DAEMON_JSON"
 igual "el archivo del repo pasa"           "pasa"  "$(veredicto)"
 
 # El caso caro: el daemon por defecto usa json-file igual, pero sin cap. Verlo
@@ -240,5 +368,29 @@ igual "la plantilla de aviso se chequea una sola vez" "1" \
 printf 'postgres\nodoo\n' > "$STUB_DIR/servicios"
 contiene "sin la capa, se omite en vez de fallar" \
   "no corresponde a este stack" "$(timer_activo cert-renew 2>&1)"
+
+# =====================================================================
+titulo "alloy_salud — el parser que decide si un componente dejó de emitir"
+# =====================================================================
+# El único derivador que no vive en lib/: es de stacks/alloy/verify.sh, pero se
+# ejercita igual que el resto porque el error que tuvo —un patrón sin anclar— no
+# lo ve nadie hasta que Alloy se rompe de verdad y el chequeo igual da verde.
+
+. stacks/alloy/verify.sh
+
+SANOS='{"name":"a","health":{"state":"healthy"}},{"name":"b","health":{"state":"healthy"}}'
+igual "cuenta los componentes y ninguno roto" "2 0" "$(alloy_salud "$SANOS")"
+
+# 'healthy' suelto matchea DENTRO de "unhealthy": sin anclar el valor entero, este
+# caso devolvía 0 rotos y el chequeo declaraba sano justo lo que existe para atrapar.
+MIXTO='{"health":{"state":"healthy"}},{"health":{"state":"unhealthy"}},{"health":{"state":"exited"}}'
+igual "un unhealthy cuenta como roto, igual que un exited" "3 2" "$(alloy_salud "$MIXTO")"
+
+igual "un unhealthy solo no pasa por sano" "1 1" \
+  "$(alloy_salud '{"health":{"state":"unhealthy"}}')"
+
+# Grepear la clave equivocada daba cero coincidencias y el chequeo pasaba siempre:
+# total en 0 es lo que hace que v_alloy falle en vez de dar verde sobre nada.
+igual "una respuesta sin componentes no se disimula" "0 0" "$(alloy_salud '{"otra":"cosa"}')"
 
 resumen

@@ -20,7 +20,7 @@ BARE_DIR="addons/.repos"
 # Un árbol por checkout: qué entorno es este lo dice .env, no un subdirectorio.
 # El default sale del tag de la imagen, único lugar donde vive la versión de Odoo.
 
-ADDONS_BRANCH="${ADDONS_BRANCH:-$(sed -n 's/^FROM odoo:\([0-9.]*\).*/\1/p' docker/odoo/Dockerfile | head -1)}"
+ADDONS_BRANCH="${ADDONS_BRANCH:-$(sed -n 's/^FROM odoo:\([0-9.]*\).*/\1/p' stacks/odoo/image/Dockerfile | head -1)}"
 
 if [ -z "$ADDONS_BRANCH" ]; then
   echo "addons.sh: no se pudo leer la versión del tag FROM odoo: del Dockerfile" >&2

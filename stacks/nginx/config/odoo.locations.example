@@ -1,0 +1,60 @@
+# --- Locations de Odoo ---
+# Un solo archivo, incluido por el server block de cualquiera de los dos modos:
+# TLS y plano se diferencian en cómo escuchan, no en cómo rutean.
+#
+# Sin extensión .conf a propósito: el http {} de la imagen autoincluye
+# /etc/nginx/conf.d/*.conf, y estas son locations sueltas — fuera de un server
+# block son un error de sintaxis si nginx las cargara solas.
+
+client_max_body_size 100M;
+
+# --- Tiempos ---
+# Largos a propósito: un -u de módulo o un informe pesado tardan minutos, y un
+# timeout corto los corta a mitad dejando la petición fallida y el trabajo hecho.
+
+proxy_connect_timeout 5s;
+proxy_send_timeout    720s;
+proxy_read_timeout    720s;
+
+# --- Cabeceras de proxy ---
+# Las que hacen honesto al proxy_mode = True de odoo.conf. Sin X-Forwarded-Proto
+# Odoo arma URLs http:// detrás de un TLS terminado acá y el navegador las bloquea.
+
+proxy_set_header Host              $host;
+proxy_set_header X-Real-IP         $remote_addr;
+proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header X-Forwarded-Host  $host;
+
+# --- Aplicación ---
+# proxy_pass con variable y $request_uri explícito: la variable es lo que obliga a
+# nginx a releer el resolver, y al usarla pierde el pase automático de la URI.
+
+location / {
+  set $route http;
+  set $odoo odoo;
+  proxy_pass http://$odoo:8069$request_uri;
+}
+
+# --- Bus en tiempo real ---
+# Puerto propio (gevent), sin StripPrefix: Odoo espera la ruta /websocket entera.
+
+location /websocket {
+  set $route websocket;
+  set $odoo odoo;
+  proxy_pass http://$odoo:8072$request_uri;
+  proxy_http_version 1.1;
+  proxy_set_header Upgrade    $http_upgrade;
+  proxy_set_header Connection $connection_upgrade;
+}
+
+# --- Login ---
+# Rate-limit a nivel de red, antes de que el intento llegue a la aplicación.
+# nodelay: las de la ráfaga pasan enseguida y recién después se corta.
+
+location = /web/login {
+  set $route login;
+  set $odoo odoo;
+  limit_req zone=login burst=10 nodelay;
+  proxy_pass http://$odoo:8069$request_uri;
+}

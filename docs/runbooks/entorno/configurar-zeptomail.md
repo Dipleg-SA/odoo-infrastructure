@@ -35,7 +35,7 @@ El token va **sin el prefijo `Zoho-enczapikey`**, que es para el header HTTP de 
 
 El bloque 2 ya es la prueba: `OK` impreso **y** el mail efectivamente recibido en `$ZM_TO` — lo primero confirma que ZeptoMail lo aceptó, no que llegó.
 
-Guardá `ZM_USER` (→ `SMTP_USER`), el remitente (→ `ALERT_EMAIL_FROM`) y el token (→ `secrets/zeptomail_smtp_password`). Ese mismo usuario lo usa después `scripts/failure-notify.sh` para el aviso de backup fallido — acertarlo acá evita que falle en silencio más adelante.
+Guardá `ZM_USER` (→ `SMTP_USER`), el remitente (→ `ALERT_EMAIL_FROM`), el token (→ `secrets/zeptomail_smtp_password`), el host fijo del comando de arriba (→ `SMTP_HOST=smtp.zeptomail.com`) y `$ZM_TO` (→ `ALERT_EMAIL_TO`, la casilla que va a recibir los avisos reales). Ese mismo usuario lo usa después `scripts/failure-notify.sh` para el aviso de backup fallido — acertar los cinco acá evita que falle en silencio más adelante.
 
 ---
 

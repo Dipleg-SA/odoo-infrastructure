@@ -5,6 +5,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 . scripts/lib/ui.sh
+. scripts/lib/compose.sh
 
 # --- Umask ---
 # Lo que se cree acá nace 600; secrets-perms le pone 640 y el grupo consumidor.
@@ -17,12 +18,14 @@ creados=()
 
 # --- Qué secrets lleva ESTE stack ---
 # Se lo pregunta a la composición, como las guardas del Makefile: cada entrypoint
-# ya declara los suyos —11 producción, 8 staging, 3 development— y una segunda
+# ya declara los suyos —9 producción, 7 staging, 2 development— y una segunda
 # lista acá divergiría. Sin esto, un stack chico nace con archivos inertes que
 # secrets-check después exige completar.
+#
+# configuracion() fusiona los perfiles en la variable, no con --profile: un
+# --profile explícito reemplaza a COMPOSE_PROFILES en vez de sumarse.
 
-DECLARADOS=$(docker compose --profile cert --profile restore config 2>/dev/null \
-  | sed -n 's|^ *file: .*/secrets/\([a-z0-9_]*\)$|\1|p')
+DECLARADOS=$(configuracion | sed -n 's|^ *file: .*/secrets/\([a-z0-9_]*\)$|\1|p')
 
 if [ -z "$DECLARADOS" ]; then
   ui_bad "no se pudo leer los secrets de la composición" "revisar COMPOSE_FILE en .env" >&2
@@ -56,12 +59,10 @@ nuevo() {
 
 genpass() { openssl rand -hex 32 | tr -d '\n'; }
 
-# --- Password de Postgres y su userlist ---
-# El userlist de PgBouncer lleva el MISMO valor; se deriva del archivo, así que
-# sigue coincidiendo aunque postgres_password ya existiera de una corrida previa.
+# --- Password de Postgres ---
+# Lo lee el motor y lo lee Odoo: un solo valor, un solo archivo.
 
 nuevo postgres_password < <(genpass) || true
-nuevo pgbouncer_credentials < <(printf '"odoo" "%s"' "$(cat secrets/postgres_password)") || true
 
 # --- Master password de Odoo ---
 
@@ -86,15 +87,8 @@ for s in cloudflare_api_token cloudflare_tunnel_token zeptomail_smtp_password re
 done
 
 # --- Credenciales de R2 ---
-# La misma clave va en los dos, en sintaxis distinta: pgBackRest parsea su INI y
-# restic el formato de AWS. Al rotarla hay que tocar ambos.
-
-nuevo pgbackrest_r2_credentials <<EOF || true
-[global]
-repo1-s3-key=$MARK
-repo1-s3-key-secret=$MARK
-repo1-cipher-pass=$MARK
-EOF
+# Formato de AWS, que es lo que restic parsea. Un solo repositorio: acá va el dump
+# de la base Y el filestore, en el mismo snapshot.
 
 nuevo restic_r2_credentials <<EOF || true
 [default]

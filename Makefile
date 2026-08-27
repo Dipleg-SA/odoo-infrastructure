@@ -1,15 +1,21 @@
 .PHONY: help up down logs ps nuke build \
-        cert-issue cert-renew secrets-init secrets-perms secrets-check \
-        host-init timers-install notify-test monitoring-role \
-        backup backup-full backup-check backup-init stanza-init restore-up restore-down restore-seed restore-password \
+        secrets-init secrets-perms secrets-check config-init \
+        host-init host-verify timers-install notify-test monitoring-role \
+        cert-issue cert-renew \
+        backup-run backup-integrity restore \
         addons-sync addons odoo-install odoo-update odoo-modules pydeps-check pydeps-sync \
-        require-modules require-backups require-restore require-root test verify host-verify \
-        edge-up edge-down edge-restart edge-logs edge-ps edge-verify edge-nuke \
-        db-up db-down db-restart db-logs db-ps db-verify db-nuke \
-        odoo-up odoo-down odoo-restart odoo-logs odoo-ps odoo-verify odoo-nuke \
-        backups-up backups-down backups-restart backups-logs backups-ps backups-verify backups-nuke \
-        observability-up observability-down observability-restart observability-logs observability-ps observability-verify observability-nuke
-
+        require-modules require-backups require-restore require-root test verify \
+        nginx-up nginx-down nginx-restart nginx-logs nginx-ps nginx-verify \
+        certbot-up certbot-down certbot-restart certbot-logs certbot-ps certbot-verify \
+        cloudflared-up cloudflared-down cloudflared-restart cloudflared-logs cloudflared-ps cloudflared-verify \
+        dnsmasq-up dnsmasq-down dnsmasq-restart dnsmasq-logs dnsmasq-ps dnsmasq-verify \
+        postgres-up postgres-down postgres-restart postgres-logs postgres-ps postgres-verify \
+        odoo-up odoo-down odoo-restart odoo-logs odoo-ps odoo-verify \
+        backup-up backup-down backup-restart backup-logs backup-ps backup-verify \
+        prometheus-up prometheus-down prometheus-restart prometheus-logs prometheus-ps prometheus-verify \
+        loki-up loki-down loki-restart loki-logs loki-ps loki-verify \
+        grafana-up grafana-down grafana-restart grafana-logs grafana-ps grafana-verify \
+        alloy-up alloy-down alloy-restart alloy-logs alloy-ps alloy-verify
 .DEFAULT_GOAL := help
 
 # --- Ayuda ---
@@ -22,8 +28,8 @@ help:
 	  /^[a-zA-Z0-9_-]+:.*##/ {printf "  \033[36m%-23s\033[0m %s\n", $$1, substr($$0, index($$0,"##")+2)}' $(MAKEFILE_LIST)
 
 # --- Inicialización de un deploy nuevo ---
-# En orden: secrets-init, cargar los valores a mano, secrets-perms, secrets-check.
-# Los tres scripts ya imprimen su propio ▶/✓/✗: el target no lo duplica.
+# En orden: secrets-init y config-init, cargar los valores a mano, secrets-perms,
+# secrets-check. Los scripts ya imprimen su propio ▶/✓/✗: el target no lo duplica.
 
 secrets-init: ## Genera los secrets iniciales (valores dummy a completar a mano)
 	scripts/secrets-init.sh
@@ -37,6 +43,13 @@ secrets-perms: ## Aplica permisos de secrets (requiere root)
 secrets-check: ## Verifica permisos de secrets
 	scripts/secrets-perms.sh --check
 
+# --- Config real de cada stack activo ---
+# Mismo mecanismo que secrets-init, pero para los .conf/.ini/.yaml gitignoreados de
+# stacks/*/config/ y addons/: un cp idempotente desde el .example de cada uno.
+
+config-init: ## Bootstrapea los config reales desde su .example
+	scripts/config-init.sh
+
 # --- Config de sistema operativo ---
 # Lo único del repo que se instala FUERA del checkout, y por eso pide root: la
 # rotación de logs del daemon y las units de systemd de este stack.
@@ -48,12 +61,20 @@ require-root:
 host-init: TARGET=host-init
 host-init: require-root ## Aplica la rotación de logs del daemon (requiere root)
 	@. scripts/lib/ui.sh; \
-	  if [ -e /etc/docker/daemon.json ] && ! cmp -s config/docker/daemon.json /etc/docker/daemon.json; then \
-	    ui_bad "/etc/docker/daemon.json ya existe y no es el del repo" \
-	      "el cp borraría las claves propias del host (data-root, insecure-registries) — fusionar a mano el bloque log-driver/log-opts de config/docker/daemon.json" >&2; exit 2; \
+	  if [ -e /etc/docker/daemon.json ] && ! cmp -s host/daemon.json /etc/docker/daemon.json; then \
+	    MAX_SIZE=$$(grep -o '"max-size"[^,}]*' host/daemon.json); \
+	    MAX_FILE=$$(grep -o '"max-file"[^,}]*' host/daemon.json); \
+	    if grep -qF "$$MAX_SIZE" /etc/docker/daemon.json && grep -qF "$$MAX_FILE" /etc/docker/daemon.json; then \
+	      ui_skip "/etc/docker/daemon.json ya rota logs igual que el repo (difiere solo en formato o en claves propias del host)"; \
+	      exit 0; \
+	    fi; \
+	    ui_bad "/etc/docker/daemon.json ya existe y no rota logs como el repo" \
+	      "el cp borraría las claves propias del host (data-root, insecure-registries, runtimes) — fusionar a mano el bloque log-driver/log-opts de host/daemon.json. Diferencia (izquierda: tuyo, derecha: repo):" >&2; \
+	    diff -u /etc/docker/daemon.json host/daemon.json >&2 || true; \
+	    exit 2; \
 	  fi; \
 	  ui_run "host-init" sh -c \
-	    'cp config/docker/daemon.json /etc/docker/daemon.json && systemctl restart docker'
+	    'cp host/daemon.json /etc/docker/daemon.json && systemctl restart docker'
 
 timers-install: ## Instala y activa las units de systemd de este stack (requiere root)
 	scripts/timers.sh install
@@ -62,21 +83,24 @@ notify-test: TARGET=notify-test
 notify-test: require-root ## Dispara el aviso de fallo de punta a punta (requiere root)
 	@. scripts/lib/ui.sh; unidad="$$(scripts/timers.sh notify)prueba.service"; \
 	  ui_start "notify-test: $$unidad"; \
-	  systemctl start "$$unidad" || \
-	    { ui_bad "notify-test falló" "systemctl no pudo arrancar $$unidad — ¿corriste 'sudo make timers-install'?"; exit 1; }; \
+	  if ! systemctl start "$$unidad"; then \
+	    ui_bad "notify-test falló" "systemctl no pudo arrancar $$unidad — ¿corriste 'sudo make timers-install'? Últimas líneas del journal:"; \
+	    journalctl -u "$$unidad" -n 20 --no-pager; exit 1; \
+	  fi; \
 	  resultado=$$(systemctl show -p Result --value "$$unidad"); \
 	  if [ "$$resultado" = "success" ]; then ui_ok "notify-test listo — Result=success, ahora confirmá que el mail llegó"; \
-	  else ui_bad "notify-test falló" "Result=$$resultado — journalctl -u $$unidad"; exit 1; fi
+	  else ui_bad "notify-test falló" "Result=$$resultado — últimas líneas del journal:"; \
+	    journalctl -u "$$unidad" -n 20 --no-pager; exit 1; fi
 
 # --- Certificados ---
 # Emisión a mano la primera vez —nginx no arranca sin el archivo— y renovación
 # por timer de systemd. DNS-01: no necesita que el borde esté arriba.
 
 cert-issue: ## Emite el certificado inicial
-	scripts/cert.sh issue
+	stacks/certbot/scripts/cert.sh issue
 
 cert-renew: ## Renueva el certificado
-	scripts/cert.sh renew
+	stacks/certbot/scripts/cert.sh renew
 
 # --- Tests ---
 # Los tres entrypoints, addons.sh y los derivadores de verify, cert y secrets. No
@@ -93,124 +117,233 @@ test: ## Corre los tests del repo, sin Docker ni red
 	  [ "$$ok" -eq "$$total" ]
 
 # --- Verificación del deploy ---
-# scripts/verify.sh es dueño único de qué se chequea y qué se espera; docs/runbooks/
-# solo nombra el target. verify (sin sufijo) dice en qué estado está el servidor entero.
+# Cada stacks/<nombre>/verify.sh es dueño de qué se espera de él; el orquestador solo
+# decide cuáles corre. docs/runbooks/ nombra el target, nunca los valores esperados.
 
-verify: ## Verifica el deploy completo — o <capa>-verify: host|edge|db|odoo|backups|observability
-	scripts/verify.sh all
+verify: ## Verifica el deploy completo — o <stack>-verify para uno solo
+	scripts/verify-stacks.sh all
 
-host-verify: ## Verifica la capa host (systemd, firewall, DHCP — sin contenedores)
-	scripts/capa.sh host verify
+host-verify: ## Verifica los prerrequisitos del SO (systemd, rotación de logs, secrets)
+	scripts/verify-host.sh
 
-# --- Ciclo de vida del stack, capa por capa ---
-# Misma filosofía en las cinco: up/down/restart/logs/ps/verify/nuke, resueltos por
-# scripts/capa.sh contra la composición real — un stack chico que no trae una capa
-# no falla, la omite. up/down/logs/ps globales (abajo) siguen operando el stack entero.
+# --- Ciclo de vida, stack por stack ---
+# Un stack es un solo compose.yaml, así que docker compose directo alcanza: no hay
+# varios archivos que agregar, y por eso no hay dispatcher. Un stack que este
+# entorno no lleva falla con el error de Compose, que ya nombra el servicio.
+#
+# nuke no está por stack: con un contenedor cada uno no queda lógica que
+# justificarlo. Está el global, más abajo.
 
-edge-up: ## Levanta la capa edge (dnsmasq, nginx, cloudflared)
-	scripts/capa.sh edge up
+nginx-up: ## Levanta nginx
+	@. scripts/lib/ui.sh; ui_run "nginx-up" docker compose up -d nginx
 
-edge-down: ## Baja la capa edge
-	scripts/capa.sh edge down
+nginx-down: ## Baja nginx
+	@. scripts/lib/ui.sh; ui_run "nginx-down" docker compose rm -sf nginx
 
-edge-restart: ## Reinicia la capa edge, sin tocar el resto del stack
-	scripts/capa.sh edge restart
+nginx-restart: ## Reinicia nginx, sin tocar el resto del stack
+	@. scripts/lib/ui.sh; ui_run "nginx-restart" docker compose restart nginx
 
-edge-logs: ## Sigue los logs de la capa edge
-	scripts/capa.sh edge logs
+nginx-logs: ## Sigue los logs de nginx
+	@docker compose logs -f nginx
 
-edge-ps: ## Lista los contenedores de la capa edge
-	scripts/capa.sh edge ps
+nginx-ps: ## Lista el contenedor de nginx
+	@docker compose ps nginx
 
-edge-verify: ## Verifica la capa edge
-	scripts/capa.sh edge verify
+nginx-verify: ## Verifica nginx
+	scripts/verify-stacks.sh nginx
 
-edge-nuke: ## Borra containers/imágenes/volúmenes de edge — confirmación: tipear 'nuke'
-	scripts/capa.sh edge nuke
+certbot-up: ## Levanta certbot
+	@. scripts/lib/ui.sh; ui_run "certbot-up" docker compose up -d certbot
 
-db-up: ## Levanta la capa db (postgres, pgbouncer)
-	scripts/capa.sh db up
+certbot-down: ## Baja certbot
+	@. scripts/lib/ui.sh; ui_run "certbot-down" docker compose rm -sf certbot
 
-db-down: ## Baja la capa db
-	scripts/capa.sh db down
+certbot-restart: ## Reinicia certbot, sin tocar el resto del stack
+	@. scripts/lib/ui.sh; ui_run "certbot-restart" docker compose restart certbot
 
-db-restart: ## Reinicia la capa db, sin tocar el resto del stack
-	scripts/capa.sh db restart
+certbot-logs: ## Sigue los logs de certbot
+	@docker compose logs -f certbot
 
-db-logs: ## Sigue los logs de la capa db
-	scripts/capa.sh db logs
+certbot-ps: ## Lista el contenedor de certbot
+	@docker compose ps certbot
 
-db-ps: ## Lista los contenedores de la capa db
-	scripts/capa.sh db ps
+certbot-verify: ## Verifica certbot
+	scripts/verify-stacks.sh certbot
 
-db-verify: ## Verifica la capa db
-	scripts/capa.sh db verify
+cloudflared-up: ## Levanta cloudflared
+	@. scripts/lib/ui.sh; ui_run "cloudflared-up" docker compose up -d cloudflared
 
-db-nuke: ## Borra containers/imágenes/volúmenes de db — confirmación: tipear 'nuke'
-	scripts/capa.sh db nuke
+cloudflared-down: ## Baja cloudflared
+	@. scripts/lib/ui.sh; ui_run "cloudflared-down" docker compose rm -sf cloudflared
 
-odoo-up: ## Levanta la capa odoo
-	scripts/capa.sh odoo up
+cloudflared-restart: ## Reinicia cloudflared, sin tocar el resto del stack
+	@. scripts/lib/ui.sh; ui_run "cloudflared-restart" docker compose restart cloudflared
 
-odoo-down: ## Baja la capa odoo
-	scripts/capa.sh odoo down
+cloudflared-logs: ## Sigue los logs de cloudflared
+	@docker compose logs -f cloudflared
 
-odoo-restart: ## Reinicia la capa odoo, sin tocar el resto del stack
-	scripts/capa.sh odoo restart
+cloudflared-ps: ## Lista el contenedor de cloudflared
+	@docker compose ps cloudflared
 
-odoo-logs: ## Sigue los logs de la capa odoo
-	scripts/capa.sh odoo logs
+cloudflared-verify: ## Verifica cloudflared
+	scripts/verify-stacks.sh cloudflared
 
-odoo-ps: ## Lista los contenedores de la capa odoo
-	scripts/capa.sh odoo ps
+dnsmasq-up: ## Levanta dnsmasq
+	@. scripts/lib/ui.sh; ui_run "dnsmasq-up" docker compose up -d dnsmasq
 
-odoo-verify: ## Verifica la capa odoo
-	scripts/capa.sh odoo verify
+dnsmasq-down: ## Baja dnsmasq
+	@. scripts/lib/ui.sh; ui_run "dnsmasq-down" docker compose rm -sf dnsmasq
 
-odoo-nuke: ## Borra containers/imágenes/volúmenes de odoo — confirmación: tipear 'nuke'
-	scripts/capa.sh odoo nuke
+dnsmasq-restart: ## Reinicia dnsmasq, sin tocar el resto del stack
+	@. scripts/lib/ui.sh; ui_run "dnsmasq-restart" docker compose restart dnsmasq
 
-backups-up: ## Levanta la capa backups (restic; pgBackRest vive dentro de postgres)
-	scripts/capa.sh backups up
+dnsmasq-logs: ## Sigue los logs de dnsmasq
+	@docker compose logs -f dnsmasq
 
-backups-down: ## Baja la capa backups
-	scripts/capa.sh backups down
+dnsmasq-ps: ## Lista el contenedor de dnsmasq
+	@docker compose ps dnsmasq
 
-backups-restart: ## Reinicia la capa backups, sin tocar el resto del stack
-	scripts/capa.sh backups restart
+dnsmasq-verify: ## Verifica dnsmasq
+	scripts/verify-stacks.sh dnsmasq
 
-backups-logs: ## Sigue los logs de la capa backups
-	scripts/capa.sh backups logs
+postgres-up: ## Levanta postgres
+	@. scripts/lib/ui.sh; ui_run "postgres-up" docker compose up -d postgres
 
-backups-ps: ## Lista los contenedores de la capa backups
-	scripts/capa.sh backups ps
+postgres-down: ## Baja postgres
+	@. scripts/lib/ui.sh; ui_run "postgres-down" docker compose rm -sf postgres
 
-backups-verify: ## Verifica la capa backups
-	scripts/capa.sh backups verify
+postgres-restart: ## Reinicia postgres, sin tocar el resto del stack
+	@. scripts/lib/ui.sh; ui_run "postgres-restart" docker compose restart postgres
 
-backups-nuke: ## Borra containers/imágenes/volúmenes de backups — confirmación: tipear 'nuke'
-	scripts/capa.sh backups nuke
+postgres-logs: ## Sigue los logs de postgres
+	@docker compose logs -f postgres
 
-observability-up: ## Levanta la capa observability (prometheus, loki, grafana, alloy)
-	scripts/capa.sh observability up
+postgres-ps: ## Lista el contenedor de postgres
+	@docker compose ps postgres
 
-observability-down: ## Baja la capa observability
-	scripts/capa.sh observability down
+postgres-verify: ## Verifica postgres
+	scripts/verify-stacks.sh postgres
 
-observability-restart: ## Reinicia la capa observability, sin tocar el resto del stack
-	scripts/capa.sh observability restart
+odoo-up: ## Levanta odoo
+	@. scripts/lib/ui.sh; ui_run "odoo-up" docker compose up -d odoo
 
-observability-logs: ## Sigue los logs de la capa observability
-	scripts/capa.sh observability logs
+odoo-down: ## Baja odoo
+	@. scripts/lib/ui.sh; ui_run "odoo-down" docker compose rm -sf odoo
 
-observability-ps: ## Lista los contenedores de la capa observability
-	scripts/capa.sh observability ps
+odoo-restart: ## Reinicia odoo, sin tocar el resto del stack
+	@. scripts/lib/ui.sh; ui_run "odoo-restart" docker compose restart odoo
 
-observability-verify: ## Verifica la capa observability
-	scripts/capa.sh observability verify
+odoo-logs: ## Sigue los logs de odoo
+	@docker compose logs -f odoo
 
-observability-nuke: ## Borra containers/imágenes/volúmenes de observability — confirmación: tipear 'nuke'
-	scripts/capa.sh observability nuke
+odoo-ps: ## Lista el contenedor de odoo
+	@docker compose ps odoo
+
+odoo-verify: ## Verifica odoo
+	scripts/verify-stacks.sh odoo
+
+backup-up: ## Levanta backup
+	@. scripts/lib/ui.sh; ui_run "backup-up" docker compose up -d backup
+
+backup-down: ## Baja backup
+	@. scripts/lib/ui.sh; ui_run "backup-down" docker compose rm -sf backup
+
+backup-restart: ## Reinicia backup, sin tocar el resto del stack
+	@. scripts/lib/ui.sh; ui_run "backup-restart" docker compose restart backup
+
+backup-logs: ## Sigue los logs de backup
+	@docker compose logs -f backup
+
+backup-ps: ## Lista el contenedor de backup
+	@docker compose ps backup
+
+backup-verify: ## Verifica backup
+	scripts/verify-stacks.sh backup
+
+prometheus-up: ## Levanta prometheus
+	@. scripts/lib/ui.sh; ui_run "prometheus-up" docker compose up -d prometheus
+
+prometheus-down: ## Baja prometheus
+	@. scripts/lib/ui.sh; ui_run "prometheus-down" docker compose rm -sf prometheus
+
+prometheus-restart: ## Reinicia prometheus, sin tocar el resto del stack
+	@. scripts/lib/ui.sh; ui_run "prometheus-restart" docker compose restart prometheus
+
+prometheus-logs: ## Sigue los logs de prometheus
+	@docker compose logs -f prometheus
+
+prometheus-ps: ## Lista el contenedor de prometheus
+	@docker compose ps prometheus
+
+prometheus-verify: ## Verifica prometheus
+	scripts/verify-stacks.sh prometheus
+
+loki-up: ## Levanta loki
+	@. scripts/lib/ui.sh; ui_run "loki-up" docker compose up -d loki
+
+loki-down: ## Baja loki
+	@. scripts/lib/ui.sh; ui_run "loki-down" docker compose rm -sf loki
+
+loki-restart: ## Reinicia loki, sin tocar el resto del stack
+	@. scripts/lib/ui.sh; ui_run "loki-restart" docker compose restart loki
+
+loki-logs: ## Sigue los logs de loki
+	@docker compose logs -f loki
+
+loki-ps: ## Lista el contenedor de loki
+	@docker compose ps loki
+
+loki-verify: ## Verifica loki
+	scripts/verify-stacks.sh loki
+
+grafana-up: ## Levanta grafana
+	@. scripts/lib/ui.sh; ui_run "grafana-up" docker compose up -d grafana
+
+grafana-down: ## Baja grafana
+	@. scripts/lib/ui.sh; ui_run "grafana-down" docker compose rm -sf grafana
+
+grafana-restart: ## Reinicia grafana, sin tocar el resto del stack
+	@. scripts/lib/ui.sh; ui_run "grafana-restart" docker compose restart grafana
+
+grafana-logs: ## Sigue los logs de grafana
+	@docker compose logs -f grafana
+
+grafana-ps: ## Lista el contenedor de grafana
+	@docker compose ps grafana
+
+grafana-verify: ## Verifica grafana
+	scripts/verify-stacks.sh grafana
+
+alloy-up: ## Levanta alloy
+	@. scripts/lib/ui.sh; ui_run "alloy-up" docker compose up -d alloy
+
+alloy-down: ## Baja alloy
+	@. scripts/lib/ui.sh; ui_run "alloy-down" docker compose rm -sf alloy
+
+alloy-restart: ## Reinicia alloy, sin tocar el resto del stack
+	@. scripts/lib/ui.sh; ui_run "alloy-restart" docker compose restart alloy
+
+alloy-logs: ## Sigue los logs de alloy
+	@docker compose logs -f alloy
+
+alloy-ps: ## Lista el contenedor de alloy
+	@docker compose ps alloy
+
+alloy-verify: ## Verifica alloy
+	scripts/verify-stacks.sh alloy
+
+# --- Respaldos (árbol nuevo) ---
+# El diario respalda y purga; el check verifica integridad del repositorio. No hay
+# 'full': en restic todo snapshot es completo y la retención GFS la hace forget.
+
+backup-run: require-backups ## Corre el backup diario (dump + filestore en un snapshot)
+	stacks/backup/scripts/backup.sh daily
+
+backup-integrity: require-backups ## Verifica la integridad del repositorio (restic check)
+	stacks/backup/scripts/backup.sh check
+
+restore: require-restore ## Restaura filestore y base desde un snapshot — SNAPSHOT=latest
+	stacks/backup/scripts/restore.sh $(or $(SNAPSHOT),latest)
 
 # --- Ciclo de vida del stack completo ---
 
@@ -224,15 +357,20 @@ logs: ## Sigue los logs de todos los servicios
 	@. scripts/lib/ui.sh; ui_start "logs: siguiendo todo el stack (Ctrl-C para salir)"
 	@docker compose logs -f
 
-ps: ## Lista el estado de los contenedores, agrupado por capa
-	scripts/capa.sh all ps
+ps: ## Lista el estado de los contenedores
+	@docker compose ps
 
 # --- Nuke ---
 # El más destructivo del Makefile. Confirmación: tipear la palabra 'nuke', no Y/N.
 # Nunca toca secrets/ ni .env — son credenciales de terceros, no derivables de nada.
 
 nuke: ## Borra TODO: containers/imágenes/volúmenes del stack + addons/ + state/
-	scripts/capa.sh all nuke
+	@. scripts/lib/ui.sh; \
+	  ui_warn "esto borra los datos de este stack" \
+	    "volúmenes, imágenes propias, addons/ y state/ — secrets/ y .env NO se tocan"; \
+	  ui_confirm_nuke || exit 1; \
+	  ui_run "nuke" sh -c 'docker compose down -v --rmi local --remove-orphans && \
+	    rm -rf addons/.repos addons/*/*/ state/textfile/*.prom state/meta/*.txt'
 
 # --- Addons ---
 # sync clona/actualiza los árboles desde addons/addons.txt; puro host, sin contenedores.
@@ -244,8 +382,8 @@ addons: ## Muestra el estado de los addons
 	@. scripts/lib/ui.sh; ui_run "addons" scripts/addons.sh status
 
 # --- Imágenes propias ---
-# Las que este stack construye (odoo, postgres y dnsmasq donde esté). El build de
-# odoo no clona nada: el árbol de addons entra por bind-mount, no por capa de imagen.
+# Todo stack construye la suya, aunque el Dockerfile sea un FROM pineado y nada más.
+# El build de odoo no clona nada: los addons entran por bind-mount, no por capa.
 
 build: ## Construye las imágenes propias de este stack
 	@. scripts/lib/ui.sh; ui_run "build" docker compose build
@@ -261,7 +399,7 @@ pydeps-sync: ## Pinea en requirements.txt lo que declaren los addons y todavía 
 	scripts/pydeps.sh sync
 
 # --- Instalar/actualizar módulos ---
-# El one-off corre -i/-u directo contra postgres:5432, no PgBouncer. El up -d va
+# El one-off corre -i/-u con la conexión explícita a postgres:5432. El up -d va
 # siempre, aunque el one-off falle: si no, un -i con error deja produccion abajo.
 # --name: el servicio declara container_name, y sin un nombre propio el one-off
 # chocaria contra el del servicio detenido. Dos stacks no pueden correr un
@@ -309,92 +447,19 @@ require-backups:
 	@. scripts/lib/ui.sh; docker compose config --services 2>/dev/null | grep -qx backup || \
 	  { ui_bad "este stack no incluye la capa de backups" "es exclusiva de producción — revisar COMPOSE_FILE en .env" >&2; exit 2; }
 
+# --- Respaldar vs restaurar ---
+# Dos guardas y no una: respaldar es de producción, restaurar es de los dos entornos.
+# La diferencia sale de la composición, no de una lista — el entrypoint de prueba le
+# pone profiles: [restore] al servicio backup, así que queda fuera del default (y de
+# lo que ve timers.sh) pero sigue alcanzable para restaurar.
+#
 require-restore:
-	@. scripts/lib/ui.sh; docker compose --profile restore config --services 2>/dev/null | grep -qx restore-db || \
+	@. scripts/lib/ui.sh; docker compose --profile restore config --services 2>/dev/null | grep -qx backup || \
 	  { ui_bad "este stack no incluye la capa de restore" "revisar COMPOSE_FILE en .env" >&2; exit 2; }
-
-# --- Backups ---
-# El restore no es un target — necesita un timestamp/snapshot según el incidente; ver docs/runbooks/backup-restore/.
-# backup.sh ya imprime su propio ▶/✓/✗: el target no lo duplica.
-
-# --- Inicialización de los dos repositorios ---
-# Una sola vez por deploy. stanza-init va apenas arranca la base y no después: con
-# archive_mode on, cada archivado falla hasta que la stanza exista y el WAL se acumula.
-
-stanza-init: require-backups ## Crea la stanza de pgBackRest y prueba el archivado hasta R2
-	@. scripts/lib/ui.sh; ui_run "stanza-init" sh -c \
-	  'docker compose exec -T -u postgres postgres pgbackrest stanza-create && \
-	   docker compose exec -T -u postgres postgres pgbackrest check'
-
-backup-init: require-backups ## Inicializa el repositorio de restic
-	@. scripts/lib/ui.sh; ui_run "backup-init" \
-	  docker compose exec -T backup restic init
-
-backup: require-backups ## Corre el backup diario
-	scripts/backup.sh daily
-
-backup-full: require-backups ## Corre el backup mensual completo
-	scripts/backup.sh monthly
-
-backup-check: require-backups ## Verifica la integridad de los repositorios de backup
-	@. scripts/lib/ui.sh; ui_run "backup-check" sh -c \
-	  'docker compose exec -T -u postgres postgres pgbackrest check && docker compose exec -T backup restic check'
-
-# --- Restore ---
-# Solo los dos servicios del perfil: `--profile restore down` a secas bajaría el stack entero.
-
-restore-up: require-restore ## Levanta los servicios de restore
-	@. scripts/lib/ui.sh; ui_run "restore-up" docker compose --profile restore up -d restore-db restore-files
-
-restore-down: require-restore ## Baja los servicios de restore
-	@. scripts/lib/ui.sh; ui_run "restore-down" docker compose rm -sf restore-db restore-files
-
-# --- Siembra de un stack que no respalda ---
-# Base y filestore del backup más nuevo, en ese orden: al revés dejaría filas
-# apuntando a adjuntos que no existen. --delta porque resembrar es sobre un pgdata ya poblado.
-
-restore-seed: require-restore ## Siembra base y filestore desde el repositorio de backups
-	@. scripts/lib/ui.sh; \
-	  docker compose config --services 2>/dev/null | grep -qx backup && \
-	    { ui_bad "restore-seed no corre en un stack que respalda" \
-	        "es para sembrar staging desde el repositorio de producción, no para restaurar producción — ver docs/runbooks/backup-restore/" >&2; exit 2; } || true; \
-	  [ -z "$$(docker compose ps -q postgres 2>/dev/null)" ] || \
-	    { ui_bad "postgres está corriendo" "pgBackRest no restaura sobre un cluster vivo — make db-down" >&2; exit 2; }
-	@. scripts/lib/ui.sh; ui_run "restore-seed" sh -c \
-	  'docker compose --profile restore up -d restore-db restore-files && \
-	   docker compose exec -T restore-db pgbackrest restore --delta --archive-mode=off && \
-	   docker compose exec -T restore-files restic restore latest --target / --include /data/odoo'; \
-	  estado=$$?; \
-	  docker compose rm -sf restore-db restore-files >/dev/null 2>&1; \
-	  exit "$$estado"
-
-# La otra mitad de la siembra: el cluster restaurado trae los roles del stack de
-# origen, así que la contraseña del rol odoo no es la de este stack. Va tras db-up.
-
-restore-password: ## Reaplica el secret de este stack al rol odoo del cluster sembrado
-	@. scripts/lib/ui.sh; [ -s secrets/postgres_password ] || \
-	  { ui_bad "falta secrets/postgres_password" "sin él la clave se interpola vacía y el rol queda sin password" >&2; exit 2; }
-	@. scripts/lib/ui.sh; ui_start "restore-password"; \
-	  printf "ALTER ROLE odoo PASSWORD '%s';\n" "$$(cat secrets/postgres_password)" \
-	  | docker compose exec -T -u postgres postgres psql -U odoo -d postgres -v ON_ERROR_STOP=1 -q; \
-	  estado=$$?; \
-	  if [ "$$estado" -eq 0 ]; then ui_ok "restore-password listo"; \
-	  else ui_bad "restore-password falló" "exit $$estado"; fi; \
-	  exit "$$estado"
 
 # --- Observabilidad ---
 # El rol de monitoreo no sale de la imagen: lo crea el operador contra la base ya
 # viva. DROP+CREATE lo hace repetible, y con eso sirve también para rotar la clave.
 
 monitoring-role: ## Crea (o rota) el rol de solo lectura que scrapea Postgres
-	@. scripts/lib/ui.sh; [ -s secrets/postgres_exporter_password ] || \
-	  { ui_bad "falta secrets/postgres_exporter_password" \
-	      "sin él la clave se interpola vacía y el rol queda creado sin password — ¿este stack lleva la capa de observabilidad?" >&2; exit 2; }
-	@. scripts/lib/ui.sh; ui_start "monitoring-role"; \
-	  printf "DROP ROLE IF EXISTS monitoring;\nCREATE ROLE monitoring LOGIN PASSWORD '%s';\nGRANT pg_monitor TO monitoring;\n" \
-	    "$$(cat secrets/postgres_exporter_password)" \
-	  | docker compose exec -T -u postgres postgres psql -U odoo -d postgres -v ON_ERROR_STOP=1 -q; \
-	  estado=$$?; \
-	  if [ "$$estado" -eq 0 ]; then ui_ok "monitoring-role listo"; \
-	  else ui_bad "monitoring-role falló" "exit $$estado"; fi; \
-	  exit "$$estado"
+	stacks/alloy/scripts/monitoring-role.sh

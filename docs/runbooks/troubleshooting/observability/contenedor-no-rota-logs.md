@@ -10,7 +10,7 @@ Un contenedor específico no tiene rotación de logs aplicada, mientras otros s�
 docker inspect -f '{{.HostConfig.LogConfig}}' <contenedor>
 ```
 
-Es anterior al restart del daemon. La rotación de `config/docker/daemon.json` solo aplica a contenedores **creados después** de reiniciar el daemon.
+Es anterior al restart del daemon. La rotación de `host/daemon.json` solo aplica a contenedores **creados después** de reiniciar el daemon.
 
 ## Fix
 

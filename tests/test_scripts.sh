@@ -18,7 +18,7 @@ PATH="$REPO_ROOT/tests/stubs:$PATH"
 crear_root() {
   local root="$TMP/$1"; shift
   mkdir -p "$root/scripts/lib" "$root/state/textfile" "$root/secrets"
-  cp "$REPO_ROOT/scripts/lib/ui.sh" "$root/scripts/lib/"
+  cp "$REPO_ROOT/scripts/lib/ui.sh" "$REPO_ROOT/scripts/lib/compose.sh" "$root/scripts/lib/"
   for s in "$@"; do cp "$REPO_ROOT/scripts/$s" "$root/scripts/"; done
   printf 'PUBLIC_HOSTNAME=odoo.example.test\n' > "$root/.env"
   printf '%s' "$root"
@@ -31,12 +31,14 @@ reset_stub() { : > "$STUB_DIR/llamadas"; rm -f "$STUB_DIR/config" "$STUB_DIR/ps-
 titulo "cert.sh — lo que le llega de verdad a certbot"
 # =====================================================================
 
-ROOT=$(crear_root cert cert.sh)
+ROOT=$(crear_root cert)
+mkdir -p "$ROOT/stacks/certbot/scripts"
+cp "$REPO_ROOT/stacks/certbot/scripts/cert.sh" "$ROOT/stacks/certbot/scripts/"
 reset_stub
 printf '  Expiry Date: 2026-11-01 12:00:00+00:00 (VALID: 80 days)\n' > "$STUB_DIR/salida"
 printf 'idcontenedor\n' > "$STUB_DIR/ps-q"
 
-(cd "$ROOT" && ./scripts/cert.sh renew --force-renewal >/dev/null 2>&1)
+(cd "$ROOT" && ./stacks/certbot/scripts/cert.sh renew --force-renewal >/dev/null 2>&1)
 
 # El bug que se shippeó: cmd_renew no reenviaba "$@" y el flag se perdía en silencio.
 contiene "renew reenvía --force-renewal a certbot" \
@@ -62,12 +64,12 @@ contiene "con el vencimiento en epoch UTC" "1793534400" "$METRICA"
 reset_stub
 printf '  Expiry Date: 2026-11-01 12:00:00+00:00 (VALID: 80 days)\n' > "$STUB_DIR/salida"
 : > "$STUB_DIR/ps-q"
-SALIDA=$( (cd "$ROOT" && ./scripts/cert.sh renew 2>&1) )
-igual    "con nginx abajo igual sale con 0" "0" "$( (cd "$ROOT" && ./scripts/cert.sh renew >/dev/null 2>&1); echo $?)"
+SALIDA=$( (cd "$ROOT" && ./stacks/certbot/scripts/cert.sh renew 2>&1) )
+igual    "con nginx abajo igual sale con 0" "0" "$( (cd "$ROOT" && ./stacks/certbot/scripts/cert.sh renew >/dev/null 2>&1); echo $?)"
 contiene "y lo avisa"                        "no está corriendo" "$SALIDA"
 
 # --- Uso ---
-sale_con "un subcomando inventado sale con 2" 2 bash "$ROOT/scripts/cert.sh" inventado
+sale_con "un subcomando inventado sale con 2" 2 bash "$ROOT/stacks/certbot/scripts/cert.sh" inventado
 
 # =====================================================================
 titulo "secrets-init.sh — la lista sale de la composición"
@@ -76,29 +78,23 @@ titulo "secrets-init.sh — la lista sale de la composición"
 ROOT=$(crear_root secrets secrets-init.sh secrets-perms.sh)
 reset_stub
 
-# Lo que declara un entrypoint de development: tres, y los tres generables.
+# Lo que declara un entrypoint de development: dos, y los dos generables.
 cat > "$STUB_DIR/config" <<'EOF'
 secrets:
   odoo_admin_password:
     file: /repo/secrets/odoo_admin_password
-  pgbouncer_credentials:
-    file: /repo/secrets/pgbouncer_credentials
   postgres_password:
     file: /repo/secrets/postgres_password
 EOF
 
 SALIDA=$( (cd "$ROOT" && ./scripts/secrets-init.sh 2>&1) )
-igual "crea exactamente los 3 declarados" "3" "$(ls "$ROOT/secrets" | wc -l | tr -d ' ')"
+igual "crea exactamente los 2 declarados" "2" "$(ls "$ROOT/secrets" | wc -l | tr -d ' ')"
 contiene "y dice cuáles omite"            "omitido (este stack no lo declara): secrets/cloudflare_api_token" "$SALIDA"
 contiene "sin dejar nada pendiente"       "Todos los secrets tienen valor" "$SALIDA"
 
 # hex y no base64: los / + = rompen a cualquier consumidor que arme una URI.
 igual "genera 64 hex" "0" \
   "$(grep -qE '^[0-9a-f]{64}$' "$ROOT/secrets/postgres_password"; echo $?)"
-
-# El userlist de PgBouncer lleva el MISMO valor que el password.
-contiene "el userlist de pgbouncer deriva del password" \
-  "$(cat "$ROOT/secrets/postgres_password")" "$(cat "$ROOT/secrets/pgbouncer_credentials")"
 
 # --- Idempotencia ---
 # Se corre de nuevo en cada checkout que suma una capa: pisar un valor cargado
@@ -124,7 +120,7 @@ titulo "secrets-perms.sh --check"
 
 printf 'valor\n' > "$ROOT/secrets/postgres_exporter_password"
 chmod 640 "$ROOT/secrets/postgres_exporter_password"
-rm -f "$ROOT/secrets/postgres_password" "$ROOT/secrets/pgbouncer_credentials" "$ROOT/secrets/odoo_admin_password"
+rm -f "$ROOT/secrets/postgres_password" "$ROOT/secrets/odoo_admin_password"
 
 sale_con "un secret en 640 pasa" 0 bash -c "cd '$ROOT' && ./scripts/secrets-perms.sh --check"
 
@@ -155,6 +151,55 @@ rm -rf "$ROOT/secrets"
 sale_con "sin secrets/ aborta" 1 bash -c "cd '$ROOT' && ./scripts/secrets-perms.sh --check"
 
 # =====================================================================
+titulo "config-init.sh — qué stack está activo decide qué bootstrapea"
+# =====================================================================
+
+ROOT=$(crear_root config config-init.sh)
+reset_stub
+
+# Dos stacks activos, uno con dos .example (uno anidado) y otro sin config/ propia.
+mkdir -p "$ROOT/stacks/nginx/config" "$ROOT/stacks/grafana/config/provisioning/alerting" "$ROOT/addons"
+printf 'default;\n' > "$ROOT/stacks/nginx/config/00-http.conf.example"
+printf 'de-mas;\n' > "$ROOT/stacks/nginx/config/odoo.locations.example"
+printf 'TU_EMAIL_ALERTA_TO\n' > "$ROOT/stacks/grafana/config/provisioning/alerting/contact-points.yaml.example"
+printf 'odoo.txt\n' > "$ROOT/addons/addons.txt.example"
+printf 'requirements\n' > "$ROOT/addons/requirements.txt.example"
+printf '%s\n' 'nginx' 'grafana' > "$STUB_DIR/servicios"
+
+SALIDA=$( (cd "$ROOT" && ./scripts/config-init.sh 2>&1) )
+igual "crea los 2 de nginx"        "0" "$([ -f "$ROOT/stacks/nginx/config/00-http.conf" ] && [ -f "$ROOT/stacks/nginx/config/odoo.locations" ]; echo $?)"
+igual "y el anidado de grafana"    "0" "$([ -f "$ROOT/stacks/grafana/config/provisioning/alerting/contact-points.yaml" ]; echo $?)"
+igual "sin odoo, sin addons" "" "$(ls "$ROOT/addons" 2>/dev/null | grep -v example || true)"
+
+# --- Idempotencia: no pisa lo cargado a mano ---
+
+printf 'editado a mano\n' > "$ROOT/stacks/nginx/config/00-http.conf"
+SALIDA=$( (cd "$ROOT" && ./scripts/config-init.sh 2>&1) )
+igual    "no pisa un archivo ya cargado" "editado a mano" "$(cat "$ROOT/stacks/nginx/config/00-http.conf")"
+contiene "y lo dice"                     "skip (ya existe)" "$SALIDA"
+
+# --- Odoo activo: addons entra ---
+
+printf '%s\n' 'nginx' 'grafana' 'odoo' > "$STUB_DIR/servicios"
+SALIDA=$( (cd "$ROOT" && ./scripts/config-init.sh 2>&1) )
+igual "bootstrapea los 2 de addons" "0" \
+  "$([ -f "$ROOT/addons/addons.txt" ] && [ -f "$ROOT/addons/requirements.txt" ]; echo $?)"
+
+# --- Un stack ausente no deja rastro ---
+# dnsmasq no está entre los activos: su .example no se toca.
+
+mkdir -p "$ROOT/stacks/dnsmasq/config"
+printf 'TU_IP_LOCAL\n' > "$ROOT/stacks/dnsmasq/config/dnsmasq.conf.example"
+( cd "$ROOT" && ./scripts/config-init.sh >/dev/null 2>&1 )
+igual "un stack fuera de la composición no bootstrapea" "1" \
+  "$([ -f "$ROOT/stacks/dnsmasq/config/dnsmasq.conf" ]; echo $?)"
+
+# --- Sin composición legible ---
+
+rm -f "$STUB_DIR/servicios"
+sale_con "sin composición legible aborta" 1 bash -c "cd '$ROOT' && ./scripts/config-init.sh"
+
+# =====================================================================
 titulo "timers.sh — qué units corresponden y con qué nombre"
 # =====================================================================
 
@@ -164,8 +209,9 @@ titulo "timers.sh — qué units corresponden y con qué nombre"
 crear_root_timers() {
   local root proyecto="$1"
   root=$(crear_root "timers-$proyecto" timers.sh)
-  mkdir -p "$root/config/systemd" "$root/systemd"
-  cp "$REPO_ROOT"/config/systemd/* "$root/config/systemd/"
+  mkdir -p "$root/host/systemd" "$root/stacks" "$root/systemd"
+  cp "$REPO_ROOT"/host/systemd/* "$root/host/systemd/"
+  cp -R "$REPO_ROOT"/stacks/backup "$REPO_ROOT"/stacks/certbot "$root/stacks/"
   printf 'COMPOSE_PROJECT_NAME=%s\n' "$proyecto" >> "$root/.env"
   printf '%s' "$root"
 }
@@ -223,6 +269,21 @@ contiene    "desactiva la unit que dejó de corresponder" \
 no_contiene "y borra sus dos archivos" "staging-backup-daily" "$(ls "$ROOT_STAG/systemd")"
 igual "instala tres archivos, no siete" "3" "$(ls "$ROOT_STAG/systemd" | wc -l | tr -d ' ')"
 no_contiene "y no toca las units del otro checkout" "production-" "$(ls "$ROOT_STAG/systemd")"
+
+# --- El checkout vecino cuyo nombre empieza igual ---
+# El glob del prefijo no distingue 'staging-' de 'staging-qa-': sin cruzar el
+# resto contra las bases conocidas, este install desactivaba y borraba las units
+# del otro deployment, que es exactamente lo que el prefijo existe para evitar.
+
+reset_stub
+printf 'postgres\nodoo\ncertbot\n' > "$STUB_DIR/servicios"
+: > "$ROOT_STAG/systemd/staging-qa-cert-renew.timer"
+: > "$ROOT_STAG/systemd/staging-qa-cert-renew.service"
+
+SALIDA=$(timers "$ROOT_STAG" install)
+contiene    "deja en pie las units del vecino con prefijo compartido" \
+  "staging-qa-cert-renew.timer" "$(ls "$ROOT_STAG/systemd")"
+no_contiene "y no las desactiva" "disable --now staging-qa" "$(llamadas)"
 
 # --- Development: ni una ---
 
