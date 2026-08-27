@@ -49,11 +49,11 @@ Dos cosas que parecen prerrequisitos y no lo son, porque necesitan el repositori
 
 ## 2 · Repositorio
 
-**Objetivo** — el repo clonado en el último release, con `.env` y los 11 secrets cargados y validados, y el daemon de Docker ya rotando logs. Nada levantado todavía.
+**Objetivo** — el repo clonado en el último release, con `.env` y los 9 secrets cargados y validados, y el daemon de Docker ya rotando logs. Nada levantado todavía.
 
 **A mano** — `.env.production.example` deja seis claves vacías y explica cada una donde se edita; no hay una segunda lista acá. Dos salen directo de los prerrequisitos (`SMTP_USER`, `ALERT_EMAIL_FROM`); `LOCAL_IP` sale del segundo comando de abajo; `PUBLIC_HOSTNAME`, `SMTP_HOST` y `ALERT_EMAIL_TO` se completan a mano. Dos trampas: `LOCAL_IP` tiene que ser una IP real de una interfaz existente —`dnsmasq` bindea exactamente ahí y si no, queda `unhealthy`— y `SMTP_HOST` es la que más se olvida, porque ningún prerrequisito la deja anotada. Ninguna puede quedar vacía **ni ausente**: `host-verify` cruza contra `.env.production.example` y marca las dos cosas — Compose interpola una variable vacía sin fallar y el síntoma aparece capas después. El bucket y el endpoint de R2 **no** van acá: se editan directo en `r2.env`, más abajo en este mismo bloque, apenas `config-init` lo bootstrapea.
 
-`secrets-init` deja **11 archivos**: 5 generados que no se tocan nunca y 6 con el marcador `CAMBIAR`, que se llenan con los valores de los prerrequisitos. Tres detalles de formato:
+`secrets-init` deja **9 archivos**: 4 generados que no se tocan nunca y 5 con el marcador `CAMBIAR`, que se llenan con los valores de los prerrequisitos. Cuántos son sale de la composición, no de esta lista — un stack sin observabilidad declara menos. Tres detalles de formato:
 
 - `cloudflare_api_token`: sin comillas y **sin salto de línea final** — `nano -L`. Cloudflare emite dos formatos según cuándo lo creaste: 40 caracteres el viejo, `cfut_...` (~46) el nuevo — los dos son válidos.
 - `restic_r2_credentials` ya viene con su esqueleto en el formato de AWS, que es lo que restic parsea (ver [rotar-credenciales-r2](../credenciales/rotar-credenciales-r2.md)).
@@ -117,7 +117,7 @@ sudo make host-init
 make host-verify
 ```
 
-Cubre versión de Compose, arranque automático de Docker, la rotación de logs recién aplicada, `.env` sin claves vacías, la identidad declarada del stack, permisos y GID de los 11 secrets, y la superficie publicada del host.
+Cubre versión de Compose, arranque automático de Docker, la rotación de logs recién aplicada, `.env` sin claves vacías, la identidad declarada del stack, permisos y GID de los 9 secrets, y la superficie publicada del host.
 
 ---
 

@@ -18,7 +18,7 @@ creados=()
 
 # --- Qué secrets lleva ESTE stack ---
 # Se lo pregunta a la composición, como las guardas del Makefile: cada entrypoint
-# ya declara los suyos —11 producción, 7 staging, 3 development— y una segunda
+# ya declara los suyos —9 producción, 7 staging, 2 development— y una segunda
 # lista acá divergiría. Sin esto, un stack chico nace con archivos inertes que
 # secrets-check después exige completar.
 #

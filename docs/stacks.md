@@ -23,7 +23,7 @@ es el caso real de producción y prueba.
 | DNS local          | solo con servidor local   | no                      | no                      |
 | Respalda           | sí                        | **no**, solo restaura   | no                      |
 | Observabilidad     | sí                        | no                      | no                      |
-| Secrets            | 9                         | 6                       | 2, los dos generados    |
+| Secrets            | 9                         | 7                       | 2, los dos generados    |
 
 **Que prueba no respalde es estructural, no una omisión.** Su entrypoint le pone
 `profiles: [restore]` al stack `backup`, así que queda fuera de la composición por
