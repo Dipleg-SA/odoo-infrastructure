@@ -37,8 +37,8 @@ services:
   # server-plain no escucha en el 443: publicarlo ataría un puerto de la máquina para nada.
 
   nginx:
-    ports: !override
-      - "127.0.0.1:${HTTP_PORT:-8081}:80"
+    ports:
+      - "127.0.0.1:${HTTP_PORT:?falta HTTP_PORT en .env}:80"
     # --- Modo fijado acá, no por NGINX_MODE ---
     # Si dependiera de NGINX_MODE, un .env sin la clave montaría server-tls.conf y nginx no arranca: no hay cert.
 

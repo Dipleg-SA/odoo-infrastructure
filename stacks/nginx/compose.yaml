@@ -18,17 +18,11 @@ services:
     networks:
       - edge
       - app
-    # --- Binds ---
-    # Nivel 3 (LAN) por default; un entorno que no atiende la red local los
-    # reemplaza por loopback con `ports: !override` en su entrypoint. cloudflared
+    # --- Sin binds acá ---
+    # Qué se publica y en qué IP lo declara cada entrypoint: los puertos son del
+    # deployment, viven en su .env y ningún default sale versionado. cloudflared
     # NO pasa por acá: llega por la red edge, por nombre de contenedor.
 
-    # El último default es loopback y no vacío: sin LOCAL_IP, un bind vacío publica
-    # en 0.0.0.0 — falla abierta. Loopback falla cerrada y se nota igual de rápido.
-
-    ports:
-      - "${LOCAL_IP:-127.0.0.1}:${HTTP_PORT:-80}:80"
-      - "${LOCAL_IP:-127.0.0.1}:${HTTPS_PORT:-443}:443"
     # --- Config ---
     # Archivos reales, gitignoreados, bootstrapeados con cp desde su .example —
     # no plantillas: sin envsubst, sin NGINX_ENVSUBST_FILTER, valores editados

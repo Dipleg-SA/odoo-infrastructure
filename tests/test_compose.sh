@@ -71,8 +71,8 @@ igual "declara 9 secrets" "9" "$(printf '%s\n' "$PRODN" | contar_secrets)"
 igual "los diez stacks de producción" "alloy backup certbot cloudflared grafana loki nginx odoo postgres prometheus " \
   "$(servicios env.production --profile cert -f envs/production.yaml)"
 
-# Es el caso base: sin bloque services:, nginx cae a su default de TLS y publica
-# en la LAN. Si esto cambia, algún entorno le está imponiendo su excepción.
+# Es el caso base: nginx cae a su default de TLS y es el único que publica en la
+# LAN. Si esto cambia, algún entorno le está imponiendo su excepción.
 contiene "monta el config con TLS" "server-tls.conf" "$(printf '%s\n' "$PRODN" | bloque nginx)"
 igual "publica en la IP de la LAN, no en loopback" "10.0.0.2 10.0.0.2 " \
   "$(printf '%s\n' "$PRODN" | bloque nginx | binds)"
@@ -207,11 +207,14 @@ titulo "las tres plantillas de .env"
 # clave nueva entre en un compose de capa compartido y solo se sume a una. Compose
 # avisa por cada variable sin default que no esté declarada, así que ese warning
 # —vacío en las tres— es la prueba de que ninguna plantilla se quedó atrás.
+#
+# Las de `:?` no avisan: abortan con otro texto. Sin ese segundo patrón, una plantilla
+# a la que le falte un puerto pasaría el test con la salida de warnings vacía.
 
 for caso in "producción:production:envs/production.yaml" "prueba:staging:envs/staging.yaml" "development:development:envs/development.yaml"; do
   nombre="${caso%%:*}"; resto="${caso#*:}"; plantilla="${resto%%:*}"; entrypoint="${resto#*:}"
   igual "$nombre no deja variables sin declarar en su plantilla" "" \
-    "$(docker compose --env-file ".env.$plantilla.example" -f "$entrypoint" config -q 2>&1 | grep -i 'is not set' | tr '\n' ' ')"
+    "$(docker compose --env-file ".env.$plantilla.example" -f "$entrypoint" config -q 2>&1 | grep -iE 'is not set|is missing a value' | tr '\n' ' ')"
   # El -f de arriba nunca ejerce el COMPOSE_FILE de la plantilla: sin esto, mover un
   # compose y olvidar la plantilla pasa el test y falla en el servidor.
   igual "$nombre apunta a su entrypoint desde la plantilla" "$entrypoint" \

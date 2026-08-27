@@ -1,6 +1,6 @@
 # Entrypoint de producción: borde completo, datos y aplicación. Es el caso base —
-# no lleva bloque `services:` porque no se aparta de nada: nginx publica en la LAN,
-# NGINX_MODE cae a tls y Odoo manda correo. Los !override son de los otros entornos.
+# lo único que ajusta son los binds de nginx, que ningún stack declara: NGINX_MODE
+# cae a tls y Odoo manda correo, sin apartarse de nada más.
 #
 # El nombre del stack NO se declara acá — sale de COMPOSE_PROJECT_NAME en .env,
 # junto a COMPOSE_FILE, para que los entornos usen el mismo mecanismo.
@@ -63,3 +63,14 @@ include:
   - ../stacks/loki/compose.yaml
   - ../stacks/grafana/compose.yaml
   - ../stacks/alloy/compose.yaml
+
+services:
+  # --- El único que atiende la LAN ---
+  # Nivel 3: los puertos salen del .env de este deployment y con `:?` un .env sin
+  # la clave aborta — vacío publicaría un puerto al azar con exit 0. Sin LOCAL_IP
+  # el bind cae a loopback y no a 0.0.0.0: falla cerrada.
+
+  nginx:
+    ports:
+      - "${LOCAL_IP:-127.0.0.1}:${HTTP_PORT:?falta HTTP_PORT en .env}:80"
+      - "${LOCAL_IP:-127.0.0.1}:${HTTPS_PORT:?falta HTTPS_PORT en .env}:443"

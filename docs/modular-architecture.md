@@ -413,7 +413,6 @@ odoo-infrastructure/
 │   │   ├── config/
 │   │   │   ├── 00-http.conf.example · server-tls.conf.example · odoo.locations.example
 │   │   │   └── server-plain.conf    ← versionado tal cual: no lleva nada por deployment
-│   │   ├── .env.example         ← LOCAL_IP, HTTP_PORT, HTTPS_PORT
 │   │   └── verify.sh
 │   │
 │   ├── certbot/                 ← profiles: [cert] — one-off, pero con todo lo suyo

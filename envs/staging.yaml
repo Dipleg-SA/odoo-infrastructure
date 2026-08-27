@@ -57,9 +57,9 @@ services:
   # cloudflared alcanza al proxy por la red edge, por nombre de contenedor.
 
   nginx:
-    ports: !override
-      - "127.0.0.1:${HTTP_PORT:-8080}:80"
-      - "127.0.0.1:${HTTPS_PORT:-8443}:443"
+    ports:
+      - "127.0.0.1:${HTTP_PORT:?falta HTTP_PORT en .env}:80"
+      - "127.0.0.1:${HTTPS_PORT:?falta HTTPS_PORT en .env}:443"
 
   # --- Sin correo saliente ---
   # Se siembra con datos reales de clientes: con SMTP les mandaría correo de verdad.
