@@ -27,6 +27,13 @@ services:
       PORT: 5432
       USER: odoo
       PASSWORD_FILE: /run/secrets/postgres_password
+      # El entrypoint los appendea a odoo.conf en runtime — mismo mecanismo que
+      # admin_passwd, para no repetir el mismo valor a mano en dos archivos.
+      # Sin default: vacíos acá no rompen nada, ODOO_DISABLE_SMTP gana en
+      # development/staging y el operador los carga en .env solo en producción.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
     secrets:
       - postgres_password
       - odoo_admin_password

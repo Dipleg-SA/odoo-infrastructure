@@ -74,7 +74,7 @@ set -a; . ./.env; set +a
 make config-init
 ```
 
-Bootstrapea de una sola vez los config reales de los stacks activos —nginx, postgres, odoo— desde su `.example`. Ninguno queda con placeholder: los tres sirven tal cual, sin nada que editar.
+Bootstrapea de una sola vez los config reales de nginx y postgres desde su `.example` — `odoo.conf` ya no bootstrapea nada, es un archivo versionado. Ninguno queda con placeholder: sirven tal cual, sin nada que editar.
 
 ```bash
 make host-verify
@@ -145,7 +145,7 @@ Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, tod
 
 **Objetivo** — Odoo sirviendo por nginx en loopback.
 
-**A mano** — `odoo.conf` ya lo bootstrapeó `config-init` en el bloque 2. No hace falta editar `smtp_server`/`port`/`user`: `ODOO_DISABLE_SMTP=1`, forzado en `compose.dev.yaml`, los deja vacíos sin importar lo que traiga el `.example`.
+**A mano** — nada: `odoo.conf` es un archivo versionado, sin nada que bootstrapear ni editar. `ODOO_DISABLE_SMTP=1`, forzado en `compose.dev.yaml`, deja `smtp_server` vacío pase lo que pase en `.env`.
 
 ```bash
 make odoo-up && make odoo-logs

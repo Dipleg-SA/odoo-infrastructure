@@ -46,15 +46,20 @@ v_grafana() {
     fi
   fi
 
-  # --- Placeholders sin reemplazar ---
-  # Ninguno de los dos interpola desde .env: si quedó el placeholder de su
-  # .example, Grafana arranca igual y manda correo a una dirección que no existe,
-  # o no manda nada, sin avisar.
+  # --- SMTP y destinatario realmente cargados ---
+  # grafana.ini y contact-points.yaml ya no tienen placeholder: host/user/
+  # from_address/destinatario llegan por env desde .env. Si alguna clave quedó
+  # vacía ahí, acá se nota en el propio contenedor — GF_SMTP_HOST resuelve a
+  # ":587" y no a un host real, por ejemplo — en vez de que Grafana arranque
+  # igual y mande correo a una dirección que no existe, o no mande nada.
 
-  sin_placeholder "grafana.ini sin el placeholder de su .example" \
-    stacks/grafana/config/grafana.ini 'TU_SMTP_HOST|TU_EMAIL_ALERTA_FROM'
-  sin_placeholder "contact-points.yaml sin el placeholder de su .example" \
-    stacks/grafana/config/provisioning/alerting/contact-points.yaml 'TU_EMAIL_ALERTA_TO'
+  if corriendo grafana; then
+    vacio "SMTP y destinatario de alertas sin claves vacías en .env" \
+      docker compose exec -T grafana sh -c \
+        '[ -n "$GF_SMTP_USER" ] && [ "$GF_SMTP_HOST" != ":587" ] && [ -n "$GF_SMTP_FROM_ADDRESS" ] && [ -n "$ALERT_EMAIL_TO" ] || echo "alguna quedo vacia"'
+  else
+    omitir "SMTP y destinatario de alertas sin claves vacías en .env" "$(motivo grafana)"
+  fi
 
   # --- Binds ---
   # Nivel 2: única UI administrativa del stack, en loopback. Se entra por túnel SSH.

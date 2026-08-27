@@ -97,15 +97,12 @@ set -a; . ./.env; set +a
 make config-init
 ```
 
-Bootstrapea de una sola vez los config reales de los diez stacks activos desde su `.example`. `postgresql.conf`, `00-http.conf` y `odoo.locations` sirven tal cual; los otros seis quedan con un placeholder:
+Bootstrapea de una sola vez los config reales de los stacks que todavía los necesitan desde su `.example`. `postgresql.conf`, `00-http.conf` y `odoo.locations` sirven tal cual; `odoo.conf`, `grafana.ini` y `contact-points.yaml` ya no bootstrapean nada —SMTP y el destinatario de alertas llegan por `.env`, no se editan a mano en ningún archivo—; quedan tres con un placeholder real:
 
 ```bash
 nano stacks/nginx/config/server-tls.conf       # TU_DOMINIO → PUBLIC_HOSTNAME (4 apariciones)
 nano stacks/dnsmasq/config/dnsmasq.conf        # TU_DOMINIO → PUBLIC_HOSTNAME, TU_IP_LOCAL → LOCAL_IP
-nano stacks/odoo/config/odoo.conf              # TU_SMTP_HOST/TU_SMTP_PORT/TU_SMTP_USER → SMTP_*
 nano stacks/backup/config/r2.env               # TU_ENDPOINT y TU_BUCKET, del prerrequisito de R2
-nano stacks/grafana/config/grafana.ini         # TU_SMTP_*/TU_EMAIL_ALERTA_FROM → SMTP_*/ALERT_EMAIL_FROM
-nano stacks/grafana/config/provisioning/alerting/contact-points.yaml   # TU_EMAIL_ALERTA_TO → ALERT_EMAIL_TO
 ```
 
 Todos los valores son los mismos que ya cargaste en `.env`, salvo los de R2: esos van directo a `r2.env`, nunca a `.env` (ver bloque 1).
@@ -206,7 +203,7 @@ Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, tod
 
 **Objetivo** — Odoo sirviendo por el hostname público con certificado propio. Acá se cierra el 502 que dejó el bloque 3.
 
-**A mano** — `odoo.conf` ya lo bootstrapeaste y editaste en el bloque 2. No interpola desde `.env`: si quedó el placeholder, Odoo intenta mandar por un host que no existe en vez de quedar sin SMTP.
+**A mano** — nada: `smtp_server`/`port`/`user` los toma el entrypoint de `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER` en `.env`, que ya cargaste en el bloque 2. `odoo.conf` no tiene nada que editar.
 
 **Y la contraseña de `admin`, apenas el sitio responda y antes que cualquier otra cosa.** El `-i base` del primer arranque la deja en `admin`, y para ese momento el sitio ya está publicado en internet por el Tunnel. Entrá a `https://$PUBLIC_HOSTNAME` → Ajustes → Usuarios → `admin` → cambiar contraseña. Es distinta del **master password** (`admin_passwd`), que se gestiona vía `secrets:` y no se toca acá.
 
@@ -280,7 +277,7 @@ sudo make notify-test
 
 **Objetivo** — métricas de host, contenedores y base, logs centralizados, y las siete alertas vivas **y llegando por mail**.
 
-**A mano** — `grafana.ini` y `contact-points.yaml` ya los bootstrapeaste y editaste en el bloque 2; falta la prueba de entrega de las alertas en la UI de Grafana. El acceso está en el apéndice porque el `3001` solo escucha en loopback. Ninguno de los dos interpola desde `.env`: si quedó el placeholder, Grafana lo rechaza al arrancar (`from_address` inválido) o manda el correo a una dirección que no existe.
+**A mano** — nada de config: SMTP y el destinatario llegan por `GF_SMTP_*`/`ALERT_EMAIL_TO` desde `.env`, que ya cargaste en el bloque 2 — `grafana.ini` y `contact-points.yaml` no tienen nada que editar. Falta la prueba de entrega de las alertas en la UI de Grafana. El acceso está en el apéndice porque el `3001` solo escucha en loopback.
 
 ```bash
 make monitoring-role

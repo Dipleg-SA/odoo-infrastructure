@@ -23,10 +23,18 @@ services:
     secrets:
       - grafana_admin_password
       - zeptomail_smtp_password
-    # --- Config real, no variables ---
-    # grafana.ini y contact-points.yaml son gitignoreados, bootstrapeados con cp
-    # desde su .example: host/user/from_address/destinatario se editan a mano
-    # en el archivo mismo, no llegan por GF_* ni por interpolación del provisioning.
+    # --- SMTP y destinatario, desde .env ---
+    # GF_SMTP_* pisa grafana.ini —mecanismo nativo de Grafana, no envsubst—, y
+    # ALERT_EMAIL_TO lo expande Grafana mismo en contact-points.yaml. Mismos
+    # valores que ya usan odoo y failure-notify.sh: un lugar donde cargarlos,
+    # no tres. La password sigue por $__file{} en grafana.ini: no hay forma
+    # segura de pasarla por env var.
+    environment:
+      GF_SMTP_ENABLED: "true"
+      GF_SMTP_HOST: "${SMTP_HOST:-}:${SMTP_PORT:-587}"
+      GF_SMTP_USER: ${SMTP_USER:-}
+      GF_SMTP_FROM_ADDRESS: ${ALERT_EMAIL_FROM:-}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
 
     volumes:
       - grafana-data:/var/lib/grafana

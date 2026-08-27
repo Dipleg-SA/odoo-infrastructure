@@ -13,7 +13,7 @@ Un segundo stack con su propio hostname, su propio certificado y su propio túne
 | Bloque | Acá | |
 |---|---|---|
 | 1 · Prerrequisitos | solo el Tunnel propio | ✓ |
-| 2 · Repositorio | 8 secrets, tres de ellos copiados de producción | ✓ |
+| 2 · Repositorio | 7 secrets, tres de ellos copiados de producción | ✓ |
 | 3 · Edge | certificado y túnel propios, **sin `dnsmasq`** | ✓ |
 | 4 · Database | sembrada por restore desde el repositorio de producción | ✓ |
 | 5 · Addons | la rama `-stag` de cada repo del manifiesto | ✓ |
@@ -42,14 +42,16 @@ Todo lo demás ya está: la versión de Docker Engine/Compose y su arranque auto
 
 ## 2 · Repositorio
 
-**Objetivo** — el repo clonado en su propio directorio, con `.env` y los 8 secrets de este entrypoint cargados y validados. Nada levantado todavía.
+**Objetivo** — el repo clonado en su propio directorio, con `.env` y los 7 secrets de este entrypoint cargados y validados. Nada levantado todavía.
 
 **A mano** — `.env.staging.example` deja vacías las claves de este entorno y explica cada una donde se edita. Más abajo en este mismo bloque, `config-init` bootstrapea `r2.env` (gitignoreado) y lo editás junto con el resto.
 
 Lleva el **bucket y endpoint de R2 de producción**, letra por letra, porque es su
 repositorio el que se restaura. `PUBLIC_HOSTNAME` sí es de `.env`, y es el de prueba,
-distinto del de producción. Si copiás una clave de más desde el `.env` de producción,
-dejala con valor o borrala: `make host-verify` marca las vacías.
+distinto del de producción. `SMTP_HOST`/`SMTP_USER`/`ALERT_EMAIL_FROM`/`ALERT_EMAIL_TO`
+son los mismos de producción: los usa `failure-notify.sh` si falla `cert-renew`, no
+Odoo. Si copiás una clave de más desde el `.env` de producción, dejala con valor o
+borrala: `make host-verify` marca las vacías y las ausentes.
 
 > **No declares `COMPOSE_PROFILES`.** Prueba no lleva dnsmasq: corre sobre el 53 con el
 > stack de red del host y no admite una segunda instancia. Copiar el `.env` de
@@ -61,7 +63,7 @@ dejala con valor o borrala: `make host-verify` marca las vacías.
 > la de R2 de este checkout tiene que ser **de solo lectura**.
 
 | Generados | `postgres_password` · `odoo_admin_password` | `secrets-init` los saca de `openssl`; no se tocan |
-| Copiados de producción | `restic_password` · `restic_r2_credentials` | Abren **su** repositorio: sin los mismos valores no hay nada que restaurar. El de R2, en versión **solo lectura** |
+| Copiados de producción | `restic_password` · `restic_r2_credentials` · `zeptomail_smtp_password` | Los dos primeros abren **su** repositorio: sin los mismos valores no hay nada que restaurar, y el de R2 en versión **solo lectura**. El de ZeptoMail es la misma cuenta — no hace falta un Mail Agent propio para prueba |
 | De Cloudflare | `cloudflare_api_token` · `cloudflare_tunnel_token` | El API token puede ser el mismo de producción — es la misma zona. El del Tunnel es el del Tunnel del bloque 1 |
 
 ```bash
@@ -84,6 +86,7 @@ nano -L secrets/cloudflare_api_token   # -L: sin salto de línea final
 nano secrets/cloudflare_tunnel_token
 nano secrets/restic_r2_credentials
 nano secrets/restic_password
+nano secrets/zeptomail_smtp_password   # mismo valor que producción
 ```
 
 ```bash
@@ -95,7 +98,7 @@ set -a; . ./.env; set +a
 make config-init
 ```
 
-Bootstrapea de una sola vez `r2.env` y los config de nginx, postgres y odoo. `postgresql.conf` y `odoo.conf` sirven tal cual —este último porque `ODOO_DISABLE_SMTP=1` fuerza vacíos `smtp_server`/`port`/`user` sin importar lo que traiga el `.example`—; los otros dos quedan con un placeholder:
+Bootstrapea de una sola vez `r2.env` y el de nginx y postgres. `postgresql.conf` sirve tal cual; `odoo.conf` ya no bootstrapea nada —es un archivo versionado, sin SMTP para editar—; los otros dos quedan con un placeholder:
 
 ```bash
 nano stacks/nginx/config/server-tls.conf   # TU_DOMINIO → el hostname de staging (4 apariciones)
@@ -106,7 +109,7 @@ nano stacks/backup/config/r2.env           # TU_ENDPOINT y TU_BUCKET — los de 
 make host-verify
 ```
 
-Repite los chequeos de host —ya deberían pasar, es el mismo servidor— y agrega los propios de este checkout: `.env` sin claves vacías, la identidad declarada del stack, y permisos y GID de los 8 secrets.
+Repite los chequeos de host —ya deberían pasar, es el mismo servidor— y agrega los propios de este checkout: `.env` sin claves vacías, la identidad declarada del stack, y permisos y GID de los 7 secrets.
 
 ---
 

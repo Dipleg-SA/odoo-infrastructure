@@ -16,12 +16,14 @@ volumes:
   dumps:
 
 # --- Solo los secrets de los stacks que lleva ---
-# Ocho: Compose falla si un `file:` declarado no existe, y declarar de más obliga
+# Siete: Compose falla si un `file:` declarado no existe, y declarar de más obliga
 # a fabricar archivos inertes que secrets-check después exige completar.
 #
 # Los de restic son los MISMOS de producción: prueba lee de ese repositorio, no
 # escribe uno propio. La credencial tiene que ser de solo lectura — ver
-# .env.staging.example.
+# .env.staging.example. zeptomail_smtp_password también: no manda correo de
+# aplicación —ODOO_DISABLE_SMTP lo impide—, pero failure-notify.sh sí lo usa
+# para avisar si cert-renew falla, y necesita el mismo secret que odoo.
 
 secrets:
   cloudflare_api_token:
@@ -32,6 +34,8 @@ secrets:
     file: ../secrets/postgres_password
   odoo_admin_password:
     file: ../secrets/odoo_admin_password
+  zeptomail_smtp_password:
+    file: ../secrets/zeptomail_smtp_password
   restic_password:
     file: ../secrets/restic_password
   restic_r2_credentials:
@@ -69,9 +73,14 @@ services:
   odoo:
     environment:
       ODOO_DISABLE_SMTP: "1"
+    # zeptomail_smtp_password entra aunque odoo acá no mande correo: si ningún
+    # servicio lo referencia, Compose PODA el secret entero de `docker compose
+    # config` — y con eso secrets-init.sh, que deriva DECLARADOS de esa salida,
+    # nunca crea el archivo que failure-notify.sh necesita. Se midió.
     secrets: !override
       - postgres_password
       - odoo_admin_password
+      - zeptomail_smtp_password
 
   # --- Restaura, pero NO respalda ---
   # El profile es lo que lo garantiza, y es estructural: timers.sh deriva qué units

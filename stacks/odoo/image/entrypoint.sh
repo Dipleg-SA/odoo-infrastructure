@@ -28,11 +28,17 @@ cp /etc/odoo/odoo.conf "$RUNTIME_CONF"
 {
   echo "addons_path = ${ADDONS_PATH}"
   echo "admin_passwd = $(cat /run/secrets/odoo_admin_password)"
-  # Respaldo estructural: compose.staging.yaml/compose.dev.yaml fuerzan esto,
-  # sin importar qué smtp_server traiga el odoo.conf de este checkout — última
-  # línea gana, así que pisa lo que haya copiado arriba.
+  # server/port/user vienen de .env (SMTP_HOST/SMTP_PORT/SMTP_USER), igual que
+  # admin_passwd viene del secret: un solo lugar donde cargarlos, no un literal
+  # en odoo.conf que haya que mantener igual a mano. Respaldo estructural: si
+  # ODOO_DISABLE_SMTP=1, gana esta rama y sale vacío pase lo que pase en .env —
+  # última línea gana, así que pisa lo que se haya escrito arriba.
   if [ "${ODOO_DISABLE_SMTP:-}" = "1" ]; then
     echo "smtp_server = "
+  else
+    [ -n "${SMTP_HOST:-}" ] && echo "smtp_server = ${SMTP_HOST}"
+    [ -n "${SMTP_PORT:-}" ] && echo "smtp_port = ${SMTP_PORT}"
+    [ -n "${SMTP_USER:-}" ] && echo "smtp_user = ${SMTP_USER}"
   fi
   if [ -s /run/secrets/zeptomail_smtp_password ]; then
     echo "smtp_password = $(cat /run/secrets/zeptomail_smtp_password)"

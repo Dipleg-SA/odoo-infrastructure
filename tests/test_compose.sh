@@ -109,12 +109,12 @@ titulo "prueba — envs/staging.yaml"
 # =====================================================================
 
 # Con los dos perfiles: Compose PODA los secrets de un servicio inactivo, así que
-# preguntar solo por --profile cert contaría 4 en vez de los 6 que declara el
+# preguntar solo por --profile cert contaría 4 en vez de los 7 que declara el
 # entrypoint. Lo que se afirma acá es la declaración, no una activación puntual.
 STGN=$(resuelto env.staging --profile cert --profile restore -f envs/staging.yaml)
 
 igual "resuelve sin error" "0" "$(docker compose --env-file tests/fixtures/env.staging -f envs/staging.yaml config -q >/dev/null 2>&1; echo $?)"
-igual "declara 6 secrets" "6" "$(printf '%s\n' "$STGN" | contar_secrets)"
+igual "declara 7 secrets" "7" "$(printf '%s\n' "$STGN" | contar_secrets)"
 igual "sus stacks, y solo esos" "certbot cloudflared nginx odoo postgres " \
   "$(servicios env.staging --profile cert -f envs/staging.yaml)"
 
@@ -126,9 +126,15 @@ igual "publica en loopback, no en la LAN" "127.0.0.1 127.0.0.1 " \
 igual "y en los puertos que no usa producción" "8080 8443 " \
   "$(printf '%s\n' "$STGN" | bloque nginx | sed -n 's/^ *published: "//p' | tr -d '"' | tr '\n' ' ')"
 
-# Se siembra con datos reales de clientes. Son las dos mitades de la misma
-# protección: un .env clonado de producción no alcanza para mandarles correo.
-no_contiene "odoo sin la credencial SMTP"                        "zeptomail_smtp_password" "$(printf '%s\n' "$STGN" | bloque odoo)"
+# Se siembra con datos reales de clientes, y la protección real es esta: un
+# .env clonado de producción no alcanza para mandarles correo, porque
+# ODOO_DISABLE_SMTP vive en environment: acá, no en .env — smtp_activo() lo
+# cubre aparte. El secret SÍ entra al contenedor —failure-notify.sh lo necesita
+# para avisar si cert-renew falla, y sin que algún servicio lo referencie
+# Compose lo poda entero de `docker compose config`, así que secrets-init.sh
+# nunca creaba el archivo—; con smtp_server forzado vacío, tenerlo montado no
+# habilita nada: no hay a dónde conectar.
+contiene    "odoo recibe la credencial SMTP igual"                "zeptomail_smtp_password" "$(printf '%s\n' "$STGN" | bloque odoo)"
 contiene    "un odoo.conf clonado no alcanza para mandar correo" 'ODOO_DISABLE_SMTP: "1"'  "$(printf '%s\n' "$STGN" | bloque odoo)"
 
 # dnsmasq no se incluye, y no alcanzaba con no activarle el perfil: corre sobre el

@@ -397,8 +397,8 @@ odoo-infrastructure/
 │   │   │   ├── Dockerfile
 │   │   │   └── entrypoint.sh    ← COPYado por el Dockerfile, vive junto a él
 │   │   ├── config/
-│   │   │   ├── odoo.conf.example    ← versionado
-│   │   │   └── odoo.conf            ← real, gitignoreado, `cp` desde el .example
+│   │   │   └── odoo.conf            ← versionado tal cual, sin .example: SMTP llega
+│   │   │                               por env, nada más queda por deployment
 │   │   └── verify.sh
 │   │
 │   ├── postgres/
@@ -445,7 +445,8 @@ odoo-infrastructure/
 │   │   └── verify.sh
 │   │
 │   ├── prometheus/ · loki/ · grafana/ · alloy/
-│   │       cada uno: compose.yaml · image/Dockerfile · config/ (.example + real) · verify.sh
+│   │       cada uno: compose.yaml · image/Dockerfile · config/ (versionado tal cual,
+│   │       sin valores por deployment) · verify.sh
 │   │
 ├── scripts/                     ← solo lo transversal
 │   ├── verify.sh                ← orquesta: corre el de cada stack presente

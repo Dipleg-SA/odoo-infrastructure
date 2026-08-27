@@ -18,19 +18,23 @@ v_odoo() {
 
   log_limpio "odoo sin errores de permisos" 'permission denied' "" odoo
 
-  # --- Placeholder de odoo.conf sin reemplazar ---
-  # smtp_server no llega por .env: si quedó el placeholder de su .example, Odoo
-  # intenta mandar por un host que no existe en vez de quedar sin SMTP.
+  # --- smtp_server realmente cargado ---
+  # odoo.conf ya no tiene placeholder: server/port/user los appendea el
+  # entrypoint desde SMTP_HOST/PORT/USER en .env. Si esas claves quedaron
+  # vacías, el runtime conf lo tiene igual de vacío — se chequea ahí, no en el
+  # archivo estático, que nunca lo va a tener.
   #
   # Solo donde el valor se usa: los entornos que fuerzan ODOO_DISABLE_SMTP vacían
-  # smtp_server en el entrypoint, así que ahí el placeholder es lo esperado.
+  # smtp_server en el entrypoint a propósito, y ahí vacío es lo esperado.
 
   if ! smtp_activo; then
-    omitir "odoo.conf sin el placeholder de su .example" \
-      "este stack fuerza ODOO_DISABLE_SMTP — el smtp_server de odoo.conf no se usa"
+    omitir "smtp_server cargado en el runtime conf" \
+      "este stack fuerza ODOO_DISABLE_SMTP — smtp_server vacío es lo esperado"
+  elif ! corriendo odoo; then
+    omitir "smtp_server cargado en el runtime conf" "$(motivo odoo)"
   else
-    sin_placeholder "odoo.conf sin el placeholder de su .example" \
-      "$ODOO_CONF" 'TU_SMTP_HOST|TU_SMTP_PORT|TU_SMTP_USER'
+    expect "smtp_server cargado en el runtime conf" "smtp_server = " \
+      docker compose exec -T odoo grep "^smtp_server = .\+" /tmp/odoo-runtime.conf
   fi
 
   expect "odoo sirve en :8069" "200" docker compose exec -T odoo \
