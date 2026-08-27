@@ -15,10 +15,17 @@ v_nginx() {
   # --- Config real, no plantilla ---
   # server-tls.conf es un archivo editado a mano: si quedó el placeholder de su
   # .example sin reemplazar, nginx levanta igual con un server_name inútil.
+  #
+  # El comentario de cabecera de server-tls.conf.example nombra TU_DOMINIO como
+  # parte de la instrucción y queda ahí para siempre — no es algo para borrar.
+  # grep -rv primero descarta las líneas de comentario completas, igual que
+  # sin_placeholder() en odoo/grafana/dnsmasq: sin esto, este chequeo no podía
+  # pasar nunca, ni con el hostname real ya cargado.
 
   if corriendo nginx; then
     vacio "sin el placeholder de server-tls.conf.example sin reemplazar" \
-      docker compose exec -T nginx grep -r TU_DOMINIO /etc/nginx/conf.d/
+      docker compose exec -T nginx sh -c \
+        "grep -rv '^[[:space:]]*#' /etc/nginx/conf.d/ | grep TU_DOMINIO"
 
     if modo_plain; then
       omitir "server_name es el hostname público" "modo plain: el server_name es el catch-all, no hay hostname que servir"

@@ -74,7 +74,7 @@ set -a; . ./.env; set +a
 make config-init
 ```
 
-Bootstrapea de una sola vez los config reales de los stacks activos —nginx, postgres, odoo— desde su `.example`. De acá en más, cada bloque solo edita el suyo con `nano` cuando corresponde.
+Bootstrapea de una sola vez los config reales de los stacks activos —nginx, postgres, odoo— desde su `.example`. Ninguno queda con placeholder: los tres sirven tal cual, sin nada que editar.
 
 ```bash
 make host-verify

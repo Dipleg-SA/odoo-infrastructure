@@ -49,13 +49,18 @@ v_host() {
   fi
 
   # --- .env ---
-  # Compose interpola una variable vacía sin fallar; el síntoma aparece capas después.
+  # Compose interpola una variable vacía sin fallar; el síntoma aparece capas
+  # después. Ausente es peor que vacía: pasa el grep de abajo sin que nada la
+  # marque, así que se cruza además contra la plantilla del entorno.
 
-  local vacias
+  local vacias faltantes plantilla
   vacias=$(grep -nE '^[A-Z0-9_]+=$' .env 2>/dev/null | cut -d: -f2 | tr '\n' ' ')
+  plantilla=".env.$(basename "${COMPOSE_FILE:-}" .yaml).example"
+  faltantes=$(claves_ausentes "$plantilla" .env)
   if [ ! -f .env ]; then bad ".env presente" "no existe — cp .env.<entorno>.example .env"
-  elif [ -n "$vacias" ]; then bad ".env sin claves vacías" "vacías: $vacias"
-  else ok ".env sin claves vacías"; fi
+  elif [ -n "$vacias" ] || [ -n "$faltantes" ]; then
+    bad ".env sin claves vacías ni ausentes" "vacías: ${vacias:-ninguna} · ausentes: ${faltantes:-ninguna} (contra $plantilla)"
+  else ok ".env sin claves vacías ni ausentes"; fi
 
   # --- Identidad del stack ---
   # Un nombre vacío es una composición que no resuelve, no un nombre que falta: sin

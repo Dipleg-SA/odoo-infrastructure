@@ -212,6 +212,24 @@ sin_placeholder() {
   else ok "$nombre"; fi
 }
 
+# --- Claves de un .env.example ausentes en el .env real ---
+# Un grep de '^KEY=$' atrapa una clave presente y vacía, pero no una que
+# directamente nunca se escribió — ausente pasa sin que nada la marque, que es
+# lo que dejó producción con ALERT_EMAIL_FROM sin cargar meses sin que
+# host-verify lo viera. Lo esperado sale de la plantilla del entorno, no de una
+# lista propia acá: toda clave sin comentar en el .example es una que el
+# operador tiene que completar. Una que el .example nunca declaró queda fuera
+# del rango — opcional de verdad, no un default a completar.
+
+claves_ausentes() {
+  local plantilla="$1" archivo="$2" clave faltan=""
+  [ -f "$plantilla" ] || return 1
+  for clave in $(sed -nE 's/^([A-Z0-9_]+)=.*/\1/p' "$plantilla"); do
+    grep -qE "^${clave}=.+" "$archivo" 2>/dev/null || faltan="$faltan $clave"
+  done
+  printf '%s' "${faltan# }"
+}
+
 bind_es() {
   local svc="$1" puerto="$2" esperado actual
   if ! esperado=$(bind_declarado "$svc" "$puerto"); then

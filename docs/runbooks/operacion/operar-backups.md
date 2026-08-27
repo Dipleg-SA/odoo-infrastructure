@@ -13,11 +13,11 @@ El contenedor `backup` en el estado pedido. Es **un solo contenedor para las dos
 ## Comandos
 
 ```bash
-make backups-up
-make backups-down
-make backups-restart   # docker compose restart — no recrea el contenedor
-make backups-logs
-make backups-ps
+make backup-up
+make backup-down
+make backup-restart   # docker compose restart — no recrea el contenedor
+make backup-logs
+make backup-ps
 make backup-verify
 ```
 

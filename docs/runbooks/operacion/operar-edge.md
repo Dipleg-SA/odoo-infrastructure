@@ -12,12 +12,18 @@ La capa de borde en el estado pedido, sin afectar datos ni aplicación — que s
 
 ## Comandos
 
+No hay target agrupado — la limpieza de `docker/` lo sacó junto con `capa.sh`: cada
+stack se opera solo, sin dispatcher. Sumá `&& make dnsmasq-up` (o `-down`/`-restart`)
+si este stack lo lleva (`COMPOSE_PROFILES=lan`) — medido: a diferencia de `ps`/`logs`,
+que ignoran en silencio un nombre que no está en la composición, `up`/`restart` abortan
+la línea entera con "no such service" si lo nombrás sin que esté.
+
 ```bash
-make nginx-up        # levanta los servicios de esta capa presentes en este stack
-make nginx-down       # los baja
-make edge-restart    # docker compose restart — reinicia los contenedores existentes, no recrea
-make edge-logs
-make edge-ps
+make nginx-up && make cloudflared-up
+make nginx-down && make cloudflared-down
+make nginx-restart && make cloudflared-restart   # no recrea contenedores
+docker compose logs -f nginx cloudflared dnsmasq
+docker compose ps nginx cloudflared dnsmasq
 make nginx-verify
 ```
 
@@ -41,6 +47,15 @@ Cubre los servicios `healthy`, que `server-tls.conf` no tenga el placeholder de 
 
 ---
 
-**Destructivo — `make edge-nuke`.** Borra containers, imágenes **y el volumen `letsencrypt`**, donde vive el certificado emitido. Pide tipear la palabra `nuke`, no un Y/N.
+**Destructivo — sin target, a mano.** Tampoco sobrevivió un nuke acotado a esta capa:
+el único que queda es `make nuke`, **global** — se lleva `pgdata`, la base de
+producción, junto con todo lo demás. No es sustituto de esto. Para borrar solo el
+certificado (`rm -sf` no rompe con un servicio que este stack no lleva, a diferencia
+de `restart`/`up`):
+
+```bash
+docker compose rm -sf nginx certbot cloudflared dnsmasq
+docker volume rm "${COMPOSE_PROJECT_NAME}_letsencrypt"
+```
 
 Consecuencia a tener presente: sin ese volumen, **nginx no vuelve a arrancar** hasta reemitir con `make cert-issue` ([levantar-produccion](../entorno/levantar-produccion.md), bloque 3 · Edge). Y Let's Encrypt limita cuántos certificados se emiten por dominio en una ventana de tiempo — no es un comando para repetir a la ligera.

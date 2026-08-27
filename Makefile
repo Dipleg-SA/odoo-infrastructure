@@ -62,8 +62,16 @@ host-init: TARGET=host-init
 host-init: require-root ## Aplica la rotación de logs del daemon (requiere root)
 	@. scripts/lib/ui.sh; \
 	  if [ -e /etc/docker/daemon.json ] && ! cmp -s host/daemon.json /etc/docker/daemon.json; then \
-	    ui_bad "/etc/docker/daemon.json ya existe y no es el del repo" \
-	      "el cp borraría las claves propias del host (data-root, insecure-registries) — fusionar a mano el bloque log-driver/log-opts de host/daemon.json" >&2; exit 2; \
+	    MAX_SIZE=$$(grep -o '"max-size"[^,}]*' host/daemon.json); \
+	    MAX_FILE=$$(grep -o '"max-file"[^,}]*' host/daemon.json); \
+	    if grep -qF "$$MAX_SIZE" /etc/docker/daemon.json && grep -qF "$$MAX_FILE" /etc/docker/daemon.json; then \
+	      ui_skip "/etc/docker/daemon.json ya rota logs igual que el repo (difiere solo en formato o en claves propias del host)"; \
+	      exit 0; \
+	    fi; \
+	    ui_bad "/etc/docker/daemon.json ya existe y no rota logs como el repo" \
+	      "el cp borraría las claves propias del host (data-root, insecure-registries, runtimes) — fusionar a mano el bloque log-driver/log-opts de host/daemon.json. Diferencia (izquierda: tuyo, derecha: repo):" >&2; \
+	    diff -u /etc/docker/daemon.json host/daemon.json >&2 || true; \
+	    exit 2; \
 	  fi; \
 	  ui_run "host-init" sh -c \
 	    'cp host/daemon.json /etc/docker/daemon.json && systemctl restart docker'
@@ -75,11 +83,14 @@ notify-test: TARGET=notify-test
 notify-test: require-root ## Dispara el aviso de fallo de punta a punta (requiere root)
 	@. scripts/lib/ui.sh; unidad="$$(scripts/timers.sh notify)prueba.service"; \
 	  ui_start "notify-test: $$unidad"; \
-	  systemctl start "$$unidad" || \
-	    { ui_bad "notify-test falló" "systemctl no pudo arrancar $$unidad — ¿corriste 'sudo make timers-install'?"; exit 1; }; \
+	  if ! systemctl start "$$unidad"; then \
+	    ui_bad "notify-test falló" "systemctl no pudo arrancar $$unidad — ¿corriste 'sudo make timers-install'? Últimas líneas del journal:"; \
+	    journalctl -u "$$unidad" -n 20 --no-pager; exit 1; \
+	  fi; \
 	  resultado=$$(systemctl show -p Result --value "$$unidad"); \
 	  if [ "$$resultado" = "success" ]; then ui_ok "notify-test listo — Result=success, ahora confirmá que el mail llegó"; \
-	  else ui_bad "notify-test falló" "Result=$$resultado — journalctl -u $$unidad"; exit 1; fi
+	  else ui_bad "notify-test falló" "Result=$$resultado — últimas líneas del journal:"; \
+	    journalctl -u "$$unidad" -n 20 --no-pager; exit 1; fi
 
 # --- Certificados ---
 # Emisión a mano la primera vez —nginx no arranca sin el archivo— y renovación

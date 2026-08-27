@@ -10,12 +10,17 @@ La capa de observabilidad en el estado pedido. Bajarla no afecta a Odoo ni a los
 
 ## Comandos
 
+No hay target agrupado — la limpieza de `docker/` lo sacó junto con `capa.sh`: cada
+stack se opera solo, sin dispatcher. `up`/`down` encadenan los cuatro; `logs`/`ps`
+van directo por `docker compose` con los cuatro nombres, para verlos juntos en una
+sola llamada — encadenar `make X-logs` no sirve porque el primer `-f` bloquea.
+
 ```bash
-make observability-up
-make observability-down
-make observability-restart   # docker compose restart — no recrea contenedores
-make observability-logs
-make observability-ps
+make prometheus-up && make loki-up && make grafana-up && make alloy-up
+make prometheus-down && make loki-down && make grafana-down && make alloy-down
+docker compose restart prometheus loki grafana alloy   # no recrea contenedores
+docker compose logs -f prometheus loki grafana alloy
+docker compose ps prometheus loki grafana alloy
 make prometheus-verify
 ```
 
@@ -33,6 +38,15 @@ Cubre los cuatro servicios, que ningún target de Prometheus esté caído, las t
 
 ---
 
-**Destructivo — `make observability-nuke`.** Borra containers, imágenes **y los tres volúmenes** de la capa (`prometheus-data`, `loki-data`, `grafana-data`). Pide tipear `nuke`.
+**Destructivo — sin target, a mano.** Por la misma limpieza de arriba tampoco queda un
+nuke acotado a esta capa: el único que sobrevive es `make nuke`, **global**, que además
+de estos tres volúmenes se lleva `pgdata` — la base de producción. No es sustituto de
+esto: para borrar solo el histórico de observabilidad,
 
-Los cinco dashboards y las siete reglas de alerta están provisionados como archivos en `stacks/grafana/config/provisioning/`, así que el nuke no los pierde — se recrean solos al volver a subir. Lo que sí se pierde, y no se recupera, es el histórico de métricas y logs: no entra en ningún backup, es diagnóstico, no datos de negocio.
+```bash
+docker compose rm -sf prometheus loki grafana alloy
+docker volume rm "${COMPOSE_PROJECT_NAME}_prometheus-data" \
+  "${COMPOSE_PROJECT_NAME}_loki-data" "${COMPOSE_PROJECT_NAME}_grafana-data"
+```
+
+Los cinco dashboards y las siete reglas de alerta están provisionados como archivos en `stacks/grafana/config/provisioning/`, así que esto no los pierde — se recrean solos al volver a subir con `make grafana-up`. Lo que sí se pierde, y no se recupera, es el histórico de métricas y logs: no entra en ningún backup, es diagnóstico, no datos de negocio.

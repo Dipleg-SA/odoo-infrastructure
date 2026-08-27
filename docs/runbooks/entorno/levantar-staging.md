@@ -44,7 +44,7 @@ Todo lo demás ya está: la versión de Docker Engine/Compose y su arranque auto
 
 **Objetivo** — el repo clonado en su propio directorio, con `.env` y los 8 secrets de este entrypoint cargados y validados. Nada levantado todavía.
 
-**A mano** — `.env.staging.example` deja vacías las claves de este entorno y explica cada una donde se edita. Más abajo, `config-init` bootstrapea `r2.env` (gitignoreado) junto con el resto.
+**A mano** — `.env.staging.example` deja vacías las claves de este entorno y explica cada una donde se edita. Más abajo en este mismo bloque, `config-init` bootstrapea `r2.env` (gitignoreado) y lo editás junto con el resto.
 
 Lleva el **bucket y endpoint de R2 de producción**, letra por letra, porque es su
 repositorio el que se restaura. `PUBLIC_HOSTNAME` sí es de `.env`, y es el de prueba,
@@ -95,7 +95,12 @@ set -a; . ./.env; set +a
 make config-init
 ```
 
-Bootstrapea de una sola vez `r2.env`, y los config de nginx, postgres y odoo — de acá en más, cada bloque solo edita el suyo.
+Bootstrapea de una sola vez `r2.env` y los config de nginx, postgres y odoo. `postgresql.conf` y `odoo.conf` sirven tal cual —este último porque `ODOO_DISABLE_SMTP=1` fuerza vacíos `smtp_server`/`port`/`user` sin importar lo que traiga el `.example`—; los otros dos quedan con un placeholder:
+
+```bash
+nano stacks/nginx/config/server-tls.conf   # TU_DOMINIO → el hostname de staging (4 apariciones)
+nano stacks/backup/config/r2.env           # TU_ENDPOINT y TU_BUCKET — los de PRODUCCIÓN, letra por letra
+```
 
 ```bash
 make host-verify
@@ -109,9 +114,7 @@ Repite los chequeos de host —ya deberían pasar, es el mismo servidor— y agr
 
 **Objetivo** — el certificado propio de staging emitido, nginx sirviendo con él y el túnel propio conectado.
 
-**A mano** — el Tunnel se creó en el bloque 1; los archivos reales de nginx ya los bootstrapeó `config-init` en el bloque 2.
-
-Reemplazá `TU_DOMINIO` por el hostname público de staging (las cuatro apariciones en `server-tls.conf`) — es distinto del de producción. Sin `dnsmasq` en este stack, no hace falta tocar `stacks/dnsmasq/`.
+**A mano** — el Tunnel se creó en el bloque 1; `server-tls.conf` ya lo bootstrapeaste y editaste en el bloque 2 —con el hostname de staging, distinto del de producción—. Sin `dnsmasq` en este stack, no hace falta tocar `stacks/dnsmasq/`.
 
 ```bash
 make cert-issue && make nginx-up

@@ -21,9 +21,14 @@ v_prometheus() {
        'http://127.0.0.1:9090/api/v1/targets?state=active' 2>/dev/null); then
     bad "todos los targets de Prometheus up" "no se pudo consultar la API de targets"
   else
-    caidos=$(printf '%s' "$salida" | grep -o '"health":"down"' | wc -l | tr -d ' ')
-    if [ "$caidos" -eq 0 ]; then ok "todos los targets de Prometheus up"
-    else bad "todos los targets de Prometheus up" "$caidos caídos — ver /targets en Grafana"; fi
+    # scrapePool y no job: job vive DENTRO de labels, un objeto anidado — [^{}]*
+    # cruzaría su cierre y se comería el health de otro target. scrapePool está al
+    # mismo nivel que health, sin llaves de por medio.
+    caidos=$(printf '%s' "$salida" \
+      | grep -oE '"scrapePool": ?"[^"]*"[^{}]*"health": ?"down"' \
+      | sed -E 's/"scrapePool": ?"([^"]*)".*/\1/' | sort -u | tr '\n' ' ')
+    if [ -z "$caidos" ]; then ok "todos los targets de Prometheus up"
+    else bad "todos los targets de Prometheus up" "caídos: ${caidos% } — docker compose logs <ese-servicio>"; fi
   fi
 
   # --- Las tres familias que empuja Alloy ---

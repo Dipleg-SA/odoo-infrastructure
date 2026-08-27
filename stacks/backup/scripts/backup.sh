@@ -14,6 +14,24 @@ if [ -f .env ]; then set -a; . ./.env; set +a; fi
 
 MODE="${1:-daily}"
 
+# --- Endpoint de R2 válido, antes de tocar nada ---
+# sin_placeholder (backup-verify) solo descarta el literal TU_ENDPOINT — un valor
+# cargado a mano pero incompleto (el account ID sin el sufijo .r2.cloudflarestorage.com,
+# por ejemplo) pasa esa verificación igual. Sin este chequeo, restic lo descubre
+# recién reintentando contra DNS durante minutos, después de haber dumpeado la base
+# para nada.
+
+validar_endpoint() {
+  local repo
+  repo=$(sed -n 's/^RESTIC_REPOSITORY=//p' stacks/backup/config/r2.env 2>/dev/null)
+  case "$repo" in
+    s3:https://*.r2.cloudflarestorage.com/*) ;;
+    *) ui_bad "RESTIC_REPOSITORY no es un endpoint de R2 válido" \
+         "revisar TU_ENDPOINT en stacks/backup/config/r2.env — tiene que terminar en .r2.cloudflarestorage.com" >&2
+       exit 1 ;;
+  esac
+}
+
 # --- Retención ---
 # GFS, la misma que usa Odoo.sh para sus clientes: 7 diarios, 4 semanales, 3
 # mensuales. La hace `forget` en la corrida diaria — en restic todo snapshot es
@@ -113,6 +131,7 @@ case "$MODE" in
     # La base referencia archivos que solo existen en el filestore. Respaldarlos
     # por separado convierte la consistencia en algo que hay que recordar.
 
+    validar_endpoint
     dump_base
     registrar_addons
     res backup /data/odoo /data/dump /data/meta --exclude=/data/odoo/sessions
@@ -126,6 +145,7 @@ case "$MODE" in
     # detecta corrupción silenciosa, que ningún backup exitoso revela. Un
     # repositorio corrupto se descubre al restaurar, que es el peor momento.
 
+    validar_endpoint
     res check --read-data-subset=5%
     marcar_exito check
     ;;

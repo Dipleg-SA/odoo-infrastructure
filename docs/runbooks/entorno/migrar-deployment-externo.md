@@ -8,7 +8,7 @@ Traer la base y el filestore de un Odoo que no pertenece a este stack —otro se
 
 Una sola vez por deployment, al adoptar este stack sobre datos que ya existen. Por eso no hay target de `make`: un comando que se corre una vez y nunca más no gana nada envuelto.
 
-Para levantar un entorno vacío, ver [levantar-produccion](levantar-produccion.md). Para recuperar *este* stack de un incidente, [restore-pitr](../backup-restore/restore-pitr.md) o [restore-perdida-total](../backup-restore/restore-perdida-total.md).
+Para levantar un entorno vacío, ver [levantar-produccion](levantar-produccion.md). Para recuperar *este* stack de un incidente, [restore-perdida-total](../backup-restore/restore-perdida-total.md).
 
 ## Objetivo
 

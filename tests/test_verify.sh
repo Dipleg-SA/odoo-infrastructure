@@ -236,6 +236,47 @@ no_contiene "y no lo reporta como ok" "  ok" \
   "$(sin_placeholder "x" "$STUB_DIR/no-existe.conf" 'TU_SMTP_HOST')"
 
 # =====================================================================
+titulo "claves_ausentes — una clave que nunca se escribió, no solo vacía"
+# =====================================================================
+
+# Escenario real: ALERT_EMAIL_FROM nunca se escribió en .env.production.example
+# (no 'ALERT_EMAIL_FROM=', directamente no estaba la línea), así que ningún grep de
+# '^KEY=$' lo atrapaba — host-verify daba verde y notify-test fallaba en el
+# servidor meses después, con el aviso de fallo que se supone que manda ese mismo
+# mecanismo.
+
+printf 'COMPOSE_PROJECT_NAME=production\nPUBLIC_HOSTNAME=\nSMTP_HOST=\nSMTP_USER=\nALERT_EMAIL_FROM=\nALERT_EMAIL_TO=\n#COMPOSE_PROFILES=lan\n' \
+  > "$STUB_DIR/plantilla.example"
+
+printf 'COMPOSE_PROJECT_NAME=production\nPUBLIC_HOSTNAME=odoo.ejemplo.com\nSMTP_HOST=smtp.ejemplo.com\nSMTP_USER=apikey\nALERT_EMAIL_TO=ops@ejemplo.com\n' \
+  > "$STUB_DIR/env-incompleto"
+
+igual "la clave nunca escrita se reporta" "ALERT_EMAIL_FROM" \
+  "$(claves_ausentes "$STUB_DIR/plantilla.example" "$STUB_DIR/env-incompleto")"
+
+printf 'ALERT_EMAIL_FROM=alertas@ejemplo.com\n' >> "$STUB_DIR/env-incompleto"
+
+igual "completa la clave y no falta ninguna" "" \
+  "$(claves_ausentes "$STUB_DIR/plantilla.example" "$STUB_DIR/env-incompleto")"
+
+# Una clave presente pero vacía la sigue atrapando el grep de '^KEY=$' de al lado,
+# no este helper: claves_ausentes exige valor, así que también la marca —
+# redundante con esa otra rama, pero no un falso verde.
+
+printf 'COMPOSE_PROJECT_NAME=production\nSMTP_USER=\n' > "$STUB_DIR/env-vacio"
+igual "una clave presente pero vacía también cuenta como ausente acá" "1" \
+  "$(claves_ausentes "$STUB_DIR/plantilla.example" "$STUB_DIR/env-vacio" | grep -cw SMTP_USER)"
+
+# Una clave que la plantilla nunca declaró — comentada, opcional de verdad — no
+# se exige: distinto de una que sí está pero no se completó.
+
+igual "una clave comentada en la plantilla no se exige" "0" \
+  "$(claves_ausentes "$STUB_DIR/plantilla.example" "$STUB_DIR/env-incompleto" | grep -c COMPOSE_PROFILES)"
+
+igual "sin plantilla, devuelve error en vez de mentir" "1" \
+  "$(claves_ausentes "$STUB_DIR/no-existe.example" "$STUB_DIR/env-incompleto" >/dev/null; echo $?)"
+
+# =====================================================================
 titulo "sano — una capa ausente se omite, no se marca en rojo"
 # =====================================================================
 

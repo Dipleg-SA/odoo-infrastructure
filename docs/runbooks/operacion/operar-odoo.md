@@ -33,6 +33,13 @@ Cubre el servicio `healthy`, los logs sin errores de permisos, Odoo respondiendo
 
 ---
 
-**Destructivo — `make odoo-nuke`.** Borra containers, imágenes **y el volumen `odoo-data`** — el filestore de Odoo, donde viven los adjuntos. Pide tipear `nuke`.
+**Destructivo — sin target, a mano.** Tampoco sobrevivió un nuke acotado a este
+servicio: el único que queda es `make nuke`, **global**, que se lleva `odoo-data`
+junto con `pgdata` y todo lo demás. Para borrar solo el filestore:
 
-Antes de correrlo en producción o staging, confirmá que hay un backup reciente y probado (ver [realizar-backup](../backup-restore/realizar-backup.md)); el filestore se recupera con [restore-pitr](../backup-restore/restore-pitr.md) o [restore-perdida-total](../backup-restore/restore-perdida-total.md), no con este comando. El nombre real del volumen (`<proyecto>_odoo-data`) se imprime antes de la confirmación.
+```bash
+docker compose rm -sf odoo
+docker volume rm "${COMPOSE_PROJECT_NAME}_odoo-data"
+```
+
+Antes de correrlo en producción o staging, confirmá que hay un backup reciente y probado (ver [realizar-backup](../backup-restore/realizar-backup.md)); el filestore se recupera con [restore-perdida-total](../backup-restore/restore-perdida-total.md), no con este comando.

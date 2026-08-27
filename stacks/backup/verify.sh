@@ -32,6 +32,19 @@ v_backup() {
   sin_placeholder "r2.env con el repositorio real" \
     stacks/backup/config/r2.env 'TU_ENDPOINT|TU_BUCKET'
 
+  # --- El endpoint es un hostname de R2, no solo el account ID ---
+  # sin_placeholder solo descarta el literal TU_ENDPOINT: un valor cargado a mano
+  # pero incompleto (el account ID sin .r2.cloudflarestorage.com) pasa esa
+  # verificación igual, y recién se nota cuando restic reintenta contra DNS.
+
+  if [ -f stacks/backup/config/r2.env ]; then
+    expect "el endpoint de r2.env termina en .r2.cloudflarestorage.com" \
+      ".r2.cloudflarestorage.com" grep RESTIC_REPOSITORY stacks/backup/config/r2.env
+  else
+    omitir "el endpoint de r2.env termina en .r2.cloudflarestorage.com" \
+      "falta stacks/backup/config/r2.env"
+  fi
+
   # --- Repositorio alcanzable ---
   # Qué se espera depende del rol del entorno, y por eso la consulta cambia:
   #

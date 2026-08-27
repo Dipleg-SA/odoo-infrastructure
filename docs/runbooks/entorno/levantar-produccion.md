@@ -36,8 +36,8 @@ El orden no es negociable: cada bloque depende de que el anterior haya cerrado, 
 |---|---|---|
 | Zona de Cloudflare + token de API | [crear-zona-cloudflare](crear-zona-cloudflare.md) | `secrets/cloudflare_api_token` |
 | Tunnel de Cloudflare | [crear-tunnel-cloudflare](crear-tunnel-cloudflare.md) | `secrets/cloudflare_tunnel_token` |
-| ZeptoMail | [configurar-zeptomail](configurar-zeptomail.md) | `secrets/zeptomail_smtp_password` · `SMTP_USER` · `ALERT_EMAIL_FROM` |
-| Bucket de R2 + credenciales | [crear-bucket-r2](crear-bucket-r2.md) | `secrets/restic_r2_credentials` · `secrets/restic_password` · el bucket/endpoint van a `stacks/backup/config/r2.env` (bloque 7), no a `.env` |
+| ZeptoMail | [configurar-zeptomail](configurar-zeptomail.md) | `secrets/zeptomail_smtp_password` · `SMTP_USER` · `SMTP_HOST` · `ALERT_EMAIL_FROM` · `ALERT_EMAIL_TO` |
+| Bucket de R2 + credenciales | [crear-bucket-r2](crear-bucket-r2.md) | `secrets/restic_r2_credentials` · `secrets/restic_password` · el bucket/endpoint van a `stacks/backup/config/r2.env` (bloque 2), no a `.env` |
 | Token de git de solo lectura | [crear-token-git-lectura](crear-token-git-lectura.md) | `~/.git-credentials` del servidor |
 | Docker Engine y Compose, habilitados al arranque | [configurar-docker-host](configurar-docker-host.md) | El host listo para correr el stack |
 
@@ -51,7 +51,7 @@ Dos cosas que parecen prerrequisitos y no lo son, porque necesitan el repositori
 
 **Objetivo** — el repo clonado en el último release, con `.env` y los 11 secrets cargados y validados, y el daemon de Docker ya rotando logs. Nada levantado todavía.
 
-**A mano** — `.env.production.example` deja seis claves vacías y explica cada una donde se edita; no hay una segunda lista acá. Dos salen directo de los prerrequisitos (`SMTP_USER`, `ALERT_EMAIL_FROM`) y las otras cuatro se completan con lo que devuelve el segundo comando. Dos trampas: `LOCAL_IP` tiene que ser una IP real de una interfaz existente —`dnsmasq` bindea exactamente ahí y si no, queda `unhealthy`— y `SMTP_HOST` es la que más se olvida, porque ningún prerrequisito la deja anotada. Ninguna puede quedar vacía: Compose interpola una variable vacía sin fallar y el síntoma aparece capas después. El bucket y el endpoint de R2 **no** van acá: se editan directo en `r2.env` (bloque 7) — `config-init`, más abajo, ya lo bootstrapea junto con el resto.
+**A mano** — `.env.production.example` deja seis claves vacías y explica cada una donde se edita; no hay una segunda lista acá. Dos salen directo de los prerrequisitos (`SMTP_USER`, `ALERT_EMAIL_FROM`); `LOCAL_IP` sale del segundo comando de abajo; `PUBLIC_HOSTNAME`, `SMTP_HOST` y `ALERT_EMAIL_TO` se completan a mano. Dos trampas: `LOCAL_IP` tiene que ser una IP real de una interfaz existente —`dnsmasq` bindea exactamente ahí y si no, queda `unhealthy`— y `SMTP_HOST` es la que más se olvida, porque ningún prerrequisito la deja anotada. Ninguna puede quedar vacía **ni ausente**: `host-verify` cruza contra `.env.production.example` y marca las dos cosas — Compose interpola una variable vacía sin fallar y el síntoma aparece capas después. El bucket y el endpoint de R2 **no** van acá: se editan directo en `r2.env`, más abajo en este mismo bloque, apenas `config-init` lo bootstrapea.
 
 `secrets-init` deja **11 archivos**: 5 generados que no se tocan nunca y 6 con el marcador `CAMBIAR`, que se llenan con los valores de los prerrequisitos. Tres detalles de formato:
 
@@ -97,7 +97,18 @@ set -a; . ./.env; set +a
 make config-init
 ```
 
-Bootstrapea de una sola vez los config reales de los stacks activos —nginx, dnsmasq, postgres, odoo, r2.env, grafana— desde su `.example`. De acá en más, cada bloque solo edita el suyo con `nano` cuando corresponde.
+Bootstrapea de una sola vez los config reales de los diez stacks activos desde su `.example`. `postgresql.conf`, `00-http.conf` y `odoo.locations` sirven tal cual; los otros seis quedan con un placeholder:
+
+```bash
+nano stacks/nginx/config/server-tls.conf       # TU_DOMINIO → PUBLIC_HOSTNAME (4 apariciones)
+nano stacks/dnsmasq/config/dnsmasq.conf        # TU_DOMINIO → PUBLIC_HOSTNAME, TU_IP_LOCAL → LOCAL_IP
+nano stacks/odoo/config/odoo.conf              # TU_SMTP_HOST/TU_SMTP_PORT/TU_SMTP_USER → SMTP_*
+nano stacks/backup/config/r2.env               # TU_ENDPOINT y TU_BUCKET, del prerrequisito de R2
+nano stacks/grafana/config/grafana.ini         # TU_SMTP_*/TU_EMAIL_ALERTA_FROM → SMTP_*/ALERT_EMAIL_FROM
+nano stacks/grafana/config/provisioning/alerting/contact-points.yaml   # TU_EMAIL_ALERTA_TO → ALERT_EMAIL_TO
+```
+
+Todos los valores son los mismos que ya cargaste en `.env`, salvo los de R2: esos van directo a `r2.env`, nunca a `.env` (ver bloque 1).
 
 ```bash
 sudo make host-init
@@ -117,9 +128,7 @@ Cubre versión de Compose, arranque automático de Docker, la rotación de logs 
 
 **Objetivo** — el certificado emitido, nginx sirviendo con él, el Tunnel conectado y `dnsmasq` resolviendo el hostname a la IP local para la LAN.
 
-**A mano** — el Tunnel y su Public Hostname ya quedaron configurados en [crear-tunnel-cloudflare](crear-tunnel-cloudflare.md); los archivos reales de nginx y dnsmasq ya los bootstrapeó `config-init` en el bloque 2.
-
-Reemplazá `TU_DOMINIO` por tu hostname público en `server-tls.conf` (las cuatro apariciones) y en `dnsmasq.conf`, y `TU_IP_LOCAL` por la IP de este servidor en la LAN — los mismos valores que `PUBLIC_HOSTNAME`/`LOCAL_IP` en tu `.env`. `00-http.conf` y `odoo.locations` ya traen valores razonables (rate-limit, CIDR de Docker); tocalos solo si tu LAN cae en `172.16.0.0/12`.
+**A mano** — el Tunnel y su Public Hostname ya quedaron configurados en [crear-tunnel-cloudflare](crear-tunnel-cloudflare.md); `server-tls.conf` y `dnsmasq.conf` ya los bootstrapeaste y editaste en el bloque 2. `00-http.conf` y `odoo.locations` ya traen valores razonables (rate-limit, CIDR de Docker); tocalos solo si tu LAN cae en `172.16.0.0/12`.
 
 ```bash
 make cert-issue && make nginx-up
@@ -197,9 +206,7 @@ Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, tod
 
 **Objetivo** — Odoo sirviendo por el hostname público con certificado propio. Acá se cierra el 502 que dejó el bloque 3.
 
-**A mano** — `odoo.conf` ya lo bootstrapeó `config-init` en el bloque 2.
-
-Reemplazá `TU_SMTP_HOST`/`TU_SMTP_PORT`/`TU_SMTP_USER` con los mismos valores que `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER` en tu `.env`. No interpola: si dejás el placeholder, Odoo intenta mandar por un host que no existe en vez de quedar sin SMTP.
+**A mano** — `odoo.conf` ya lo bootstrapeaste y editaste en el bloque 2. No interpola desde `.env`: si quedó el placeholder, Odoo intenta mandar por un host que no existe en vez de quedar sin SMTP.
 
 **Y la contraseña de `admin`, apenas el sitio responda y antes que cualquier otra cosa.** El `-i base` del primer arranque la deja en `admin`, y para ese momento el sitio ya está publicado en internet por el Tunnel. Entrá a `https://$PUBLIC_HOSTNAME` → Ajustes → Usuarios → `admin` → cambiar contraseña. Es distinta del **master password** (`admin_passwd`), que se gestiona vía `secrets:` y no se toca acá.
 
@@ -225,9 +232,7 @@ Cubre el servicio `healthy`, los logs sin errores de permisos, Odoo respondiendo
 
 **Objetivo** — el backup corriendo, probado una vez de punta a punta, y avisando por mail si falla.
 
-**A mano** — `r2.env` ya lo bootstrapeó `config-init` en el bloque 2.
-
-Reemplazá `TU_ENDPOINT` y `TU_BUCKET` con los valores reales de R2. Este bloque va
+**A mano** — nada: `r2.env` ya lo bootstrapeaste y editaste en el bloque 2. Este bloque va
 después del 6 porque su verificación exige un snapshot, y un snapshot exige que exista
 un filestore.
 
@@ -275,12 +280,11 @@ sudo make notify-test
 
 **Objetivo** — métricas de host, contenedores y base, logs centralizados, y las siete alertas vivas **y llegando por mail**.
 
-**A mano** — `grafana.ini` y `contact-points.yaml` ya los bootstrapeó `config-init` en el bloque 2; falta la prueba de entrega de las alertas en la UI de Grafana. El acceso está en el apéndice porque el `3001` solo escucha en loopback.
-
-Reemplazá `TU_SMTP_HOST`/`TU_SMTP_PORT`/`TU_SMTP_USER`/`TU_EMAIL_ALERTA_FROM` en `grafana.ini` y `TU_EMAIL_ALERTA_TO` en `contact-points.yaml` — los mismos valores que `SMTP_*`/`ALERT_EMAIL_*` en tu `.env`. Ninguno de los dos interpola desde `.env`: si dejás el placeholder, Grafana lo rechaza al arrancar (`from_address` inválido) o manda el correo a una dirección que no existe.
+**A mano** — `grafana.ini` y `contact-points.yaml` ya los bootstrapeaste y editaste en el bloque 2; falta la prueba de entrega de las alertas en la UI de Grafana. El acceso está en el apéndice porque el `3001` solo escucha en loopback. Ninguno de los dos interpola desde `.env`: si quedó el placeholder, Grafana lo rechaza al arrancar (`from_address` inválido) o manda el correo a una dirección que no existe.
 
 ```bash
-make monitoring-role && make observability-up
+make monitoring-role
+make prometheus-up && make loki-up && make grafana-up && make alloy-up
 ```
 
 `monitoring-role` crea el rol de solo lectura que scrapea Postgres, con la clave de `secrets/postgres_exporter_password`. Es propio a propósito: `pg_monitor` da lectura de las vistas de estadísticas y nada más, así que el agente que tiene el socket de Docker y los logs no porta la credencial de la aplicación. El target es repetible —hace `DROP` y `CREATE`—, así que sirve igual para rotar esa clave.
