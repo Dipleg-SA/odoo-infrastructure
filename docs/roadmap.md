@@ -1,34 +1,32 @@
 # Roadmap de construcción
 
-Plan para escribir el árbol que describe [modular-architecture.md](modular-architecture.md):
-once stacks bajo `stacks/`, un entrypoint por entorno en `envs/`.
+**Las siete etapas están cumplidas.** El árbol que describe
+[modular-architecture.md](modular-architecture.md) —once stacks bajo `stacks/`, un
+entrypoint por entorno en `envs/`— está escrito, probado y corriendo. Este documento
+queda como registro de en qué orden se construyó y por qué ese orden: sirve para entender
+decisiones, no para saber qué falta.
 
-**No es una migración, es una construcción.** No hay ningún deployment corriendo, así que
-no hay datos que proteger, ni cutover, ni vuelta atrás que preparar. Las piezas que el
-diseño descarta —pgbouncer, pgBackRest, `restore-db`, los agregadores por capa— no se
-desmontan: **nunca se escriben**. Lo que queda bajo `docker/` es material de referencia
-hasta que el árbol nuevo esté completo, y se borra de una en la última etapa.
+**No fue una migración, fue una construcción.** No había ningún deployment corriendo, así
+que no hubo datos que proteger, ni cutover, ni vuelta atrás que preparar. Las piezas que
+el diseño descarta —pgbouncer, pgBackRest, `restore-db`, los agregadores por capa— no se
+desmontaron: **nunca se escribieron**.
 
 ## El principio de ordenamiento
 
-**El orden lo dicta qué se puede probar corriendo, no qué es riesgoso.**
+**El orden lo dictó qué se podía probar corriendo, no qué era riesgoso.**
 
 Desarrollo son tres stacks —`postgres`, `odoo`, `nginx`— y corre en la máquina del
 desarrollador. Es el entorno más chico que existe y el único que se puede levantar sin un
-servidor, así que **se construye primero y entero**: con eso quedan probados `include:`,
-el `env_file` por stack, el bootstrap de configs con `cp` y los targets del `Makefile`.
-Los siete stacks restantes copian un patrón ya demostrado en vez de estrenarlo.
+servidor, así que **se construyó primero y entero**: con eso quedaron probados `include:`,
+el bootstrap de configs con `cp` y los targets del `Makefile`. Los ocho stacks restantes
+copiaron un patrón ya demostrado en vez de estrenarlo.
 
-De ahí sale el resto del orden: cada etapa agrega los stacks que hacen falta para que el
-siguiente entorno levante, y termina cuando ese entorno levanta de verdad.
-
-Durante la construcción conviven los dos árboles. Es deliberado y temporal: `make test`
-sigue resolviendo los entrypoints viejos mientras los nuevos aparecen, y el aviso al tope
-de `CLAUDE.md` dice cuál es cuál.
+De ahí salió el resto del orden: cada etapa agregó los stacks que hacían falta para que el
+siguiente entorno levantara, y terminó cuando ese entorno levantó de verdad.
 
 ---
 
-## Etapa 1 — Desarrollo levanta
+## Etapa 1 — Desarrollo levanta ✅
 
 El esqueleto y los tres stacks que lo componen.
 
@@ -43,29 +41,31 @@ El esqueleto y los tres stacks que lo componen.
   `config/server-plain.conf` versionado, publicando `127.0.0.1:8080`.
 - Los targets `<stack>-up/down/logs/ps` del `Makefile` pasan a derivarse de la composición.
 
-**Verificación, y es real porque corre local.** `make up` levanta los tres, Odoo responde
-en el 8080 a través de nginx, se crea una base y se instala un módulo. `make test` en
-verde con los cuatro entrypoints —los tres viejos y el nuevo—.
+**Verificación, y fue real porque corre local.** `make up` levanta los tres, Odoo responde
+en el 8080 a través de nginx, se crea una base y se instala un módulo.
 
-Es la etapa que **prueba los mecanismos**: que cada stack lea su propio `.env`, que las
-rutas relativas resuelvan contra la carpeta de cada archivo incluido, y que un config
-real bootstrapeado con `cp` se monte donde corresponde. Si algo de eso no funciona, se
-descubre acá y no con nueve stacks escritos encima.
+Fue la etapa que **probó los mecanismos**: que las rutas relativas resuelvan contra la
+carpeta de cada archivo incluido, y que un config real bootstrapeado con `cp` se monte
+donde corresponde. Si algo de eso no funcionaba, se descubría acá y no con nueve stacks
+escritos encima. El `env_file` por stack se probó también y **no sobrevivió al diseño
+final**: ningún stack terminó necesitando uno propio, salvo `backup` para las credenciales
+de R2.
 
-## Etapa 2 — La verificación por stack
+## Etapa 2 — La verificación por stack ✅
 
 Sobre los tres que ya corren, para fijar el patrón antes de repetirlo.
 
 - `stacks/<nombre>/verify.sh`, dueño de qué se espera de ese stack.
-- `scripts/verify.sh` pasa a orquestar: corre el de cada stack presente y junta
-  resultados, sin saber qué espera ninguno.
+- `scripts/verify-stacks.sh` pasa a orquestar: corre el de cada stack presente y junta
+  resultados, sin saber qué espera ninguno. Lo que es del SO y no de ningún stack queda
+  aparte, en `scripts/verify-host.sh`.
 - `tests/` sigue el corte, con los stubs por stack.
 
 **Verificación.** `make verify` con desarrollo arriba, y con desarrollo abajo — los dos
 casos, porque el modo de falla conocido de este script es dar `ok` cuando no hay nada que
 mirar. Mutá una aserción y comprobá que **falla**.
 
-## Etapa 3 — El borde completo
+## Etapa 3 — El borde completo ✅
 
 Lo que le falta a `envs/production.yaml` para servir tráfico.
 
@@ -82,7 +82,7 @@ Lo que le falta a `envs/production.yaml` para servir tráfico.
 devuelve composiciones distintas. Emisión del certificado por DNS-01. El rate-limit del
 login responde con 429 al superar el umbral.
 
-## Etapa 4 — Respaldos
+## Etapa 4 — Respaldos ✅
 
 Snapshot desde el primer día: no hay estrategia previa que reemplazar.
 
@@ -96,7 +96,7 @@ Snapshot desde el primer día: no hay estrategia previa que reemplazar.
 **Verificación.** Un backup completo y **un restore que devuelve una base usable con
 adjuntos que abren**. Un backup que no se probó restaurando no cuenta como etapa cumplida.
 
-## Etapa 5 — Observabilidad
+## Etapa 5 — Observabilidad ✅
 
 Los cuatro stacks, que son los que menos dependen de todo lo demás.
 
@@ -108,7 +108,7 @@ Los cuatro stacks, que son los que menos dependen de todo lo demás.
 `alloy validate` acepta constantes inexistentes con exit 0. Las series de host,
 contenedores y base llegan; una alerta de prueba sale al canal.
 
-## Etapa 6 — Prueba
+## Etapa 6 — Prueba ✅
 
 El entrypoint que faltaba, y lo único que ese entorno necesita de propio.
 
@@ -121,7 +121,7 @@ El entrypoint que faltaba, y lo único que ese entorno necesita de propio.
 **Verificación.** Sembrar prueba desde el snapshot de otro checkout. `make backup-run` ahí
 **falla en el proveedor**, no en un `if`.
 
-## Etapa 7 — Limpieza
+## Etapa 7 — Limpieza ✅
 
 - Desaparece `docker/`.
 - Se borra el aviso de migración de `CLAUDE.md`.
@@ -133,17 +133,33 @@ El entrypoint que faltaba, y lo único que ese entorno necesita de propio.
 
 ---
 
+## Después de la etapa 7
+
+Las siete etapas cerraron con el árbol escrito y `make test` en verde, pero **ninguna lo
+había corrido contra un servidor de verdad**. Eso pasó después, y encontró cosas que
+`docker compose config` no puede encontrar:
+
+- **El shakedown del primer deploy real.** Siete hallazgos, cada uno con su causa y su
+  verificación: la guarda de `daemon.json` que no mostraba contra qué, un comentario
+  permanente que contaba como placeholder sin reemplazar, un endpoint de R2 sin sufijo que
+  fallaba a los 66 s en vez de a 1 s, cuatro claves que la plantilla de `.env` nunca
+  declaró, y cuatro runbooks que prometían targets borrados con `docker/`.
+- **SMTP con una sola fuente.** `smtp_server`/`port`/`user` dejaron de estar pegados a mano
+  en tres archivos y pasan por `.env` al entrypoint, que los appendea al conf de runtime.
+  Con eso `odoo.conf` y `grafana.ini` dejaron de necesitar `.example`.
+
+La disciplina que sostuvo las siete etapas es la que encontró estas: **una etapa termina
+cuando algo levanta y responde**, no cuando el código está escrito. `make verify` ya había
+encontrado una vez que la mitad de sus propios `ok` mentían con los servicios abajo —
+cualquier verificación no ejecutada puede estar mintiendo, y correrla contra hardware real
+sigue siendo la única forma de saberlo.
+
 ## Lo que cambió respecto del plan anterior
 
 | Plan de migración | Plan de construcción |
 |---|---|
-| Sacar pgbouncer con verificación en tres entornos | No se escribe |
-| Correr el snapshot en paralelo antes de sacar pgBackRest | pgBackRest no existe nunca |
-| Diff normalizado de la config resuelta | No aplica: no hay config previa que preservar |
-| Orden por riesgo, producción al final | Orden por qué se puede probar corriendo |
-| Vuelta atrás por etapa | No hay nada a lo que volver |
-
-Lo único que sobrevive intacto es la disciplina de verificación: **cada etapa termina
-cuando algo levanta y responde**, no cuando el código está escrito. `make verify` ya
-encontró una vez que la mitad de sus propios `ok` mentían con los servicios abajo; asumí
-que cualquier verificación no ejecutada puede estar mintiendo.
+| Sacar pgbouncer con verificación en tres entornos | No se escribió |
+| Correr el snapshot en paralelo antes de sacar pgBackRest | pgBackRest no existió nunca |
+| Diff normalizado de la config resuelta | No aplicó: no había config previa que preservar |
+| Orden por riesgo, producción al final | Orden por qué se podía probar corriendo |
+| Vuelta atrás por etapa | No había nada a lo que volver |
