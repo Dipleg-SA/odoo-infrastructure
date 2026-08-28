@@ -2,7 +2,7 @@
 
 ## Cuándo se usa
 
-**Obligatorio, sin excepción por confianza en el código.** `PRINCIPLES.md` exige probar en staging todo cambio riesgoso —upgrade mayor, módulo nuevo, cambio de config de la base— antes de aplicarlo a producción, incluso cuando el código ya vive en la rama de versión. Es el paso que [actualizar-modulo](../modulos/actualizar-modulo.md) y [primera-puesta-en-producción](../modulos/actualizar-modulo.md) dan por hecho entre "traer y validar" y "promover".
+**Obligatorio, sin excepción por confianza en el código.** `PRINCIPLES.md` exige probar en staging todo cambio riesgoso —upgrade mayor, módulo nuevo, cambio de config de la base— antes de aplicarlo a producción, incluso cuando el código ya vive en la rama de versión. Es el paso que [actualizar-modulo](../modulos/actualizar-modulo.md) —también para la primera vez que un módulo se instala en un entorno— da por hecho entre "traer y validar" y "promover".
 
 ## Objetivo
 

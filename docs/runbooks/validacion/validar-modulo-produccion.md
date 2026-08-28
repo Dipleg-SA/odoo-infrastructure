@@ -2,7 +2,7 @@
 
 ## Cuándo se usa
 
-Justo después de aplicar un cambio en producción —el último paso de [actualizar-modulo](../modulos/actualizar-modulo.md) o [primera-puesta-en-producción](../modulos/actualizar-modulo.md)— para confirmar que quedó bien antes de dar el deploy por cerrado y seguir con otra cosa.
+Justo después de aplicar un cambio en producción —el último paso de [actualizar-modulo](../modulos/actualizar-modulo.md), incluida la primera vez que un módulo se instala ahí— para confirmar que quedó bien antes de dar el deploy por cerrado y seguir con otra cosa.
 
 ## Objetivo
 
@@ -26,7 +26,7 @@ docker compose logs --since 10m odoo | grep -iE 'error|traceback|warn'
 make verify
 ```
 
-Las seis capas en verde, once servicios, ninguno del perfil `restore`.
+Las seis capas en verde, nueve servicios corriendo —diez si tu `.env` tiene LAN activo—, ninguno del perfil `restore`. `certbot` no cuenta: corre con `--rm` y nunca queda arriba.
 
 A mano:
 
