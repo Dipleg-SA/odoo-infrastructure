@@ -114,7 +114,7 @@ Todos los valores son los mismos que ya cargaste en `.env`, salvo los de R2: eso
 sudo make host-init
 ```
 
-**Va acá porque el bloque 3 crea el primer contenedor.** El driver de logging se fija al crear cada contenedor, no al arrancarlo: aplicarlo después no alcanza con reiniciar el daemon, obliga a recrear los once — ver [contenedor-no-rota-logs](../troubleshooting/observability/contenedor-no-rota-logs.md). `dockerd` no arranca si `daemon.json` tiene claves desconocidas, comentarios simulados incluidos; si el restart falla, `journalctl -u docker` trae el motivo exacto.
+**Va acá porque el bloque 3 crea el primer contenedor.** El driver de logging se fija al crear cada contenedor, no al arrancarlo: aplicarlo después no alcanza con reiniciar el daemon, obliga a recrear los once. `dockerd` no arranca si `daemon.json` tiene claves desconocidas, comentarios simulados incluidos; si el restart falla, `journalctl -u docker` trae el motivo exacto.
 
 ```bash
 make host-verify

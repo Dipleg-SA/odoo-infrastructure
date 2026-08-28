@@ -66,4 +66,4 @@ dig +short example.com
 docker compose start dnsmasq   # revertir el paso 4
 ```
 
-Si el 5 falla, no hay DNS secundario configurado en el router, o apunta a un resolver inalcanzable — ver "A mano", paso 3. Para diagnosticar por qué `dnsmasq` no responde, ver [dnsmasq no bindea o no resuelve](../troubleshooting/edge/dnsmasq-no-bindea-o-no-resuelve.md).
+Si el 5 falla, no hay DNS secundario configurado en el router, o apunta a un resolver inalcanzable — ver "A mano", paso 3.

@@ -40,7 +40,3 @@ curl -sI "https://$PUBLIC_HOSTNAME/web/login" | grep -iE "^HTTP|^server:|^cf-ray
 ```
 
 Tienen que salir los tres headers — solo Cloudflare los agrega. Recién con esto confirmado, **revocar/eliminar el token viejo** en el dashboard.
-
----
-
-Si el contenedor no conecta, el diagnóstico completo (token mal copiado, egress bloqueado, etc.) está en `troubleshooting/edge/`.
