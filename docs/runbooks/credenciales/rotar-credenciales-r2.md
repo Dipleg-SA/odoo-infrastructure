@@ -38,7 +38,7 @@ Corre `restic check` sobre el repositorio, sin escribir nada. Tiene que dar sano
 
 Si falla, la clave vieja todavía está activa en R2 — revertí el archivo y volvé a recrear `backup` antes de seguir insistiendo con la nueva.
 
-Recién con `backup-check` en verde, **revocar la clave vieja** en Cloudflare R2. Confirmar con una corrida real antes de dar el cambio por cerrado:
+Recién con `backup-integrity` en verde, **revocar la clave vieja** en Cloudflare R2. Confirmar con una corrida real antes de dar el cambio por cerrado:
 
 ```bash
 make backup-run

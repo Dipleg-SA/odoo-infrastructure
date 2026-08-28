@@ -34,7 +34,7 @@ make nginx-verify
 
 Qué servicios de borde trae *este* stack lo dice su entrypoint: producción lleva `nginx`+`cloudflared`+`certbot` y, si el cliente tiene servidor local, `dnsmasq` con `COMPOSE_PROFILES=lan`; prueba lleva los tres primeros sin publicar puertos; y development solo `nginx` sin TLS, sin túnel ni certbot.
 
-`edge-restart` **no** reemite el certificado ni aplica un cambio de imagen o de compose — para eso hace falta `edge-down` + `edge-up`. Si el cambio es solo en la config montada de nginx (`stacks/nginx/`), alcanza con recargar en caliente en vez de reiniciar el contenedor entero:
+**Un `restart` no reemite el certificado ni aplica un cambio de imagen o de compose** — para eso hace falta bajar y volver a subir cada servicio (`make nginx-down && make cloudflared-down`, después `make nginx-up && make cloudflared-up`). Si el cambio es solo en la config montada de nginx (`stacks/nginx/`), alcanza con recargar en caliente en vez de reiniciar el contenedor entero:
 
 ```bash
 docker compose exec nginx nginx -s reload

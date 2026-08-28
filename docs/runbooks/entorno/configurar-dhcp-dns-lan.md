@@ -23,7 +23,7 @@ Configuración en el router/DHCP de la red, fuera de este repositorio — el mec
 
 1. **Reservar la IP del servidor.** El campo DNS del DHCP guarda una IP fija; si el servidor la recibe dinámicamente, el día que cambie el router sigue apuntando a una IP vieja y la LAN pierde resolución en silencio. Reservar la MAC del servidor a `${LOCAL_IP}` — la sección suele llamarse "reserva de direcciones" o "DHCP reservation".
 2. **DNS primario → `${LOCAL_IP}`.** La misma IP que `dnsmasq` bindea (`listen-address` en [dnsmasq.conf](../../../stacks/dnsmasq/config/dnsmasq.conf.example)).
-3. **DNS secundario → un resolver público**, el mismo que dnsmasq usa de forwarder (`1.1.1.1`/`8.8.8.8`, fijos en `stacks/dnsmasq/config/dnsmasq.conf`) u otro cualquiera. No es cosmético: si la capa `edge` se cae (mantenimiento, `make nginx-down`, `edge-nuke`), la LAN necesita a dónde caer.
+3. **DNS secundario → un resolver público**, el mismo que dnsmasq usa de forwarder (`1.1.1.1`/`8.8.8.8`, fijos en `stacks/dnsmasq/config/dnsmasq.conf`) u otro cualquiera. No es cosmético: si la capa `edge` se cae (mantenimiento, `make nginx-down`, un `make nuke`), la LAN necesita a dónde caer.
 4. **Aplicar y renovar.** Un cambio de DHCP no empuja a los clientes ya conectados — o esperan a que expire su lease, o hace falta forzar la renovación (reconectar Wi-Fi, `ipconfig /renew`, reiniciar el dispositivo).
 
 Poner acá un DNS local **no evita que se caiga internet** — solo evita que el hostname propio dependa de que el WAN esté arriba. Cualquier dominio externo sigue resolviendo vía los forwarders de `dnsmasq`, que necesitan salida real a internet.
