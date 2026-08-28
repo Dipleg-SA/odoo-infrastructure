@@ -23,10 +23,11 @@ Cloudflare emite dos formatos según cuándo lo creaste: 40 caracteres el viejo,
 
 ```bash
 echo "# 2 → Verificar contra la API antes de confiar en el archivo"
+ZONA='ejemplo.com'   # tu zona en Cloudflare — no PUBLIC_HOSTNAME si servís por un subdominio
 CF_TOKEN=$(sudo cat secrets/cloudflare_api_token)
-CF_RESP=$(printf 'header = "Authorization: Bearer %s"\nurl = "https://api.cloudflare.com/client/v4/zones?name=%s"\n' "$CF_TOKEN" "$PUBLIC_HOSTNAME" \
+CF_RESP=$(printf 'header = "Authorization: Bearer %s"\nurl = "https://api.cloudflare.com/client/v4/zones?name=%s"\n' "$CF_TOKEN" "$ZONA" \
   | curl -s --config -)
-echo "$CF_RESP" | grep -q "\"name\":" && echo "OK: token válido"
+echo "$CF_RESP" | grep -q "\"name\":\"$ZONA\"" && echo "OK: token válido"
 ```
 
 ```bash

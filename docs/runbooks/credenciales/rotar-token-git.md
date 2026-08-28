@@ -4,7 +4,7 @@
 
 El token de solo lectura sobre tu organización (el que usa `addons-sync` para clonar/traer los repos privados del manifiesto) venció o toca rotarlo. **No es un secret de Compose** — vive en `~/.git-credentials` del host, nunca dentro de un contenedor, porque el clonado ocurre en el host y ningún contenedor lo consume.
 
-Tiene que rotarse en **cada checkout que lo usa por separado**: el del servidor (producción, staging) y el de cada máquina de desarrollo.
+El archivo es **por máquina, no por checkout**: rotarlo una vez en el servidor cubre a producción y staging juntas —comparten `~/.git-credentials`, ver [crear-token-git-lectura](../entorno/crear-token-git-lectura.md)—, y hay que repetirlo aparte en cada máquina de desarrollo.
 
 ## Objetivo
 
@@ -16,7 +16,7 @@ Generar el token nuevo en tu proveedor git — alcanza con lectura de contenidos
 
 ## Comandos
 
-En cada checkout (servidor y cada máquina de desarrollo):
+En cada máquina (el servidor, una sola vez para producción y staging, y cada máquina de desarrollo):
 
 ```bash
 echo "# 1 → Sacar la línea vieja"

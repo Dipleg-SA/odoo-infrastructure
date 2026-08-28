@@ -9,7 +9,7 @@ formato de AWS, que es lo que restic parsea.
 
 ## Objetivo
 
-Los dos archivos actualizados, los dos consumidores (`postgres`, `backup`) recreados con el valor nuevo, la clave vieja revocada en R2 solo después de confirmar que la nueva funciona.
+El archivo actualizado, `backup` —su único consumidor— recreado con el valor nuevo, la clave vieja revocada en R2 solo después de confirmar que la nueva funciona.
 
 ## A mano
 
@@ -22,12 +22,9 @@ sudo -e secrets/restic_r2_credentials
 sudo make secrets-perms
 ```
 
-**Recrear los dos consumidores, no reiniciarlos** — los secrets son bind-mounts de archivo atados al inode; un `restart` sobre un contenedor cuyo secret se reemplazó (no se editó in-place) sigue viendo el valor viejo, o directamente `No such file`.
+**Recrear `backup`, no reiniciarlo** — los secrets son bind-mounts de archivo atados al inode; un `restart` sobre un contenedor cuyo secret se reemplazó (no se editó in-place) sigue viendo el valor viejo, o directamente `No such file`.
 
 ```bash
-docker compose up -d --force-recreate postgres
-
-echo "# 3 → restic vive en su propio contenedor"
 docker compose up -d --force-recreate backup
 ```
 
@@ -39,7 +36,7 @@ make backup-integrity
 
 Corre `restic check` sobre el repositorio, sin escribir nada. Tiene que dar sano con la clave nueva.
 
-Si alguno falla, la clave vieja todavía está activa en R2 — revertí el archivo correspondiente y volvé a recrear ese contenedor antes de seguir insistiendo con la nueva.
+Si falla, la clave vieja todavía está activa en R2 — revertí el archivo y volvé a recrear `backup` antes de seguir insistiendo con la nueva.
 
 Recién con `backup-check` en verde, **revocar la clave vieja** en Cloudflare R2. Confirmar con una corrida real antes de dar el cambio por cerrado:
 

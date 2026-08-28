@@ -34,6 +34,7 @@ Primero la credencial sola, después los tres consumidores — en el mismo orden
 
 ```bash
 echo "# 1 → Directo, sin pasar por ningún contenedor"
+set -a; . ./.env; set +a   # shell nueva: sin esto ALERT_EMAIL_FROM/TO quedan vacías
 ZM_USER='emailapikey'  # el que corresponda — el mismo que SMTP_USER en .env
 ZM_TOKEN=$(sudo cat secrets/zeptomail_smtp_password)   # sudo: los secrets son 640 con grupo del consumidor
 printf 'From: %s\nTo: %s\nSubject: prueba rotación\n\nok\n' "$ALERT_EMAIL_FROM" "$ALERT_EMAIL_TO" \
