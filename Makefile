@@ -1,3 +1,5 @@
+include .make/main.mk
+
 .PHONY: help up down logs ps nuke build \
         secrets-init secrets-perms secrets-check config-init \
         host-init host-verify timers-install notify-test monitoring-role \
@@ -5,17 +7,8 @@
         backup-run backup-integrity restore \
         addons-sync addons odoo-install odoo-update odoo-modules pydeps-check pydeps-sync \
         require-modules require-backups require-restore require-root test verify \
-        nginx-up nginx-down nginx-restart nginx-logs nginx-ps nginx-verify \
-        certbot-up certbot-down certbot-restart certbot-logs certbot-ps certbot-verify \
-        cloudflared-up cloudflared-down cloudflared-restart cloudflared-logs cloudflared-ps cloudflared-verify \
-        dnsmasq-up dnsmasq-down dnsmasq-restart dnsmasq-logs dnsmasq-ps dnsmasq-verify \
-        postgres-up postgres-down postgres-restart postgres-logs postgres-ps postgres-verify \
-        odoo-up odoo-down odoo-restart odoo-logs odoo-ps odoo-verify \
-        backup-up backup-down backup-restart backup-logs backup-ps backup-verify \
-        prometheus-up prometheus-down prometheus-restart prometheus-logs prometheus-ps prometheus-verify \
-        loki-up loki-down loki-restart loki-logs loki-ps loki-verify \
-        grafana-up grafana-down grafana-restart grafana-logs grafana-ps grafana-verify \
-        alloy-up alloy-down alloy-restart alloy-logs alloy-ps alloy-verify
+        certbot-logs certbot-ps certbot-verify \
+        $(foreach s,$(STACKS),$(s)-up $(s)-down $(s)-restart $(s)-logs $(s)-ps $(s)-verify)
 .DEFAULT_GOAL := help
 
 # --- Ayuda ---
@@ -23,9 +16,7 @@
 # cabeceras '# --- Título ---' y la anotación '##' de cada target, no mantiene nada aparte.
 
 help:
-	@awk 'BEGIN {FS = ":.*##"} \
-	  /^# --- .* ---$$/ {t=$$0; sub(/^# --- /,"",t); sub(/ ---$$/,"",t); printf "\n\033[1m%s\033[0m\n", t} \
-	  /^[a-zA-Z0-9_-]+:.*##/ {printf "  \033[36m%-23s\033[0m %s\n", $$1, substr($$0, index($$0,"##")+2)}' $(MAKEFILE_LIST)
+	@awk -v stacks="$(STACKS)" -f .make/help.awk $(MAKEFILE_LIST)
 
 # --- Inicialización de un deploy nuevo ---
 # En orden: secrets-init y config-init, cargar los valores a mano, secrets-perms,
@@ -95,6 +86,10 @@ notify-test: require-root ## Dispara el aviso de fallo de punta a punta (requier
 # --- Certificados ---
 # Emisión a mano la primera vez —nginx no arranca sin el archivo— y renovación
 # por timer de systemd. DNS-01: no necesita que el borde esté arriba.
+#
+# Se opera con estos dos, nunca con up/down/restart: certbot no es un servicio
+# de larga vida, corre one-off (docker compose --profile cert run --rm) y no
+# tiene restart policy — "levantarlo" sin un comando no emite ni renueva nada.
 
 cert-issue: ## Emite el certificado inicial
 	stacks/certbot/scripts/cert.sh issue
@@ -127,210 +122,20 @@ host-verify: ## Verifica los prerrequisitos del SO (systemd, rotación de logs, 
 	scripts/verify-host.sh
 
 # --- Ciclo de vida, stack por stack ---
-# Un stack es un solo compose.yaml, así que docker compose directo alcanza: no hay
-# varios archivos que agregar, y por eso no hay dispatcher. Un stack que este
-# entorno no lleva falla con el error de Compose, que ya nombra el servicio.
-#
-# nuke no está por stack: con un contenedor cada uno no queda lógica que
-# justificarlo. Está el global, más abajo.
+# Sexteto por stack generado por $(eval $(call ...)) desde STACKS (.make/);
+# help.awk sintetiza sus descripciones — certbot y nuke quedan afuera.
 
-nginx-up: ## Levanta nginx
-	@. scripts/lib/ui.sh; ui_run "nginx-up" docker compose up -d nginx
-
-nginx-down: ## Baja nginx
-	@. scripts/lib/ui.sh; ui_run "nginx-down" docker compose rm -sf nginx
-
-nginx-restart: ## Reinicia nginx, sin tocar el resto del stack
-	@. scripts/lib/ui.sh; ui_run "nginx-restart" docker compose restart nginx
-
-nginx-logs: ## Sigue los logs de nginx
-	@docker compose logs -f nginx
-
-nginx-ps: ## Lista el contenedor de nginx
-	@docker compose ps nginx
-
-nginx-verify: ## Verifica nginx
-	scripts/verify-stacks.sh nginx
-
-certbot-up: ## Levanta certbot
-	@. scripts/lib/ui.sh; ui_run "certbot-up" docker compose up -d certbot
-
-certbot-down: ## Baja certbot
-	@. scripts/lib/ui.sh; ui_run "certbot-down" docker compose rm -sf certbot
-
-certbot-restart: ## Reinicia certbot, sin tocar el resto del stack
-	@. scripts/lib/ui.sh; ui_run "certbot-restart" docker compose restart certbot
+# certbot no tiene -up/-down/-restart: no es un servicio de larga vida, se
+# opera con make cert-issue / make cert-renew, más arriba.
 
 certbot-logs: ## Sigue los logs de certbot
-	@docker compose logs -f certbot
+	@. scripts/ui/components.sh; ui_section "certbot-logs: siguiendo (Ctrl-C para salir)"; docker compose logs -f certbot
 
 certbot-ps: ## Lista el contenedor de certbot
-	@docker compose ps certbot
+	@. scripts/ui/components.sh; docker compose ps certbot | ui_color_status | ui_table_frame
 
 certbot-verify: ## Verifica certbot
 	scripts/verify-stacks.sh certbot
-
-cloudflared-up: ## Levanta cloudflared
-	@. scripts/lib/ui.sh; ui_run "cloudflared-up" docker compose up -d cloudflared
-
-cloudflared-down: ## Baja cloudflared
-	@. scripts/lib/ui.sh; ui_run "cloudflared-down" docker compose rm -sf cloudflared
-
-cloudflared-restart: ## Reinicia cloudflared, sin tocar el resto del stack
-	@. scripts/lib/ui.sh; ui_run "cloudflared-restart" docker compose restart cloudflared
-
-cloudflared-logs: ## Sigue los logs de cloudflared
-	@docker compose logs -f cloudflared
-
-cloudflared-ps: ## Lista el contenedor de cloudflared
-	@docker compose ps cloudflared
-
-cloudflared-verify: ## Verifica cloudflared
-	scripts/verify-stacks.sh cloudflared
-
-dnsmasq-up: ## Levanta dnsmasq
-	@. scripts/lib/ui.sh; ui_run "dnsmasq-up" docker compose up -d dnsmasq
-
-dnsmasq-down: ## Baja dnsmasq
-	@. scripts/lib/ui.sh; ui_run "dnsmasq-down" docker compose rm -sf dnsmasq
-
-dnsmasq-restart: ## Reinicia dnsmasq, sin tocar el resto del stack
-	@. scripts/lib/ui.sh; ui_run "dnsmasq-restart" docker compose restart dnsmasq
-
-dnsmasq-logs: ## Sigue los logs de dnsmasq
-	@docker compose logs -f dnsmasq
-
-dnsmasq-ps: ## Lista el contenedor de dnsmasq
-	@docker compose ps dnsmasq
-
-dnsmasq-verify: ## Verifica dnsmasq
-	scripts/verify-stacks.sh dnsmasq
-
-postgres-up: ## Levanta postgres
-	@. scripts/lib/ui.sh; ui_run "postgres-up" docker compose up -d postgres
-
-postgres-down: ## Baja postgres
-	@. scripts/lib/ui.sh; ui_run "postgres-down" docker compose rm -sf postgres
-
-postgres-restart: ## Reinicia postgres, sin tocar el resto del stack
-	@. scripts/lib/ui.sh; ui_run "postgres-restart" docker compose restart postgres
-
-postgres-logs: ## Sigue los logs de postgres
-	@docker compose logs -f postgres
-
-postgres-ps: ## Lista el contenedor de postgres
-	@docker compose ps postgres
-
-postgres-verify: ## Verifica postgres
-	scripts/verify-stacks.sh postgres
-
-odoo-up: ## Levanta odoo
-	@. scripts/lib/ui.sh; ui_run "odoo-up" docker compose up -d odoo
-
-odoo-down: ## Baja odoo
-	@. scripts/lib/ui.sh; ui_run "odoo-down" docker compose rm -sf odoo
-
-odoo-restart: ## Reinicia odoo, sin tocar el resto del stack
-	@. scripts/lib/ui.sh; ui_run "odoo-restart" docker compose restart odoo
-
-odoo-logs: ## Sigue los logs de odoo
-	@docker compose logs -f odoo
-
-odoo-ps: ## Lista el contenedor de odoo
-	@docker compose ps odoo
-
-odoo-verify: ## Verifica odoo
-	scripts/verify-stacks.sh odoo
-
-backup-up: ## Levanta backup
-	@. scripts/lib/ui.sh; ui_run "backup-up" docker compose up -d backup
-
-backup-down: ## Baja backup
-	@. scripts/lib/ui.sh; ui_run "backup-down" docker compose rm -sf backup
-
-backup-restart: ## Reinicia backup, sin tocar el resto del stack
-	@. scripts/lib/ui.sh; ui_run "backup-restart" docker compose restart backup
-
-backup-logs: ## Sigue los logs de backup
-	@docker compose logs -f backup
-
-backup-ps: ## Lista el contenedor de backup
-	@docker compose ps backup
-
-backup-verify: ## Verifica backup
-	scripts/verify-stacks.sh backup
-
-prometheus-up: ## Levanta prometheus
-	@. scripts/lib/ui.sh; ui_run "prometheus-up" docker compose up -d prometheus
-
-prometheus-down: ## Baja prometheus
-	@. scripts/lib/ui.sh; ui_run "prometheus-down" docker compose rm -sf prometheus
-
-prometheus-restart: ## Reinicia prometheus, sin tocar el resto del stack
-	@. scripts/lib/ui.sh; ui_run "prometheus-restart" docker compose restart prometheus
-
-prometheus-logs: ## Sigue los logs de prometheus
-	@docker compose logs -f prometheus
-
-prometheus-ps: ## Lista el contenedor de prometheus
-	@docker compose ps prometheus
-
-prometheus-verify: ## Verifica prometheus
-	scripts/verify-stacks.sh prometheus
-
-loki-up: ## Levanta loki
-	@. scripts/lib/ui.sh; ui_run "loki-up" docker compose up -d loki
-
-loki-down: ## Baja loki
-	@. scripts/lib/ui.sh; ui_run "loki-down" docker compose rm -sf loki
-
-loki-restart: ## Reinicia loki, sin tocar el resto del stack
-	@. scripts/lib/ui.sh; ui_run "loki-restart" docker compose restart loki
-
-loki-logs: ## Sigue los logs de loki
-	@docker compose logs -f loki
-
-loki-ps: ## Lista el contenedor de loki
-	@docker compose ps loki
-
-loki-verify: ## Verifica loki
-	scripts/verify-stacks.sh loki
-
-grafana-up: ## Levanta grafana
-	@. scripts/lib/ui.sh; ui_run "grafana-up" docker compose up -d grafana
-
-grafana-down: ## Baja grafana
-	@. scripts/lib/ui.sh; ui_run "grafana-down" docker compose rm -sf grafana
-
-grafana-restart: ## Reinicia grafana, sin tocar el resto del stack
-	@. scripts/lib/ui.sh; ui_run "grafana-restart" docker compose restart grafana
-
-grafana-logs: ## Sigue los logs de grafana
-	@docker compose logs -f grafana
-
-grafana-ps: ## Lista el contenedor de grafana
-	@docker compose ps grafana
-
-grafana-verify: ## Verifica grafana
-	scripts/verify-stacks.sh grafana
-
-alloy-up: ## Levanta alloy
-	@. scripts/lib/ui.sh; ui_run "alloy-up" docker compose up -d alloy
-
-alloy-down: ## Baja alloy
-	@. scripts/lib/ui.sh; ui_run "alloy-down" docker compose rm -sf alloy
-
-alloy-restart: ## Reinicia alloy, sin tocar el resto del stack
-	@. scripts/lib/ui.sh; ui_run "alloy-restart" docker compose restart alloy
-
-alloy-logs: ## Sigue los logs de alloy
-	@docker compose logs -f alloy
-
-alloy-ps: ## Lista el contenedor de alloy
-	@docker compose ps alloy
-
-alloy-verify: ## Verifica alloy
-	scripts/verify-stacks.sh alloy
 
 # --- Respaldos (árbol nuevo) ---
 # El diario respalda y purga; el check verifica integridad del repositorio. No hay
@@ -348,17 +153,16 @@ restore: require-restore ## Restaura filestore y base desde un snapshot — SNAP
 # --- Ciclo de vida del stack completo ---
 
 up: ## Levanta el stack completo
-	@. scripts/lib/ui.sh; ui_run "up" docker compose up -d
+	@. scripts/ui/components.sh; ui_section "up: levantando el stack completo"; ui_run "up" docker compose up -d
 
 down: ## Baja el stack completo
 	@. scripts/lib/ui.sh; ui_run "down" docker compose down
 
 logs: ## Sigue los logs de todos los servicios
-	@. scripts/lib/ui.sh; ui_start "logs: siguiendo todo el stack (Ctrl-C para salir)"
-	@docker compose logs -f
+	@. scripts/ui/components.sh; ui_section "logs: siguiendo todo el stack (Ctrl-C para salir)"; docker compose logs -f
 
 ps: ## Lista el estado de los contenedores
-	@docker compose ps
+	@. scripts/ui/components.sh; docker compose ps | ui_color_status | ui_table_frame
 
 # --- Nuke ---
 # El más destructivo del Makefile. Confirmación: tipear la palabra 'nuke', no Y/N.
