@@ -129,11 +129,11 @@ Las cuatro. Cada una cubre una falla que las otras no ven.
 
 ### Al terminar
 
-1. **Backup full inmediato** (`make backup-integrity`, ver [realizar-backup](../backup-restore/realizar-backup.md)): el primer punto de partida limpio del stack nuevo es sobre los datos migrados, no sobre la base vacía que había antes.
-2. **Confirmar que el archivado corre:**
+1. **Backup full inmediato** (`make backup-run`, ver [realizar-backup](../backup-restore/realizar-backup.md)): el primer punto de partida limpio del stack nuevo es sobre los datos migrados, no sobre la base vacía que había antes.
+2. **Confirmar que la verificación de integridad corre:**
    ```bash
    make backup-integrity
    ```
-   Esperado: `completed successfully`.
+   Esperado: `backup check listo`.
 3. **Borrar el dump y la copia del filestore del host** — `/tmp/origen.dump` y `/tmp/filestore-origen` son una copia completa de la base de producción sin cifrar.
 4. **No apagar el deployment de origen todavía.** Es el único rollback que hay hasta que la verificación cierre, y sirve de archivo de consulta.

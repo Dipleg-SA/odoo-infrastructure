@@ -4,16 +4,16 @@
 
 Vas a empezar a trabajar en una feature — un módulo nuevo o un cambio sobre uno existente — y necesitás tu propio entorno, aislado de cualquier otro checkout de desarrollo que tengas corriendo. Un checkout por feature, en tu máquina.
 
-Son los **mismos nueve bloques y los mismos comandos** que producción: `capa.sh` resuelve qué servicios trae este stack, así que `make nginx-up` levanta acá un solo contenedor. Dos bloques no corresponden y se saltean.
+Son los **mismos nueve bloques y los mismos comandos** que producción: eso lo dice su entrypoint, así que `make nginx-up` levanta acá un solo contenedor. Dos bloques no corresponden y se saltean.
 
 ## Objetivo
 
-Odoo sirviendo por nginx en loopback, sin túnel, sin certificados, sin backups, y **sin ningún valor que pegar a mano**: los tres secrets se generan.
+Odoo sirviendo por nginx en loopback, sin túnel, sin certificados, sin backups, y **sin ningún valor que pegar a mano**: los dos secrets se generan.
 
 | Bloque | Acá | |
 |---|---|---|
 | 1 · Prerrequisitos | Docker, y el token de git solo si tu manifiesto tiene repos privados | ✓ |
-| 2 · Repositorio | 3 secrets, los tres generados | ✓ |
+| 2 · Repositorio | 2 secrets, los dos generados | ✓ |
 | 3 · Edge | **solo nginx**, en texto plano: ni túnel, ni certificados, ni `dnsmasq` | ✓ |
 | 4 · Database | vacía — la inicializa Odoo en el bloque 6 | ✓ |
 | 5 · Addons | tu rama de trabajo | ✓ |
@@ -30,18 +30,18 @@ nginx está presente aunque no haya TLS — es lo que hace honesto al `proxy_mod
 
 **Objetivo** — tu máquina lista. Dos, y el segundo no siempre.
 
-| Prerrequisito | Runbook | Cuándo |
+| Prerrequisito | Runbook | Te deja |
 |---|---|---|
 | Docker Engine y Compose ≥ 2.20 | [configurar-docker-host](configurar-docker-host.md) | Siempre — solo la instalación; el arranque automático es cosa de un servidor |
 | Token de git de solo lectura | [crear-token-git-lectura](crear-token-git-lectura.md) | Si tu manifiesto de addons trae repos privados. Uno por máquina, no por checkout |
 
-**Nada de Cloudflare, R2 ni ZeptoMail.** Development no tiene túnel, ni certificados, ni backups, ni correo saliente: sus tres secrets se generan solos. Es toda la diferencia con [levantar-produccion § 1](levantar-produccion.md#1--prerrequisitos), donde seis de esos valores salen de cuentas de terceros.
+**Nada de Cloudflare, R2 ni ZeptoMail.** Development no tiene túnel, ni certificados, ni backups, ni correo saliente: sus dos secrets se generan solos. Es toda la diferencia con [levantar-produccion § 1](levantar-produccion.md#1--prerrequisitos), donde cuatro de esos valores salen de cuentas de terceros.
 
 ---
 
 ## 2 · Repositorio
 
-**Objetivo** — checkout propio por feature, con `.env` y los 3 secrets generados y con permisos. Nada levantado todavía.
+**Objetivo** — checkout propio por feature, con `.env` y los 2 secrets generados y con permisos. Nada levantado todavía.
 
 **A mano** — nada que pegar. `.env.development.example` deja cuatro claves y las explica donde se editan; `COMPOSE_FILE` ya viene puesto. La que no se puede olvidar es `COMPOSE_PROJECT_NAME`.
 
@@ -57,18 +57,21 @@ Acá **no** se fija a un tag: el checkout de desarrollo sigue la rama en la que 
 
 ```bash
 cp .env.development.example .env
-${EDITOR:-nano} .env
+nano .env
 ```
 
 **Antes de `secrets-init`, no después:** el script le pregunta a la composición cuáles secrets lleva este stack. El placeholder de `COMPOSE_PROJECT_NAME` es el mismo para todo checkout que no lo cambie, y de ahí salen los volúmenes.
 
 ```bash
 make secrets-init
+```
+
+```bash
 sudo make secrets-perms
 set -a; . ./.env; set +a
 ```
 
-`secrets-init` no imprime ningún pendiente: los tres salen de `openssl`.
+`secrets-init` no imprime ningún pendiente: los dos salen de `openssl`.
 
 ```bash
 make config-init
@@ -80,7 +83,7 @@ Bootstrapea de una sola vez los config reales de nginx y postgres desde su `.exa
 make host-verify
 ```
 
-Chequea la versión de Compose, `.env` sin claves vacías, la identidad declarada del stack y los permisos de los 3 secrets. El arranque automático de Docker sale como fallado si tu máquina no lo tiene habilitado: en una laptop es esperable y no bloquea nada.
+Chequea la versión de Compose, `.env` sin claves vacías, la identidad declarada del stack y los permisos de los 2 secrets. El arranque automático de Docker sale omitido sin systemd, y fallado en un Linux que no lo tenga habilitado: en una máquina de trabajo es esperable y no bloquea nada.
 
 ---
 
@@ -88,7 +91,7 @@ Chequea la versión de Compose, `.env` sin claves vacías, la identidad declarad
 
 **Objetivo** — nginx sirviendo en loopback, en texto plano.
 
-**A mano** — nada: los dos archivos reales de nginx que este stack sí monta (`server-plain.conf` no hace falta, ya viene versionado) ya los bootstrapeó `config-init` en el bloque 2. Los valores del `.example` ya sirven tal cual (rate-limit, CIDR de Docker); no hace falta editarlos salvo que tu red los necesite distintos. `NGINX_MODE` no se declara: `envs/development.yaml` fija la plantilla sin TLS en el entrypoint. Si dependiera de la variable, un `.env` sin la clave montaría la plantilla con TLS y nginx no arrancaría — no hay certificado.
+**A mano** — nada: de los tres archivos de nginx que este stack monta, los dos reales —`00-http.conf` y `odoo.locations`— ya los bootstrapeó `config-init` en el bloque 2, y `server-plain.conf` viene versionado. Los valores del `.example` ya sirven tal cual (rate-limit, CIDR de Docker); no hace falta editarlos salvo que tu red los necesite distintos. `NGINX_MODE` no se declara: `envs/development.yaml` fija la plantilla sin TLS en el entrypoint. Si dependiera de la variable, un `.env` sin la clave montaría la plantilla con TLS y nginx no arrancaría — no hay certificado.
 
 ```bash
 make nginx-up
@@ -100,7 +103,7 @@ Sin `make cert-issue` adelante, que es lo que sí lleva producción: este stack 
 make nginx-verify
 ```
 
-Omite el certificado, el `server_name` y el 443, los tres derivados de que este stack sirve en texto plano.
+Omite el `server_name` y el 443, los dos derivados de que este stack sirve en texto plano y no publica ese puerto. El certificado no aparece acá porque no es cosa de `nginx-verify` en ningún entorno: es `certbot-verify`, y development no lo trae.
 
 ---
 
@@ -112,10 +115,13 @@ Omite el certificado, el `server_name` y el 443, los tres derivados de que este 
 
 ```bash
 make postgres-up
+```
+
+```bash
 make postgres-verify
 ```
 
-Exige el servicio `healthy`, que acepte conexiones y que las de Odoo entren en `max_connections`.
+Exige el servicio `healthy`, que acepte conexiones, los logs sin errores de permisos, que el puerto no esté publicado, y que las conexiones de Odoo entren en `max_connections`.
 
 ---
 
@@ -126,7 +132,7 @@ Exige el servicio `healthy`, que acepte conexiones y que las de Odoo entren en `
 **A mano** — completar `addons/addons.txt`, que `config-init` ya bootstrapeó en el bloque 2. Si todavía no declaraste ningún repo propio, ver [crear-fork](../modulos/crear-fork.md).
 
 ```bash
-${EDITOR:-nano} addons/addons.txt
+nano addons/addons.txt
 ```
 
 ```bash
@@ -137,7 +143,7 @@ make addons-sync && make build
 make addons
 ```
 
-Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, todas en `limpio`.
+Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, todas en `limpio`. Un `huérfano: categoría/nombre` al final es un directorio que quedó en disco después de sacarlo del manifiesto.
 
 ---
 
@@ -145,7 +151,7 @@ Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, tod
 
 **Objetivo** — Odoo sirviendo por nginx en loopback.
 
-**A mano** — nada: `odoo.conf` es un archivo versionado, sin nada que bootstrapear ni editar. `ODOO_DISABLE_SMTP=1`, forzado en `compose.dev.yaml`, deja `smtp_server` vacío pase lo que pase en `.env`.
+**A mano** — nada: `odoo.conf` es un archivo versionado, sin nada que bootstrapear ni editar. `ODOO_DISABLE_SMTP=1`, forzado en `envs/development.yaml`, deja `smtp_server` vacío pase lo que pase en `.env`.
 
 ```bash
 make odoo-up && make odoo-logs
@@ -183,6 +189,9 @@ make up
 
 ```bash
 make verify
+```
+
+```bash
 curl -s -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:${HTTP_PORT}/web/login"
 ```
 
@@ -199,7 +208,5 @@ Tiene que haber un juego de volúmenes por nombre de proyecto —`development-sa
 - [ ] `make verify` sale con exit `0`
 - [ ] El login responde `200` en el puerto de este checkout
 - [ ] Los volúmenes llevan el nombre de este checkout y no los comparte otro
-
----
 
 De acá en más, el trabajo real sigue en [crear-modulo](../modulos/crear-modulo.md) o [actualizar-modulo](../modulos/actualizar-modulo.md), y la validación de lo que hiciste en [validar-modulo-desarrollo](../validacion/validar-modulo-desarrollo.md).

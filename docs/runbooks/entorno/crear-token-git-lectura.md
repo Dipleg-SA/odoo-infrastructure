@@ -34,10 +34,10 @@ read -rs GIT_TOKEN && printf 'https://%s:%s@%s\n' "$GIT_USER" "$GIT_TOKEN" "$GIT
 Todavía no hay manifiesto de addons que sincronizar en un checkout nuevo — la prueba real es `make addons-sync` una vez clonado el repositorio (ver [levantar-produccion](levantar-produccion.md) o [levantar-desarrollo](levantar-desarrollo.md)). Por ahora, alcanza con confirmar que el archivo quedó bien armado:
 
 ```bash
-grep "$GIT_HOST" ~/.git-credentials
+grep "$GIT_HOST" ~/.git-credentials | sed -E 's#:[^:@]+@#:***@#'
 ```
 
-Tiene que mostrar la línea con tu usuario — nunca el token en texto plano en ningún otro archivo ni en el historial de la shell (por eso el `read -rs`).
+Tiene que mostrar la línea con tu usuario y el token enmascarado — nunca en texto plano, ni acá en pantalla ni en ningún otro archivo ni en el historial de la shell (por eso el `read -rs` y el `sed` de arriba).
 
 ---
 

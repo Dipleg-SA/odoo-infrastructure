@@ -8,19 +8,19 @@ Los tres entornos se levantan con los **mismos bloques y los mismos comandos**. 
 
 ## Objetivo
 
-Los once stacks corriendo, verificados uno por uno, con el certificado real, los backups probados una vez de punta a punta y las alertas llegando por mail. El deploy termina en el primer dato que carga un usuario — todo lo anterior es descartable.
+Los once stacks resueltos, cada uno verificado, con el certificado real, los backups probados una vez de punta a punta y las alertas llegando por mail. El deploy termina en el primer dato que carga un usuario — todo lo anterior es descartable.
 
-| Bloque | Deja | Prod | Stag | Dev |
-|---|---|:-:|:-:|:-:|
-| 1 · Prerrequisitos | cuentas de terceros y el host listo | 6 | 1 | 2 |
-| 2 · Repositorio | `.env` y los secrets cargados | 11 | 8 | 3 |
-| 3 · Edge | certificado, túnel y DNS de la LAN | ✓ | sin dnsmasq | solo nginx |
-| 4 · Database | la base corriendo y ya respaldándose | ✓ | sembrada por restore | vacía |
-| 5 · Addons | el árbol de módulos y la imagen | ✓ | ✓ | ✓ |
-| 6 · Odoo | el sitio sirviendo por el hostname | ✓ | ✓ | ✓ |
-| 7 · Backup | las dos mitades corriendo y avisando | ✓ | — | — |
-| 8 · Monitoring | métricas, logs y las siete alertas | ✓ | — | — |
-| 9 · Cierre | el stack convergiendo de una sola vez | ✓ | ✓ | ✓ |
+| Bloque | Acá | |
+|---|---|---|
+| 1 · Prerrequisitos | cuentas de terceros y el host listo | ✓ |
+| 2 · Repositorio | `.env` y los 9 secrets cargados | ✓ |
+| 3 · Edge | certificado, túnel y DNS de la LAN | ✓ |
+| 4 · Database | la base corriendo y ya respaldándose | ✓ |
+| 5 · Addons | el árbol de módulos y la imagen | ✓ |
+| 6 · Odoo | el sitio sirviendo por el hostname | ✓ |
+| 7 · Backup | las dos mitades corriendo y avisando | ✓ |
+| 8 · Monitoring | métricas, logs y las siete alertas | ✓ |
+| 9 · Cierre | el stack convergiendo de una sola vez | ✓ |
 
 El orden no es negociable: cada bloque depende de que el anterior haya cerrado, y las tres inversiones que parecen raras —el certificado antes que el proxy, el archivado antes del primer dato, los addons antes que Odoo— están explicadas donde ocurren.
 
@@ -41,7 +41,7 @@ El orden no es negociable: cada bloque depende de que el anterior haya cerrado, 
 | Token de git de solo lectura | [crear-token-git-lectura](crear-token-git-lectura.md) | `~/.git-credentials` del servidor |
 | Docker Engine y Compose, habilitados al arranque | [configurar-docker-host](configurar-docker-host.md) | El host listo para correr el stack |
 
-Los seis secrets con `CAMBIAR` del bloque 2 salen todos de esta tabla. `make host-verify` confirma la última fila y que cada secret tenga un valor cargado, pero no que ese valor sirva: la zona y ZeptoMail se prueban contra el tercero en su propio runbook, y el token del Tunnel y la clave de R2 recién en los bloques 3 y 4, la primera vez que algo los usa.
+Los cinco secrets con `CAMBIAR` del bloque 2 salen todos de esta tabla. `make host-verify` confirma la última fila y que cada secret tenga un valor cargado, pero no que ese valor sirva: la zona y ZeptoMail se prueban contra el tercero en su propio runbook, y el token del Tunnel y la clave de R2 recién en los bloques 3 y 4, la primera vez que algo los usa.
 
 Dos cosas que parecen prerrequisitos y no lo son, porque necesitan el repositorio clonado: la **rotación de logs del daemon**, que es `sudo make host-init` en el bloque 2 —antes del primer contenedor—, y el **DNS/DHCP de la LAN**, que va en el bloque 3 ([configurar-dhcp-dns-lan](configurar-dhcp-dns-lan.md)). De la segunda conviene traer decidida la IP LAN que va a reservar el router.
 
@@ -51,7 +51,7 @@ Dos cosas que parecen prerrequisitos y no lo son, porque necesitan el repositori
 
 **Objetivo** — el repo clonado en el último release, con `.env` y los 9 secrets cargados y validados, y el daemon de Docker ya rotando logs. Nada levantado todavía.
 
-**A mano** — `.env.production.example` deja seis claves vacías y explica cada una donde se edita; no hay una segunda lista acá. Dos salen directo de los prerrequisitos (`SMTP_USER`, `ALERT_EMAIL_FROM`); `LOCAL_IP` sale del segundo comando de abajo; `PUBLIC_HOSTNAME`, `SMTP_HOST` y `ALERT_EMAIL_TO` se completan a mano. Dos trampas: `LOCAL_IP` tiene que ser una IP real de una interfaz existente —`dnsmasq` bindea exactamente ahí y si no, queda `unhealthy`— y `SMTP_HOST` es la que más se olvida, porque ningún prerrequisito la deja anotada. Ninguna puede quedar vacía **ni ausente**: `host-verify` cruza contra `.env.production.example` y marca las dos cosas — Compose interpola una variable vacía sin fallar y el síntoma aparece capas después. El bucket y el endpoint de R2 **no** van acá: se editan directo en `r2.env`, más abajo en este mismo bloque, apenas `config-init` lo bootstrapea.
+**A mano** — `.env.production.example` deja cinco claves vacías y explica cada una donde se edita; no hay una segunda lista acá. Dos salen directo de los prerrequisitos (`SMTP_USER`, `ALERT_EMAIL_FROM`); `LOCAL_IP` sale del segundo comando de abajo; `PUBLIC_HOSTNAME` y `ALERT_EMAIL_TO` se completan a mano. `SMTP_HOST` ya viene cargada con el host fijo de ZeptoMail —no hay que tocarla—. La trampa real es `LOCAL_IP`: tiene que ser una IP real de una interfaz existente —`dnsmasq` bindea exactamente ahí y si no, queda `unhealthy`—. Ninguna puede quedar vacía **ni ausente**: `host-verify` cruza contra `.env.production.example` y marca las dos cosas — Compose interpola una variable vacía sin fallar y el síntoma aparece capas después. El bucket y el endpoint de R2 **no** van acá: se editan directo en `r2.env`, más abajo en este mismo bloque, apenas `config-init` lo bootstrapea.
 
 `secrets-init` deja **9 archivos**: 4 generados que no se tocan nunca y 5 con el marcador `CAMBIAR`, que se llenan con los valores de los prerrequisitos. Cuántos son sale de la composición, no de esta lista — un stack sin observabilidad declara menos. Tres detalles de formato:
 
@@ -101,9 +101,12 @@ Bootstrapea de una sola vez los config reales de los stacks que todavía los nec
 
 ```bash
 nano stacks/nginx/config/server-tls.conf       # TU_DOMINIO → PUBLIC_HOSTNAME (4 apariciones)
+# Solo si este stack lleva LAN (COMPOSE_PROFILES=lan en tu .env):
 nano stacks/dnsmasq/config/dnsmasq.conf        # TU_DOMINIO → PUBLIC_HOSTNAME, TU_IP_LOCAL → LOCAL_IP
 nano stacks/backup/config/r2.env               # TU_ENDPOINT y TU_BUCKET, del prerrequisito de R2
 ```
+
+Sin LAN activo, `dnsmasq.conf` no lo bootstrapeó `config-init` recién —`servicios_activos` lo filtra por su `profiles: [lan]`— y ese `nano` abriría un archivo vacío en vez de la plantilla.
 
 Todos los valores son los mismos que ya cargaste en `.env`, salvo los de R2: esos van directo a `r2.env`, nunca a `.env` (ver bloque 1).
 
@@ -148,7 +151,7 @@ make cloudflared-verify
 make dnsmasq-verify
 ```
 
-`nginx-verify` cubre el servicio `healthy`, que la config renderizada no tenga variables sin sustituir, que el `server_name` sea tu hostname, que el `proxy_pass` vaya por variable con el resolver de Docker declarado, el log de nginx sin errores y los binds. Los días que le quedan al certificado y el timer de renovación los cubre `certbot-verify`, aparte; las conexiones del Tunnel y el token de Cloudflare los cubre `cloudflared-verify` — nginx no sabe nada de ninguno de los dos.
+`nginx-verify` cubre el servicio `healthy`, que la config renderizada no tenga variables sin sustituir, que el `server_name` sea tu hostname, que el `proxy_pass` vaya por variable con el resolver de Docker declarado, las tres rutas de Odoo y que la cadena nginx → Odoo responda de verdad, el log de nginx sin errores y los binds. Los días que le quedan al certificado, el timer de renovación y el token de la API de Cloudflare los cubre `certbot-verify`, aparte; las conexiones del Tunnel las cubre `cloudflared-verify` — nginx no sabe nada de ninguno de los dos.
 
 El timer todavía no existe: lo instala `sudo make timers-install` en el bloque 7, junto con los de backup. Es el único chequeo de `certbot-verify` que queda rojo hasta entonces.
 
@@ -160,25 +163,19 @@ nginx no publica ninguna UI: su estado se lee del log (JSON, `make nginx-logs`) 
 
 **Objetivo** — la base corriendo, con su config real y su presupuesto de conexiones coherente.
 
-**A mano** — nada: `postgresql.conf` ya lo bootstrapeó `config-init` en el bloque 2, y no necesita edición. Los valores de tuning son ratios sobre el
-`mem_limit` del contenedor, no sobre la RAM del host. Si bajás ese cap, revisá la tabla
-entera —se calcularon juntos—, no la fila que parece afectada.
+**A mano** — nada: `postgresql.conf` ya lo bootstrapeó `config-init` en el bloque 2, y no necesita edición. Los valores de tuning son ratios sobre el `mem_limit` del contenedor, no sobre la RAM del host. Si bajás ese cap, revisá la tabla entera —se calcularon juntos—, no la fila que parece afectada.
 
 ```bash
 make postgres-up
 ```
 
-El rol `odoo` y su password son **definitivos**: el bloque 6 reusa esa misma credencial
-sin rotarla.
+El rol `odoo` y su password son **definitivos**: el bloque 6 reusa esa misma credencial sin rotarla.
 
 ```bash
 make postgres-verify
 ```
 
-Cubre el servicio `healthy`, que acepte conexiones, los logs sin errores de permisos,
-que el puerto no esté publicado, y que las conexiones que Odoo puede abrir —`db_maxconn`
-por sus procesos— entren en `max_connections`. **Sin pooler, pasarse no encola: Postgres
-rechaza.** Los dos valores viven en archivos de herramientas distintas y nada más los ata.
+Cubre el servicio `healthy`, que acepte conexiones, los logs sin errores de permisos, que el puerto no esté publicado, y que las conexiones que Odoo puede abrir —`db_maxconn` por sus procesos— entren en `max_connections`. **Sin pooler, pasarse no encola: Postgres rechaza.** Los dos valores viven en archivos de herramientas distintas y nada más los ata.
 
 ---
 
@@ -204,7 +201,7 @@ El token de git de solo lectura ya tiene que estar en `~/.git-credentials` — l
 make addons
 ```
 
-Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, todas en `limpio`. Un `(sin worktree)` o un `sucio` es un sync incompleto. Si un repo privado falló con `Repository not found` o `Authentication failed`, al token le faltan permisos: alcanza con lectura de contenidos sobre tu organización. Es un chequeo visual — `make odoo-verify` lo vuelve a validar mecánicamente en el bloque siguiente.
+Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, todas en `limpio`. Un `(sin worktree)` o un `sucio` es un sync incompleto. Si un repo privado falló con `Repository not found` o `Authentication failed`, al token le faltan permisos: alcanza con lectura de contenidos sobre tu organización. Un `huérfano: categoría/nombre` al final es un directorio que quedó en disco después de sacarlo del manifiesto — `addons-sync` no lo borra solo. Es un chequeo visual — `make odoo-verify` lo vuelve a validar mecánicamente en el bloque siguiente.
 
 ---
 
@@ -228,7 +225,7 @@ El entrypoint detecta que la base está vacía y corre `-i base --stop-after-ini
 make odoo-verify
 ```
 
-Cubre el servicio `healthy`, los logs sin errores de permisos, Odoo respondiendo en su `:8069`, los worktrees limpios, los módulos server-wide presentes en el árbol, las tres rutas en la config renderizada de nginx, el gestor de bases deshabilitado, los puertos sin publicar, y el certificado que se está sirviendo.
+Cubre el servicio `healthy`, los logs sin errores de permisos, `smtp_server` cargado de verdad en el conf runtime, Odoo respondiendo en su `:8069`, los worktrees limpios, los módulos server-wide presentes en el árbol, la rama de addons coherente con la versión de la imagen, las categorías coherentes entre `addons.sh` y el `addons_path`, y los puertos sin publicar. Las tres rutas de Odoo en nginx las cubre `nginx-verify`, en el bloque 3 — no este comando.
 
 **Y el chatter, con dos sesiones abiertas:** mandá un mensaje y confirmá que aparece solo, sin recargar. Prueba que nginx rutea `/websocket` al worker gevent (`8072`) y que el `LISTEN/NOTIFY` del bus funciona contra la conexión directa a Postgres. Es lo único de este bloque que no se puede automatizar; la cadena pública y el rate-limit están en el apéndice.
 
@@ -238,9 +235,7 @@ Cubre el servicio `healthy`, los logs sin errores de permisos, Odoo respondiendo
 
 **Objetivo** — el backup corriendo, probado una vez de punta a punta, y avisando por mail si falla.
 
-**A mano** — nada: `r2.env` ya lo bootstrapeaste y editaste en el bloque 2. Este bloque va
-después del 6 porque su verificación exige un snapshot, y un snapshot exige que exista
-un filestore.
+**A mano** — nada: `r2.env` ya lo bootstrapeaste y editaste en el bloque 2. Este bloque va después del 6 porque su verificación exige un snapshot, y un snapshot exige que exista un filestore.
 
 ```bash
 make backup-up
@@ -250,31 +245,22 @@ sudo make timers-install
 
 > **Nunca `restic init --force`.** Sobre un repositorio con backups adentro los deja inaccesibles. No existe el caso en el que haga falta.
 
-`timers-install` deriva de la composición qué units le corresponden a **este** stack —el
-backup diario, la verificación mensual de integridad y la renovación del certificado— y
-las instala con el nombre del proyecto adelante (`production-backup-daily.timer`),
-inyectando la ruta absoluta del checkout. Con eso, un segundo stack en el mismo servidor
-instala las suyas sin pisar estas. Incluye la unit plantilla de aviso: sin ella, una
-corrida que falle no avisa.
+`timers-install` deriva de la composición qué units le corresponden a **este** stack —el backup diario, la verificación mensual de integridad y la renovación del certificado— y las instala con el nombre del proyecto adelante (`production-backup-daily.timer`), inyectando la ruta absoluta del checkout. Con eso, un segundo stack en el mismo servidor instala las suyas sin pisar estas. Incluye la unit plantilla de aviso: sin ella, una corrida que falle no avisa.
 
-**En prueba ese comando no instala los timers de backup**, y eso es estructural: su
-entrypoint le pone `profiles: [restore]` al stack, así que queda fuera de la composición
-que `timers.sh` consulta.
+**En prueba ese comando no instala los timers de backup**, y eso es estructural: su entrypoint le pone `profiles: [restore]` al stack, así que queda fuera de la composición que `timers.sh` consulta.
 
 ```bash
 make backup-run
 ```
 
-Hace el dump de la base, lo mete **en el mismo snapshot** que el filestore, y aplica la
-retención GFS con `forget --prune`. Que las dos mitades vayan juntas es lo que hace que
-la consistencia sea una propiedad del backup y no un procedimiento que hay que recordar.
+Hace el dump de la base, lo mete **en el mismo snapshot** que el filestore, y aplica la retención GFS con `forget --prune`. Que las dos mitades vayan juntas es lo que hace que la consistencia sea una propiedad del backup y no un procedimiento que hay que recordar.
 
 ```bash
 make backup-verify
 sudo make notify-test
 ```
 
-`backup-verify` cubre que el repositorio sea alcanzable con snapshots de este stack, que el último traiga **las dos mitades** del estado, el registro de addons, y los dos timers activos con el nombre de este checkout. Si el contenedor sale `health: starting` **no es un fallo**: con `interval: 1h` el primer chequeo que cuenta cae recién a la hora. **No lo recrees para forzarlo** — le cambiarías el hostname, y con eso el grupo `(host, paths)` por el que restic agrupa la retención.
+`backup-verify` cubre el servicio `healthy`, que `r2.env` no tenga el placeholder sin reemplazar, que el endpoint termine en `.r2.cloudflarestorage.com`, que el repositorio sea alcanzable con snapshots de este stack, que el último traiga **las dos mitades** del estado, el registro de addons, y los dos timers activos con el nombre de este checkout. Si el contenedor sale `health: starting` **no es un fallo**: con `interval: 1h` el primer chequeo que cuenta cae recién a la hora. **No lo recrees para forzarlo** — le cambiarías el hostname, y con eso el grupo `(host, paths)` por el que restic agrupa la retención.
 
 `notify-test` dispara la unit de aviso de verdad. Tiene que dar `Result=success` **y llegar el mail**.
 
@@ -297,9 +283,12 @@ make prometheus-up && make loki-up && make grafana-up && make alloy-up
 
 ```bash
 make prometheus-verify
+make loki-verify
+make grafana-verify
+make alloy-verify
 ```
 
-Cubre los cuatro servicios, que ningún target de Prometheus esté caído, las tres familias de métricas que empuja Alloy, que Loki reciba logs por contenedor, los binds, y que la rotación de logs del daemon haya quedado aplicada al contenedor de Odoo.
+Cuatro comandos porque cada stack es dueño de lo suyo. `prometheus-verify` cubre el servicio `healthy`, que ningún target esté caído, y las tres familias de métricas que empuja Alloy. `loki-verify` cubre que reciba logs de verdad, etiquetados por contenedor —consultado desde Prometheus, porque Loki no publica puerto—. `grafana-verify` cubre el servicio `healthy`, **las siete reglas de alerting realmente cargadas** —lo que promete el Objetivo de este bloque— y que SMTP y el destinatario no hayan quedado con alguna clave vacía. `alloy-verify` cubre que sus componentes internos resuelvan de verdad —`alloy validate` no alcanza, acepta referencias inexistentes con exit 0— y que la alerta de backup avise antes de que el healthcheck se ponga rojo. Los binds de los cuatro se verifican en su propio script.
 
 `loki` es el único servicio sin `(healthy)` y es correcto: su imagen es distroless estricta. Su caída la cubre `up == 0` en Prometheus, que lo scrapea directo.
 
@@ -321,7 +310,7 @@ Los bloques anteriores levantaron capa por capa. Este `make up` es la primera ve
 make verify
 ```
 
-Tienen que quedar **once servicios** y **ninguno** del perfil `restore`.
+Tienen que quedar corriendo **nueve servicios** —diez si tu `.env` tiene LAN activo— y **ninguno** del perfil `restore`. `certbot` no cuenta: corre con `--rm` y nunca queda arriba, así que sumaría un stack más al total de once pero no un servicio corriendo.
 
 - [ ] `make verify` sale con exit `0`
 - [ ] La contraseña de `admin` ya no es `admin`
@@ -340,7 +329,7 @@ A partir de acá, la operación normal está repartida en [operacion/](../operac
 
 ## Apéndice — lo que no se corre en el servidor
 
-Cuatro chequeos que el servidor no puede hacerse a sí mismo. Van juntos para no ir y volver de máquina cuatro veces: el primer grupo desde otro equipo de la LAN, el segundo desde fuera de la LAN (datos móviles alcanza), el tercero desde la máquina con la que administrás.
+Tres chequeos que el servidor no puede hacerse a sí mismo, más uno que es al revés. Los tres primeros van juntos para no ir y volver de máquina: el primer grupo desde otro equipo de la LAN, el segundo desde fuera de la LAN (datos móviles alcanza), el tercero desde la máquina con la que administrás. El cuarto —el rate-limit, más abajo— hay que corrérselo al servidor a sí mismo, porque desde afuera la latencia de Cloudflare esconde el corte.
 
 ```bash
 HOST_PUB='el-hostname-publico'; SRV_LAN='ip-lan-del-servidor'

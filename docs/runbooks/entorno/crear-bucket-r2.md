@@ -6,7 +6,7 @@ Antes de clonar el repositorio — es la credencial más sensible del stack: abr
 
 ## Objetivo
 
-Un bucket R2 nuevo y vacío, un token `Object Read & Write` acotado a él, y las dos passphrases de cifrado generadas y guardadas — nada de esto se puede recuperar después si se pierde.
+Un bucket R2 nuevo y vacío, un token `Object Read & Write` acotado a él, y la passphrase de cifrado de restic generada y guardada — nada de esto se puede recuperar después si se pierde.
 
 ## A mano
 
@@ -16,20 +16,16 @@ Un bucket R2 nuevo y vacío, un token `Object Read & Write` acotado a él, y las
 
 ## Comandos
 
-Las dos passphrases de cifrado se inventan acá, no en R2. Mismo comando, **dos valores distintos**: cifran repositorios separados y terminan en archivos separados.
+La passphrase de cifrado de restic se inventa acá, no en R2.
 
 ```bash
-openssl rand -hex 32
-```
-
-```bash
-echo "# 2 → Passphrase de restic, a secrets/restic_password (valor distinto)"
+echo "# → Passphrase de restic, a secrets/restic_password"
 openssl rand -hex 32
 ```
 
 Hex y no base64: los `/ + =` rompen a cualquier consumidor que arme una URI con la credencial adentro.
 
-> **Al gestor de contraseñas ahora, antes de seguir.** Perderlas deja el repositorio de backups irrecuperable — no hay procedimiento. Y no las dejes solo en el servidor: si el servidor es lo que se perdió, ahí no las vas a poder buscar. Mismo trato para el token de R2, que puede vaciar el bucket (R2 no tiene versioning). Una vez guardadas, cerrá la terminal: a diferencia de los tokens, estas dos sí quedan impresas en el scrollback.
+> **Al gestor de contraseñas ahora, antes de seguir.** Perderla deja el repositorio de backups irrecuperable — no hay procedimiento. Y no la dejes solo en el servidor: si el servidor es lo que se perdió, ahí no la vas a poder buscar. Mismo trato para el token de R2, que puede vaciar el bucket (R2 no tiene versioning). Una vez guardada, cerrá la terminal: a diferencia de los tokens, esta sí queda impresa en el scrollback.
 
 ## Verificación
 
@@ -37,7 +33,7 @@ No hay forma de probar la clave de R2 todavía — se prueba por primera vez con
 
 - [ ] El bucket está vacío y es nuevo — no reusado de otro deployment
 - [ ] El token es `Object Read & Write`, acotado a este bucket, no a la cuenta entera
-- [ ] Las dos passphrases y el token de R2 ya están en el gestor de contraseñas, fuera del servidor
+- [ ] La passphrase y el token de R2 ya están en el gestor de contraseñas, fuera del servidor
 
 ---
 

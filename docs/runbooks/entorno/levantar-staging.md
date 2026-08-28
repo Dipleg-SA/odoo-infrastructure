@@ -4,7 +4,7 @@
 
 Puesta en marcha del segundo stack, en el mismo servidor que producción — necesario antes de validar cualquier cambio de módulo (ver [actualizar-modulo](../modulos/actualizar-modulo.md)) o de correr el simulacro semestral de restore. Asume producción ya operativa: si este es el primer stack del servidor, el procedimiento es [levantar-produccion](levantar-produccion.md) entero.
 
-Son los **mismos nueve bloques y los mismos comandos** que producción: `capa.sh` resuelve qué servicios trae este stack, así que `make nginx-up` levanta acá dos contenedores en vez de tres. Dos bloques no corresponden y se saltean.
+Son los **mismos nueve bloques y los mismos comandos** que producción: eso lo dice su entrypoint, así que `make nginx-up` levanta acá dos contenedores en vez de tres. Dos bloques no corresponden y se saltean.
 
 ## Objetivo
 
@@ -62,6 +62,8 @@ borrala: `make host-verify` marca las vacías y las ausentes.
 > `timers-install` no instala los timers de backup. La segunda capa es la credencial:
 > la de R2 de este checkout tiene que ser **de solo lectura**.
 
+| Origen | Secrets | |
+|---|---|---|
 | Generados | `postgres_password` · `odoo_admin_password` | `secrets-init` los saca de `openssl`; no se tocan |
 | Copiados de producción | `restic_password` · `restic_r2_credentials` · `zeptomail_smtp_password` | Los dos primeros abren **su** repositorio: sin los mismos valores no hay nada que restaurar, y el de R2 en versión **solo lectura**. El de ZeptoMail es la misma cuenta — no hace falta un Mail Agent propio para prueba |
 | De Cloudflare | `cloudflare_api_token` · `cloudflare_tunnel_token` | El API token puede ser el mismo de producción — es la misma zona. El del Tunnel es el del Tunnel del bloque 1 |
@@ -135,7 +137,7 @@ make certbot-verify
 make cloudflared-verify
 ```
 
-`nginx-verify` cubre el servicio `healthy`, que `server-tls.conf` no tenga el placeholder de `.example` sin reemplazar, el `server_name` y el log de nginx sin errores. Los días que le quedan al certificado y el timer de renovación recién instalado los cubre `certbot-verify`, aparte; las conexiones del Tunnel y el token de Cloudflare los cubre `cloudflared-verify` — nginx no sabe nada de ninguno de los dos. `dnsmasq` sale como omitido: este stack no lo trae.
+`nginx-verify` cubre el servicio `healthy`, que `server-tls.conf` no tenga el placeholder de `.example` sin reemplazar, el `server_name`, las tres rutas de Odoo, que la cadena nginx → Odoo responda de verdad, y el log de nginx sin errores. Los días que le quedan al certificado, el timer de renovación recién instalado y el token de la API de Cloudflare los cubre `certbot-verify`, aparte; las conexiones del Tunnel las cubre `cloudflared-verify` — nginx no sabe nada de ninguno de los dos. `dnsmasq` sale como omitido: este stack no lo trae.
 
 ---
 
@@ -150,19 +152,15 @@ make postgres-up
 make restore
 ```
 
-`restore` trae la base y el filestore del último snapshot de producción, en ese orden:
-primero el filestore, después la base. Al revés dejaría filas apuntando a adjuntos que
-no existen, que es destructivo y silencioso.
+`restore` trae el filestore y la base del último snapshot de producción, en ese orden: primero el filestore, después la base. Al revés dejaría filas apuntando a adjuntos que no existen, que es destructivo y silencioso.
 
-No hace falta reaplicar ninguna contraseña después: el dump es **lógico**, así que trae
-los datos y no los roles del cluster de origen. El rol `odoo` de este checkout conserva
-la clave que `secrets-init` le generó.
+No hace falta reaplicar ninguna contraseña después: el dump es **lógico**, así que trae los datos y no los roles del cluster de origen. El rol `odoo` de este checkout conserva la clave que `secrets-init` le generó.
 
 ```bash
 make postgres-verify
 ```
 
-Igual que en producción: el servicio `healthy`, ningún puerto publicado, y las conexiones de Odoo dentro de `max_connections`.
+Igual que en producción: el servicio `healthy`, que acepte conexiones, los logs sin errores de permisos, ningún puerto publicado, y las conexiones de Odoo dentro de `max_connections`.
 
 ---
 
@@ -184,7 +182,7 @@ make addons-sync && make build
 make addons
 ```
 
-Encabeza con la rama declarada (`<versión>-stag`) y sigue con una fila por repo del manifiesto, todas en `limpio`.
+Encabeza con la rama declarada (`<versión>-stag`) y sigue con una fila por repo del manifiesto, todas en `limpio`. Un `huérfano: categoría/nombre` al final es un directorio que quedó en disco después de sacarlo del manifiesto.
 
 ---
 
@@ -198,9 +196,13 @@ Encabeza con la rama declarada (`<versión>-stag`) y sigue con una fila por repo
 make odoo-up && make odoo-logs
 ```
 
+Sin `-i base` de por medio, el entrypoint oficial arranca directo. Esperá igual `HTTP service (werkzeug) running` y cortá los logs con Ctrl-C.
+
 ```bash
 make odoo-verify
 ```
+
+Igual que en producción, salvo `smtp_server`: `ODOO_DISABLE_SMTP=1` lo fuerza vacío, así que ese chequeo sale omitido, no en verde.
 
 ---
 
