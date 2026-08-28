@@ -49,7 +49,9 @@ base creció lo suficiente como para reconsiderar la estrategia de snapshot.
 make backup-verify
 ```
 
-Cubre que el repositorio sea alcanzable y tenga snapshots de **este** stack, que el
-último traiga **las dos mitades** (`/data/dump` y `/data/odoo` — un snapshot con el
-filestore y sin la base restaura una base que no existe), el registro de addons, y los
-dos timers activos con el nombre de este checkout.
+Cubre el servicio `healthy`, que `r2.env` no tenga el placeholder sin reemplazar, que
+el endpoint termine en `.r2.cloudflarestorage.com`, que el repositorio sea alcanzable
+y tenga snapshots de **este** stack, que el último traiga **las dos mitades**
+(`/data/dump` y `/data/odoo` — un snapshot con el filestore y sin la base restaura una
+base que no existe), el registro de addons, y los dos timers activos con el nombre de
+este checkout.
