@@ -3,16 +3,23 @@
 # terminal, o si NO_COLOR está seteada (no-color.org) aunque sí lo sea.
 
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
-  UI_BOLD=$'\033[1m'; UI_CYAN=$'\033[36m'; UI_GREEN=$'\033[32m'
+  UI_BOLD=$'\033[1m'; UI_UNDERLINE=$'\033[4m'; UI_CYAN=$'\033[36m'; UI_GREEN=$'\033[32m'
   UI_RED=$'\033[31m'; UI_YELLOW=$'\033[33m'; UI_DIM=$'\033[2m'; UI_RESET=$'\033[0m'
 else
-  UI_BOLD=''; UI_CYAN=''; UI_GREEN=''; UI_RED=''; UI_YELLOW=''; UI_DIM=''; UI_RESET=''
+  UI_BOLD=''; UI_UNDERLINE=''; UI_CYAN=''; UI_GREEN=''; UI_RED=''; UI_YELLOW=''; UI_DIM=''; UI_RESET=''
 fi
 
 ui_title() { printf '\n%s%s%s\n' "$UI_BOLD" "$1" "$UI_RESET"; }
 ui_start() { printf '%s▶%s %s\n' "$UI_CYAN" "$UI_RESET" "$1"; }
 ui_ok()    { printf '%s✓%s %s\n' "$UI_GREEN" "$UI_RESET" "$1"; }
 ui_skip()  { printf '%s–%s %s\n' "$UI_DIM" "$UI_RESET" "$1"; }
+
+# --- Script de varios pasos ---
+# Título destacado (▶ + negrita/subrayado) y pasos numerados, para scripts que
+# narran un plan explícito en vez de una sola acción — hoy solo secrets-init.sh.
+
+ui_plan_start() { printf '\n%s▶%s %s%s%s\n\n' "$UI_CYAN" "$UI_RESET" "$UI_BOLD$UI_UNDERLINE" "$1" "$UI_RESET"; }
+ui_step()       { printf '%s. %s\n\n' "$1" "$2"; }
 
 ui_bad() {
   printf '%s✗%s %s\n' "$UI_RED" "$UI_RESET" "$1"

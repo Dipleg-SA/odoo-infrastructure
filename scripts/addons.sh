@@ -162,7 +162,8 @@ sync_repo() {
 
 cmd_sync() {
   local url category invalid=0 viejo
-  ui_start "addons sync"
+  ui_plan_start "addons sync"
+  ui_step 1 "Sincronización de los addons declarados en $MANIFEST sobre la rama $ADDONS_BRANCH."
   require_manifest
 
   # --- Manifiesto sin entradas ---
@@ -207,12 +208,16 @@ cmd_sync() {
     sync_repo "$url" "$category" || true
   done < <(manifest_entries)
 
+  echo
+  ui_step 2 "Finalizado."
   if [ "$FAILED" -ne 0 ]; then
     ui_bad "addons sync terminó con errores" "ver arriba" >&2
+    echo
     exit 1
   fi
 
   ui_ok "addons sync listo — $(manifest_entries | wc -l | tr -d ' ') repositorio(s) sincronizado(s)"
+  echo
 }
 
 # --- Estado de un worktree ---

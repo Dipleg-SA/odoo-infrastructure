@@ -5,8 +5,12 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+. scripts/lib/ui.sh
 
 DB="${1:-odoo}"
+
+ui_plan_start "integrity-check"
+ui_step 1 "Verificación de que cada adjunto referenciado en ir_attachment exista en el filestore de '$DB'."
 
 # --- Adjuntos que la base referencia ---
 # store_fname es NULL para los que Odoo guarda dentro de la propia base.
@@ -14,6 +18,7 @@ DB="${1:-odoo}"
 # El recorrido va por el contenedor de odoo, no por el de backup: ese es exclusivo
 # de producción, y este chequeo es justo el que quiere un simulacro en staging.
 
+ec=0
 docker compose exec -T -u postgres postgres \
   psql -U odoo -d "$DB" -tAc \
   "select store_fname from ir_attachment where store_fname is not null and store_fname <> '';" \
@@ -26,4 +31,11 @@ docker compose exec -T -u postgres postgres \
   done
   echo "referenciados: $total | faltantes: $faltan"
   [ "$faltan" -eq 0 ]
-' _ "$DB"
+' _ "$DB" || ec=$?
+
+echo
+ui_step 2 "Finalizado."
+if [ "$ec" -eq 0 ]; then ui_ok "integrity-check listo — sin adjuntos faltantes"
+else ui_bad "integrity-check falló" "hay adjuntos referenciados sin archivo en el filestore"; fi
+echo
+exit "$ec"

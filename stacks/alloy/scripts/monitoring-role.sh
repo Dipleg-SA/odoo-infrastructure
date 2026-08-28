@@ -18,8 +18,13 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
   exit 2
 }
 
-ui_start "monitoring-role"
+ui_plan_start "monitoring-role"
+ui_step 1 "Creación (o rotación) del rol de solo lectura que Alloy usa para scrapear Postgres."
 printf "DROP ROLE IF EXISTS monitoring;\nCREATE ROLE monitoring LOGIN PASSWORD '%s';\nGRANT pg_monitor TO monitoring;\n" \
   "$(cat secrets/postgres_exporter_password)" \
   | docker compose exec -T -u postgres postgres psql -U odoo -d postgres -v ON_ERROR_STOP=1 -q
+
+echo
+ui_step 2 "Finalizado."
 ui_ok "monitoring-role listo"
+echo

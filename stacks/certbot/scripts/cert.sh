@@ -52,25 +52,35 @@ recargar_nginx() {
 }
 
 cmd_issue() {
-  ui_start "cert-issue: emitiendo para $PUBLIC_HOSTNAME"
+  ui_plan_start "cert-issue"
+  ui_step 1 "Emisión del certificado inicial para $PUBLIC_HOSTNAME."
   certbot certonly \
     --dns-cloudflare --dns-cloudflare-credentials /tmp/cloudflare.ini \
     --dns-cloudflare-propagation-seconds 30 \
     -d "$PUBLIC_HOSTNAME" \
     --agree-tos --register-unsafely-without-email --non-interactive
   escribir_metrica
+
+  echo
+  ui_step 2 "Finalizado."
   ui_ok "cert-issue listo — ya se puede levantar nginx"
+  echo
 }
 
 # --- Renovación ---
 # Los argumentos extra pasan a certbot: --force-renewal ejercita la cadena entera.
 
 cmd_renew() {
-  ui_start "cert-renew"
+  ui_plan_start "cert-renew"
+  ui_step 1 "Renovación del certificado y recarga de nginx si está corriendo."
   certbot renew --non-interactive "$@"
   recargar_nginx
   escribir_metrica
+
+  echo
+  ui_step 2 "Finalizado."
   ui_ok "cert-renew listo"
+  echo
 }
 
 case "${1:-}" in

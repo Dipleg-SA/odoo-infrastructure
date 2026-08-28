@@ -5,6 +5,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+. scripts/lib/ui.sh
 
 UNIT="${1:-desconocida}"
 
@@ -18,6 +19,9 @@ set -a; . ./.env; set +a
 : "${SMTP_HOST:?falta en .env — sin host SMTP no hay aviso de fallo}"
 SMTP_PASS="$(cat secrets/zeptomail_smtp_password)"
 
+ui_plan_start "failure-notify: $UNIT"
+ui_step 1 "Envío del aviso de fallo por SMTP a $ALERT_EMAIL_TO."
+
 # --- Envío ---
 # STARTTLS en 587 (--ssl-reqd lo exige, no lo deja degradar a texto plano).
 
@@ -29,3 +33,8 @@ printf 'From: %s\nTo: %s\nSubject: [odoo] fallo en %s\n\nLa unit %s termino con 
     --mail-from "$ALERT_EMAIL_FROM" \
     --mail-rcpt "$ALERT_EMAIL_TO" \
     --upload-file -
+
+echo
+ui_step 2 "Finalizado."
+ui_ok "failure-notify listo — aviso enviado a $ALERT_EMAIL_TO"
+echo

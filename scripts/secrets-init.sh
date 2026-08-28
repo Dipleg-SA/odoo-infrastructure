@@ -32,7 +32,10 @@ if [ -z "$DECLARADOS" ]; then
   exit 1
 fi
 
-ui_start "secrets-init"
+ENTORNO=$(sed -n 's|^COMPOSE_FILE=envs/\(.*\)\.yaml$|\1|p' .env 2>/dev/null)
+
+ui_plan_start "secrets-init"
+ui_step 1 "Creación de secretos${ENTORNO:+ para entorno $ENTORNO}. Si alguno existe, se omite la creación."
 
 # --- Helper ---
 # Escribe solo si el archivo no existe y este stack lo declara; stdin trae el contenido.
@@ -100,6 +103,7 @@ EOF
 # Solo lo que quedó con marcador necesita intervención antes de secrets-perms.
 
 echo
+ui_step 2 "Finalizado."
 pendientes=$(grep -rl "$MARK" secrets/ 2>/dev/null | sed 's|secrets/||' | sort || true)
 if [ -n "$pendientes" ]; then
   ui_warn "Falta cargar el valor real en:" ""
@@ -109,3 +113,4 @@ if [ -n "$pendientes" ]; then
 else
   ui_ok "Todos los secrets tienen valor. Seguir con: sudo make secrets-perms"
 fi
+echo

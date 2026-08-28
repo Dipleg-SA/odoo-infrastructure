@@ -7,7 +7,10 @@ cd "$(dirname "$0")/.."
 . scripts/lib/ui.sh
 . scripts/lib/compose.sh
 
-ui_start "config-init"
+ENTORNO=$(sed -n 's|^COMPOSE_FILE=envs/\(.*\)\.yaml$|\1|p' .env 2>/dev/null)
+
+ui_plan_start "config-init"
+ui_step 1 "Bootstrapeo de configs${ENTORNO:+ para entorno $ENTORNO}. Si alguno existe, se omite la copia."
 
 creados=()
 
@@ -52,8 +55,10 @@ if printf '%s\n' "$SERVICIOS" | grep -qx odoo; then
 fi
 
 echo
+ui_step 2 "Finalizado."
 if [ "${#creados[@]}" -gt 0 ]; then
   ui_ok "Bootstrapeados ${#creados[@]} archivos. Completá los que pidan un valor real."
 else
   ui_skip "Nada para crear: ya estaba todo bootstrapeado."
 fi
+echo

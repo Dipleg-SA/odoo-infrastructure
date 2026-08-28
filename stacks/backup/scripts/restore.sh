@@ -29,7 +29,8 @@ if [ -z "$(docker compose ps -q postgres 2>/dev/null)" ]; then
   exit 2
 fi
 
-ui_start "restore desde el snapshot '$SNAPSHOT'"
+ui_plan_start "restore desde el snapshot '$SNAPSHOT'"
+ui_step 1 "Restore del filestore y la base desde el snapshot '$SNAPSHOT'."
 
 # --- Cómo se invoca el contenedor ---
 # --user 0:0 en la invocación y no en el compose: así la operación recurrente —el
@@ -69,4 +70,7 @@ ui_run "recrear la base" docker compose exec -T postgres sh -c \
 ui_run "cargar el dump" docker compose exec -T postgres sh -c \
   "psql -U odoo -d odoo -v ON_ERROR_STOP=1 -f $DUMP_PATH"
 
+echo
+ui_step 2 "Finalizado."
 ui_ok "restore listo — levantá la aplicación con make odoo-up"
+echo

@@ -87,12 +87,20 @@ comparar_nombres() {
 cmd_check() {
   require_requirements
   comparar_nombres
+  ui_plan_start "pydeps check"
+  ui_step 1 "Verificación de que $REQUIREMENTS cubra las external_dependencies declaradas."
   if [ -n "$MISSING" ]; then
+    echo
+    ui_step 2 "Finalizado."
     ui_bad "pydeps check: faltan en $REQUIREMENTS" "$(tr '\n' ' ' <<<"$MISSING")"
+    echo
     return 1
   fi
+  echo
+  ui_step 2 "Finalizado."
   ui_ok "pydeps check: $REQUIREMENTS cubre lo que declaran los addons"
   [ -n "$ORPHANS" ] && ui_warn "pineados de más, ningún addon los declara" "$(tr '\n' ' ' <<<"$ORPHANS")"
+  echo
   return 0
 }
 
@@ -105,12 +113,14 @@ cmd_sync() {
   require_requirements
   comparar_nombres
   missing="$MISSING"
+  ui_plan_start "pydeps sync"
   if [ -z "$missing" ]; then
+    ui_step 1 "Nada nuevo que pinear en $REQUIREMENTS."
     ui_ok "pydeps sync: nada nuevo que pinear"
   else
     image=$(sed -n 's/^FROM \(.*\)$/\1/p' stacks/odoo/image/Dockerfile | head -1)
     pedidos=$(wc -l <<<"$missing" | tr -d ' ')
-    ui_start "pydeps sync: resolviendo $pedidos paquete(s) contra $image"
+    ui_step 1 "Resolución de $pedidos paquete(s) contra $image."
 
     # --- --ignore-installed ---
     # Sin esto, un paquete que ya trae la imagen base (vía apt) queda "satisfied" y no se pinea.
@@ -140,7 +150,10 @@ for item in data["install"]:
     fi
   fi
 
+  echo
+  ui_step 2 "Finalizado."
   [ -n "$ORPHANS" ] && ui_warn "pineados de más, ningún addon los declara" "$(tr '\n' ' ' <<<"$ORPHANS")"
+  echo
   return 0
 }
 

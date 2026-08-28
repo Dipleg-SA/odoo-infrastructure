@@ -57,7 +57,8 @@ if [ "$MODE" = "--apply" ]; then
     ui_bad "secrets-perms --apply requiere root" "chgrp a un GID del que no sos miembro — corré: sudo make secrets-perms" >&2
     exit 1
   fi
-  ui_start "secrets-perms --apply"
+  ui_plan_start "secrets-perms --apply"
+  ui_step 1 "Aplicación de permisos y grupo en cada secret."
   for file in "$SECRETS_DIR"/*; do
     [ -f "$file" ] || continue
     chmod "$EXPECTED_PERMS" "$file"
@@ -65,7 +66,10 @@ if [ "$MODE" = "--apply" ]; then
     [ -n "$gid" ] && chgrp "$gid" "$file"
     echo "  $(basename "$file"): $EXPECTED_PERMS${gid:+ / gid $gid}"
   done
+  echo
+  ui_step 2 "Finalizado."
   ui_ok "secrets-perms --apply listo"
+  echo
   exit 0
 fi
 
@@ -77,7 +81,8 @@ fi
 # --- Verificar ---
 # Permisos en todos, GID en los mapeados, y que no quede ningún marcador sin cargar.
 
-ui_start "secrets-perms --check"
+ui_plan_start "secrets-perms --check"
+ui_step 1 "Verificación de permisos, grupo y marcador pendiente en cada secret."
 fail=0
 for file in "$SECRETS_DIR"/*; do
   [ -f "$file" ] || continue
@@ -99,7 +104,10 @@ for file in "$SECRETS_DIR"/*; do
   fi
 done
 
+echo
+ui_step 2 "Finalizado."
 if [ "$fail" -eq 0 ]; then ui_ok "secrets-perms --check listo"
 else ui_bad "secrets-perms --check falló" "" >&2; fi
+echo
 
 exit "$fail"

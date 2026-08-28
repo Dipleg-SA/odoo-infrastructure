@@ -124,13 +124,14 @@ dump_base() {
   fi
 }
 
-ui_start "backup $MODE"
+ui_plan_start "backup $MODE"
 case "$MODE" in
   daily)
     # --- Las dos mitades del estado, en un solo snapshot ---
     # La base referencia archivos que solo existen en el filestore. Respaldarlos
     # por separado convierte la consistencia en algo que hay que recordar.
 
+    ui_step 1 "Dump de la base y el filestore en un snapshot restic, con retención GFS aplicada."
     validar_endpoint
     dump_base
     registrar_addons
@@ -145,6 +146,7 @@ case "$MODE" in
     # detecta corrupción silenciosa, que ningún backup exitoso revela. Un
     # repositorio corrupto se descubre al restaurar, que es el peor momento.
 
+    ui_step 1 "Verificación de integridad del repositorio de restic (muestra de datos)."
     validar_endpoint
     res check --read-data-subset=5%
     marcar_exito check
@@ -154,4 +156,7 @@ case "$MODE" in
     exit 2
     ;;
 esac
+echo
+ui_step 2 "Finalizado."
 ui_ok "backup $MODE listo"
+echo
