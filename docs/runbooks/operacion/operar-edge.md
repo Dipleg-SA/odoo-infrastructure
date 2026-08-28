@@ -14,9 +14,14 @@ La capa de borde en el estado pedido, sin afectar datos ni aplicación — que s
 
 No hay target agrupado — la limpieza de `docker/` lo sacó junto con `capa.sh`: cada
 stack se opera solo, sin dispatcher. Sumá `&& make dnsmasq-up` (o `-down`/`-restart`)
-si este stack lo lleva (`COMPOSE_PROFILES=lan`) — medido: a diferencia de `ps`/`logs`,
-que ignoran en silencio un nombre que no está en la composición, `up`/`restart` abortan
-la línea entera con "no such service" si lo nombrás sin que esté.
+solo si este stack lo lleva (`COMPOSE_PROFILES=lan` en producción) — medido: nombrarlo
+explícito en `up`/`restart` salta el filtro de `profiles:` aunque el perfil esté
+inactivo, así que en producción sin LAN **no** falla con "no such service" como
+parecería razonable esperar — intenta arrancar igual, y si `dnsmasq.conf` nunca se
+bootstrapeó, queda reintentando en loop, inofensivo pero molesto (ver
+[levantar-produccion](../entorno/levantar-produccion.md), bloque 3 · Edge). El "no
+such service" real aparece si el stack directamente no incluye `dnsmasq` en su
+composición, como staging o development.
 
 ```bash
 make nginx-up && make cloudflared-up
@@ -41,9 +46,11 @@ docker compose exec nginx nginx -s reload
 
 ```bash
 make nginx-verify
+make certbot-verify
+make cloudflared-verify
 ```
 
-Cubre los servicios `healthy`, que `server-tls.conf` no tenga el placeholder de `server-tls.conf.example` sin reemplazar, el `server_name`, el `proxy_pass` por variable con el resolver de Docker, los días de vigencia del certificado, las conexiones del Tunnel y el token de Cloudflare contra la API. En un stack sin TLS (development) omite certificado y 443, y avisa en vez de fallar donde corresponda.
+Tres comandos porque cada stack es dueño de lo suyo. `nginx-verify` cubre el servicio `healthy`, que `server-tls.conf` no tenga el placeholder de `server-tls.conf.example` sin reemplazar, el `server_name`, el `proxy_pass` por variable con el resolver de Docker, las tres rutas de Odoo, que la cadena nginx → Odoo responda de verdad, el log sin errores y los binds. `certbot-verify` cubre los días de vigencia del certificado, el timer de renovación y el token de la API de Cloudflare contra la API real. `cloudflared-verify` cubre las conexiones del Tunnel. En un stack sin TLS (development) `nginx-verify` omite certificado, `server_name` y 443, y avisa en vez de fallar donde corresponda; `certbot-verify` y `cloudflared-verify` no aplican ahí.
 
 ---
 

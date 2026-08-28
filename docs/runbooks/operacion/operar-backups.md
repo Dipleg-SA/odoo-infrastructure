@@ -29,7 +29,7 @@ make backup-verify
 make backup-verify
 ```
 
-Cubre que el repositorio sea alcanzable con snapshots de este stack, que el último traiga **las dos mitades** del estado, el registro de addons, y los dos timers activos con el nombre de este checkout.
+Cubre el servicio `healthy`, que `r2.env` no tenga el placeholder sin reemplazar, que el endpoint termine en `.r2.cloudflarestorage.com`, que el repositorio sea alcanzable con snapshots de este stack, que el último traiga **las dos mitades** del estado, el registro de addons, y los dos timers activos con el nombre de este checkout.
 
 Si el contenedor sale `health: starting` **no es un fallo**: con `interval: 1h` el primer chequeo que cuenta cae recién a la hora. **No lo recrees para forzarlo** — le cambiarías el hostname, y con eso el grupo `(host, paths)` por el que restic agrupa la retención.
 

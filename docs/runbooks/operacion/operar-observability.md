@@ -32,9 +32,12 @@ Grafana se abre por túnel SSH, no publica puerto directo: `ssh -N -L 3001:127.0
 
 ```bash
 make prometheus-verify
+make loki-verify
+make grafana-verify
+make alloy-verify
 ```
 
-Cubre los cuatro servicios, que ningún target de Prometheus esté caído, las tres familias de métricas que empuja Alloy (host, contenedores, base), que Loki reciba logs por contenedor, los binds, y que la rotación de logs del daemon (`host/daemon.json`) haya quedado aplicada al contenedor de Odoo.
+Cuatro comandos porque cada stack es dueño de lo suyo. `prometheus-verify` cubre el servicio `healthy`, que ningún target esté caído, y las tres familias de métricas que empuja Alloy (host, contenedores, base). `loki-verify` cubre que reciba logs de verdad, etiquetados por contenedor. `grafana-verify` cubre el servicio `healthy`, las siete reglas de alerting realmente cargadas, y que SMTP y el destinatario no hayan quedado con alguna clave vacía. `alloy-verify` cubre que sus componentes internos resuelvan de verdad y que la alerta de backup avise antes de que el healthcheck se ponga rojo. Los binds de los cuatro se verifican en su propio script.
 
 ---
 

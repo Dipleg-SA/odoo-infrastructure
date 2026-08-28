@@ -29,7 +29,7 @@ make odoo-verify
 make odoo-verify
 ```
 
-Cubre el servicio `healthy`, los logs sin errores de permisos, Odoo respondiendo en su `:8069`, los worktrees de `addons/` limpios, las tres rutas en la config renderizada de nginx, el gestor de bases deshabilitado, los puertos sin publicar, y el certificado (omitido en un stack sin TLS).
+Cubre el servicio `healthy`, los logs sin errores de permisos, `smtp_server` cargado de verdad en el conf runtime (omitido en un stack con `ODOO_DISABLE_SMTP`), Odoo respondiendo en su `:8069`, los worktrees de `addons/` limpios, los módulos server-wide presentes en el árbol, la rama de addons coherente con la imagen, y los puertos sin publicar. Las tres rutas de Odoo en nginx y el certificado los cubre `nginx-verify`/`certbot-verify` — no este comando.
 
 ---
 

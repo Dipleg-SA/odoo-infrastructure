@@ -38,7 +38,12 @@ Cubre el servicio `healthy`, que acepte conexiones, los logs sin errores de perm
 
 ---
 
-**Destructivo — `make nuke`.** Borra containers, imágenes **y el volumen `pgdata`** de esta capa. Pide tipear `nuke`.
+**Destructivo — sin target, a mano.** Tampoco sobrevivió un nuke acotado a esta capa: el único que queda es `make nuke`, **global** — se lleva `pgdata` junto con los volúmenes de todos los demás stacks, `addons/` y `state/` enteros. Pide tipear `nuke`, sin imprimir ningún nombre de volumen antes: la palabra es la única confirmación que hay.
 
-En producción o staging esto es indistinguible de perder la base: antes de correrlo, confirmá que hay un backup reciente y probado (ver [realizar-backup](../backup-restore/realizar-backup.md)). El comando imprime el nombre real del volumen —el que Docker conoce, prefijado por proyecto (`<proyecto>_pgdata`)— **antes** de pedir la confirmación: si ahí ves un nombre que no esperabas, cancelá.
+En producción o staging esto es indistinguible de perder la base —y todo lo demás—: antes de correrlo, confirmá que hay un backup reciente y probado (ver [realizar-backup](../backup-restore/realizar-backup.md)). Para borrar solo `pgdata`:
+
+```bash
+docker compose rm -sf postgres
+docker volume rm "${COMPOSE_PROJECT_NAME}_pgdata"
+```
 
