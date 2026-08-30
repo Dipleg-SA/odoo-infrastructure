@@ -208,8 +208,7 @@ cmd_sync() {
     sync_repo "$url" "$category" || true
   done < <(manifest_entries)
 
-  echo
-  ui_step 2 "Finalizado."
+  ui_plan_end
   if [ "$FAILED" -ne 0 ]; then
     ui_bad "addons sync terminó con errores" "ver arriba" >&2
     echo

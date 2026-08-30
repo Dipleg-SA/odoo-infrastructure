@@ -61,8 +61,7 @@ cmd_issue() {
     --agree-tos --register-unsafely-without-email --non-interactive
   escribir_metrica
 
-  echo
-  ui_step 2 "Finalizado."
+  ui_plan_end
   ui_ok "cert-issue listo — ya se puede levantar nginx"
   echo
 }
@@ -77,8 +76,7 @@ cmd_renew() {
   recargar_nginx
   escribir_metrica
 
-  echo
-  ui_step 2 "Finalizado."
+  ui_plan_end
   ui_ok "cert-renew listo"
   echo
 }

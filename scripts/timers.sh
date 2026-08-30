@@ -157,8 +157,7 @@ case "$VERBO" in
   install) ui_plan_start "timers-install ($PROYECTO)"
            ui_step 1 "Instalación de las units de systemd que declare la composición (backup, renovación de certificado)."
            install; ec=$?
-           echo
-           ui_step 2 "Finalizado."
+           ui_plan_end
            if [ "$ec" -eq 0 ]; then ui_ok "timers-install listo"; else ui_bad "timers-install falló" "exit $ec"; fi
            echo
            exit "$ec" ;;

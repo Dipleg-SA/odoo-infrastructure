@@ -7,11 +7,6 @@ cd "$(dirname "$0")/.."
 . scripts/lib/ui.sh
 . scripts/lib/compose.sh
 
-ENTORNO=$(sed -n 's|^COMPOSE_FILE=envs/\(.*\)\.yaml$|\1|p' .env 2>/dev/null)
-
-ui_plan_start "config-init"
-ui_step 1 "Bootstrapeo de configs${ENTORNO:+ para entorno $ENTORNO}. Si alguno existe, se omite la copia."
-
 creados=()
 
 # --- Helper ---
@@ -34,6 +29,11 @@ if [ -z "$SERVICIOS" ]; then
   exit 1
 fi
 
+ENTORNO=$(sed -n 's|^COMPOSE_FILE=envs/\(.*\)\.yaml$|\1|p' .env 2>/dev/null)
+
+ui_plan_start "config-init"
+ui_step 1 "Bootstrapeo de configs${ENTORNO:+ para entorno $ENTORNO}. Si alguno existe, se omite la copia."
+
 # --- Config de cada stack activo ---
 # Un stack ausente de la composición no bootstrapea archivos inertes: ningún
 # verify.sh de un stack omitido va a pedir que se completen.
@@ -54,8 +54,7 @@ if printf '%s\n' "$SERVICIOS" | grep -qx odoo; then
   nuevo addons/requirements.txt.example
 fi
 
-echo
-ui_step 2 "Finalizado."
+ui_plan_end
 if [ "${#creados[@]}" -gt 0 ]; then
   ui_ok "Bootstrapeados ${#creados[@]} archivos. Completá los que pidan un valor real."
 else

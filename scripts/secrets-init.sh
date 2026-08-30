@@ -102,8 +102,7 @@ EOF
 # --- Resumen ---
 # Solo lo que quedó con marcador necesita intervención antes de secrets-perms.
 
-echo
-ui_step 2 "Finalizado."
+ui_plan_end
 pendientes=$(grep -rl "$MARK" secrets/ 2>/dev/null | sed 's|secrets/||' | sort || true)
 if [ -n "$pendientes" ]; then
   ui_warn "Falta cargar el valor real en:" ""

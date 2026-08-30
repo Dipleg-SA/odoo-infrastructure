@@ -1,7 +1,5 @@
 # --- Sexteto por stack ---
-# up/down/restart/logs/ps/verify para un stack de un solo contenedor. Sin '##':
-# help.awk sintetiza la descripción de estos seis desde STACKS, ya que $(eval
-# $(call ...)) no deja una línea literal '<stack>-up:' que grepear.
+# up/down/restart/logs/ps/verify para un stack de un solo contenedor, sintetizado en help.awk.
 
 define stack_sextet
 $(1)-up:
@@ -17,7 +15,22 @@ $(1)-logs:
 	@. scripts/ui/components.sh; ui_section "$(1)-logs: siguiendo (Ctrl-C para salir)"; docker compose logs -f $(1)
 
 $(1)-ps:
-	@. scripts/ui/components.sh; docker compose ps $(1) | ui_color_status | ui_table_frame
+	@. scripts/ui/components.sh; salida=$$$$(docker compose ps $(1)) || exit $$$$?; printf '%s\n' "$$$$salida" | ui_color_status | ui_table_frame
+
+$(1)-verify:
+	scripts/verify-stacks.sh $(1)
+
+endef
+
+# --- Trío por stack de un solo uso ---
+# logs/ps/verify para un stack sin up/down/restart propio: lo opera su propio comando.
+
+define stack_oneshot
+$(1)-logs:
+	@. scripts/ui/components.sh; ui_section "$(1)-logs: siguiendo (Ctrl-C para salir)"; docker compose logs -f $(1)
+
+$(1)-ps:
+	@. scripts/ui/components.sh; salida=$$$$(docker compose ps $(1)) || exit $$$$?; printf '%s\n' "$$$$salida" | ui_color_status | ui_table_frame
 
 $(1)-verify:
 	scripts/verify-stacks.sh $(1)

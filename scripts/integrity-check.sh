@@ -33,9 +33,8 @@ docker compose exec -T -u postgres postgres \
   [ "$faltan" -eq 0 ]
 ' _ "$DB" || ec=$?
 
-echo
-ui_step 2 "Finalizado."
+ui_plan_end
 if [ "$ec" -eq 0 ]; then ui_ok "integrity-check listo — sin adjuntos faltantes"
-else ui_bad "integrity-check falló" "hay adjuntos referenciados sin archivo en el filestore"; fi
+else ui_bad "integrity-check falló" "revisá la salida de arriba — puede ser adjuntos faltantes o que postgres/odoo no respondieran"; fi
 echo
 exit "$ec"

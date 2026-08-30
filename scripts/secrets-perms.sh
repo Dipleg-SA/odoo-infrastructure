@@ -66,8 +66,7 @@ if [ "$MODE" = "--apply" ]; then
     [ -n "$gid" ] && chgrp "$gid" "$file"
     echo "  $(basename "$file"): $EXPECTED_PERMS${gid:+ / gid $gid}"
   done
-  echo
-  ui_step 2 "Finalizado."
+  ui_plan_end
   ui_ok "secrets-perms --apply listo"
   echo
   exit 0
@@ -104,8 +103,7 @@ for file in "$SECRETS_DIR"/*; do
   fi
 done
 
-echo
-ui_step 2 "Finalizado."
+ui_plan_end
 if [ "$fail" -eq 0 ]; then ui_ok "secrets-perms --check listo"
 else ui_bad "secrets-perms --check falló" "" >&2; fi
 echo

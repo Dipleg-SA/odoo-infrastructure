@@ -24,7 +24,6 @@ printf "DROP ROLE IF EXISTS monitoring;\nCREATE ROLE monitoring LOGIN PASSWORD '
   "$(cat secrets/postgres_exporter_password)" \
   | docker compose exec -T -u postgres postgres psql -U odoo -d postgres -v ON_ERROR_STOP=1 -q
 
-echo
-ui_step 2 "Finalizado."
+ui_plan_end
 ui_ok "monitoring-role listo"
 echo

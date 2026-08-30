@@ -7,8 +7,8 @@ include .make/main.mk
         backup-run backup-integrity restore \
         addons-sync addons odoo-install odoo-update odoo-modules pydeps-check pydeps-sync \
         require-modules require-backups require-restore require-root test verify \
-        certbot-logs certbot-ps certbot-verify \
-        $(foreach s,$(STACKS),$(s)-up $(s)-down $(s)-restart $(s)-logs $(s)-ps $(s)-verify)
+        $(foreach s,$(STACKS),$(s)-up $(s)-down $(s)-restart $(s)-logs $(s)-ps $(s)-verify) \
+        $(foreach s,$(STACKS_ONESHOT),$(s)-logs $(s)-ps $(s)-verify)
 .DEFAULT_GOAL := help
 
 # --- Ayuda ---
@@ -16,7 +16,7 @@ include .make/main.mk
 # cabeceras '# --- Título ---' y la anotación '##' de cada target, no mantiene nada aparte.
 
 help:
-	@awk -v stacks="$(STACKS)" -f .make/help.awk $(MAKEFILE_LIST)
+	@awk -v stacks="$(STACKS)" -v oneshot="$(STACKS_ONESHOT)" -f .make/help.awk $(MAKEFILE_LIST)
 
 # --- Inicialización de un deploy nuevo ---
 # En orden: secrets-init y config-init, cargar los valores a mano, secrets-perms,
@@ -84,12 +84,7 @@ notify-test: require-root ## Dispara el aviso de fallo de punta a punta (requier
 	    journalctl -u "$$unidad" -n 20 --no-pager; exit 1; fi
 
 # --- Certificados ---
-# Emisión a mano la primera vez —nginx no arranca sin el archivo— y renovación
-# por timer de systemd. DNS-01: no necesita que el borde esté arriba.
-#
-# Se opera con estos dos, nunca con up/down/restart: certbot no es un servicio
-# de larga vida, corre one-off (docker compose --profile cert run --rm) y no
-# tiene restart policy — "levantarlo" sin un comando no emite ni renueva nada.
+# Emisión a mano la primera vez, renovación por timer — nunca con up/down/restart.
 
 cert-issue: ## Emite el certificado inicial
 	stacks/certbot/scripts/cert.sh issue
@@ -121,21 +116,8 @@ verify: ## Verifica el deploy completo — o <stack>-verify para uno solo
 host-verify: ## Verifica los prerrequisitos del SO (systemd, rotación de logs, secrets)
 	scripts/verify-host.sh
 
-# --- Ciclo de vida, stack por stack ---
-# Sexteto por stack generado por $(eval $(call ...)) desde STACKS (.make/);
-# help.awk sintetiza sus descripciones — certbot y nuke quedan afuera.
-
-# certbot no tiene -up/-down/-restart: no es un servicio de larga vida, se
-# opera con make cert-issue / make cert-renew, más arriba.
-
-certbot-logs: ## Sigue los logs de certbot
-	@. scripts/ui/components.sh; ui_section "certbot-logs: siguiendo (Ctrl-C para salir)"; docker compose logs -f certbot
-
-certbot-ps: ## Lista el contenedor de certbot
-	@. scripts/ui/components.sh; docker compose ps certbot | ui_color_status | ui_table_frame
-
-certbot-verify: ## Verifica certbot
-	scripts/verify-stacks.sh certbot
+# --- [SEXTETO] Ciclo de vida, stack por stack ---
+# Sexteto (o trío, para STACKS_ONESHOT) generado en .make/; help.awk sintetiza la descripción.
 
 # --- Respaldos (árbol nuevo) ---
 # El diario respalda y purga; el check verifica integridad del repositorio. No hay
@@ -162,7 +144,7 @@ logs: ## Sigue los logs de todos los servicios
 	@. scripts/ui/components.sh; ui_section "logs: siguiendo todo el stack (Ctrl-C para salir)"; docker compose logs -f
 
 ps: ## Lista el estado de los contenedores
-	@. scripts/ui/components.sh; docker compose ps | ui_color_status | ui_table_frame
+	@. scripts/ui/components.sh; salida=$$(docker compose ps) || exit $$?; printf '%s\n' "$$salida" | ui_color_status | ui_table_frame
 
 # --- Nuke ---
 # El más destructivo del Makefile. Confirmación: tipear la palabra 'nuke', no Y/N.

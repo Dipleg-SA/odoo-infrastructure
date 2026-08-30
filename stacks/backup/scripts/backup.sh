@@ -156,7 +156,6 @@ case "$MODE" in
     exit 2
     ;;
 esac
-echo
-ui_step 2 "Finalizado."
+ui_plan_end
 ui_ok "backup $MODE listo"
 echo
