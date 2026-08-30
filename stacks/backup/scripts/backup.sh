@@ -80,7 +80,7 @@ marcar_exito() {
     echo "odoo_backup_last_success_timestamp_seconds{modo=\"$1\"} $(date +%s)"
   } > "$tmp"
   chmod 644 "$tmp"
-  mv "$tmp" "$dir/backup-$1.prom"
+  mv -f "$tmp" "$dir/backup-$1.prom"
 }
 
 # --- Registro de addons ---
@@ -93,7 +93,7 @@ registrar_addons() {
   tmp=$(mktemp "$dir/.addons.XXXXXX" 2>/dev/null) || { ui_warn "no se pudo escribir el registro de addons" "" >&2; return 0; }
   if scripts/addons.sh status 2>/dev/null | grep -E '^(enterprise|custom-addons|oca|third-party)[[:space:]]' > "$tmp"; then
     chmod 644 "$tmp"
-    mv "$tmp" "$dir/addons.txt"
+    mv -f "$tmp" "$dir/addons.txt"
   else
     ui_warn "no se pudo generar el registro de addons" "" >&2
     rm -f "$tmp"
