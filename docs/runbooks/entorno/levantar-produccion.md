@@ -153,7 +153,7 @@ make dnsmasq-verify
 
 `nginx-verify` cubre el servicio `healthy`, que la config renderizada no tenga variables sin sustituir, que el `server_name` sea tu hostname, que el `proxy_pass` vaya por variable con el resolver de Docker declarado, las tres rutas de Odoo y que la cadena nginx → Odoo responda de verdad, el log de nginx sin errores y los binds. Los días que le quedan al certificado, el timer de renovación y el token de la API de Cloudflare los cubre `certbot-verify`, aparte; las conexiones del Tunnel las cubre `cloudflared-verify` — nginx no sabe nada de ninguno de los dos.
 
-El timer todavía no existe: lo instala `sudo make timers-install` en el bloque 7, junto con los de backup. Es el único chequeo de `certbot-verify` que queda rojo hasta entonces.
+El timer todavía no existe: lo instala `sudo make up-timers` en el bloque 7, junto con los de backup. Es el único chequeo de `certbot-verify` que queda rojo hasta entonces.
 
 nginx no publica ninguna UI: su estado se lee del log (JSON, `make nginx-logs`) y de `make nginx-verify`. Los dos chequeos que no se pueden correr en el servidor están en el apéndice.
 
@@ -240,12 +240,12 @@ Cubre el servicio `healthy`, los logs sin errores de permisos, `smtp_server` car
 ```bash
 make backup-up
 docker compose exec -T backup restic init
-sudo make timers-install
+sudo make up-timers
 ```
 
 > **Nunca `restic init --force`.** Sobre un repositorio con backups adentro los deja inaccesibles. No existe el caso en el que haga falta.
 
-`timers-install` deriva de la composición qué units le corresponden a **este** stack —el backup diario, la verificación mensual de integridad y la renovación del certificado— y las instala con el nombre del proyecto adelante (`production-backup-daily.timer`), inyectando la ruta absoluta del checkout. Con eso, un segundo stack en el mismo servidor instala las suyas sin pisar estas. Incluye la unit plantilla de aviso: sin ella, una corrida que falle no avisa.
+`up-timers` deriva de la composición qué units le corresponden a **este** stack —el backup diario, la verificación mensual de integridad y la renovación del certificado— y las instala con el nombre del proyecto adelante (`production-backup-daily.timer`), inyectando la ruta absoluta del checkout. Con eso, un segundo stack en el mismo servidor instala las suyas sin pisar estas. Incluye la unit plantilla de aviso: sin ella, una corrida que falle no avisa.
 
 **En prueba ese comando no instala los timers de backup**, y eso es estructural: su entrypoint le pone `profiles: [restore]` al stack, así que queda fuera de la composición que `timers.sh` consulta.
 

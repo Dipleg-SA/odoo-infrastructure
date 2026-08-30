@@ -1,14 +1,12 @@
 # --- Componentes compuestos ---
-# Encabezado de sección y marco de tabla para los targets del Makefile; se apoyan
-# en scripts/lib/ui.sh, así que heredan su mismo criterio de TTY/NO_COLOR.
+# Encabezado de sección y marco de tabla para los targets del Makefile, sobre scripts/lib/ui.sh.
 
 . scripts/lib/ui.sh
 
-ui_section() { printf '\n%s━━━ %s ━━━%s\n' "$UI_BOLD" "$1" "$UI_RESET"; }
+ui_section() { ui_title "━━━ $1 ━━━"; }
 
 # --- Marco de tabla ---
-# Envuelve en un box-drawing lo que llega por stdin, ya alineado por Docker;
-# mide el ancho sobre el texto sin color para no romper el padding con ANSI.
+# Envuelve en box-drawing lo que llega por stdin; mide el ancho sin color para no romper el padding.
 
 ui_table_frame() {
   awk '

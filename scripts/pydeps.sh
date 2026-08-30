@@ -89,15 +89,12 @@ cmd_check() {
   comparar_nombres
   ui_plan_start "pydeps check"
   ui_step 1 "Verificación de que $REQUIREMENTS cubra las external_dependencies declaradas."
+  ui_plan_end
   if [ -n "$MISSING" ]; then
-    echo
-    ui_step 2 "Finalizado."
     ui_bad "pydeps check: faltan en $REQUIREMENTS" "$(tr '\n' ' ' <<<"$MISSING")"
     echo
     return 1
   fi
-  echo
-  ui_step 2 "Finalizado."
   ui_ok "pydeps check: $REQUIREMENTS cubre lo que declaran los addons"
   [ -n "$ORPHANS" ] && ui_warn "pineados de más, ningún addon los declara" "$(tr '\n' ' ' <<<"$ORPHANS")"
   echo
@@ -129,6 +126,7 @@ cmd_sync() {
         pip install --break-system-packages --dry-run --quiet --no-deps --ignore-installed \
           --report - $missing 2>&1); then
       ui_bad "pydeps sync: no se pudo resolver contra $image" "$(tail -1 <<<"$reporte")"
+      ui_plan_end
       return 1
     fi
 
@@ -150,8 +148,7 @@ for item in data["install"]:
     fi
   fi
 
-  echo
-  ui_step 2 "Finalizado."
+  ui_plan_end
   [ -n "$ORPHANS" ] && ui_warn "pineados de más, ningún addon los declara" "$(tr '\n' ' ' <<<"$ORPHANS")"
   echo
   return 0

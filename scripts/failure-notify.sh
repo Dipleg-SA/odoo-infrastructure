@@ -34,7 +34,6 @@ printf 'From: %s\nTo: %s\nSubject: [odoo] fallo en %s\n\nLa unit %s termino con 
     --mail-rcpt "$ALERT_EMAIL_TO" \
     --upload-file -
 
-echo
-ui_step 2 "Finalizado."
+ui_plan_end
 ui_ok "failure-notify listo — aviso enviado a $ALERT_EMAIL_TO"
 echo

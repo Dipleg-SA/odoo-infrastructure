@@ -15,11 +15,11 @@ ui_ok()    { printf '%s✓%s %s\n' "$UI_GREEN" "$UI_RESET" "$1"; }
 ui_skip()  { printf '%s–%s %s\n' "$UI_DIM" "$UI_RESET" "$1"; }
 
 # --- Script de varios pasos ---
-# Título destacado (▶ + negrita/subrayado) y pasos numerados, para scripts que
-# narran un plan explícito en vez de una sola acción — hoy solo secrets-init.sh.
+# Título destacado + pasos numerados, para scripts que narran un plan explícito.
 
 ui_plan_start() { printf '\n%s▶%s %s%s%s\n\n' "$UI_CYAN" "$UI_RESET" "$UI_BOLD$UI_UNDERLINE" "$1" "$UI_RESET"; }
 ui_step()       { printf '%s. %s\n\n' "$1" "$2"; }
+ui_plan_end()   { echo; ui_step 2 "Finalizado."; }
 
 ui_bad() {
   printf '%s✗%s %s\n' "$UI_RED" "$UI_RESET" "$1"
@@ -60,10 +60,10 @@ ui_color_status() {
 }
 
 # --- Confirmación destructiva ---
-# Pide escribir 'nuke' literal, no Y/N; devuelve 1 sin tocar nada si no coincide.
+# Pide escribir la palabra literal, no Y/N; devuelve 1 sin tocar nada si no coincide.
 
-ui_confirm_nuke() {
-  local confirmacion
-  read -r -p "Escribí 'nuke' para confirmar: " confirmacion
-  [ "$confirmacion" = "nuke" ] || { ui_skip "cancelado"; return 1; }
+ui_confirm() {
+  local palabra="$1" confirmacion
+  read -r -p "Escribí '$palabra' para confirmar: " confirmacion
+  [ "$confirmacion" = "$palabra" ] || { ui_skip "cancelado"; return 1; }
 }

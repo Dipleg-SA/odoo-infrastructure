@@ -70,7 +70,6 @@ ui_run "recrear la base" docker compose exec -T postgres sh -c \
 ui_run "cargar el dump" docker compose exec -T postgres sh -c \
   "psql -U odoo -d odoo -v ON_ERROR_STOP=1 -f $DUMP_PATH"
 
-echo
-ui_step 2 "Finalizado."
+ui_plan_end
 ui_ok "restore listo — levantá la aplicación con make odoo-up"
 echo

@@ -147,7 +147,7 @@ titulo "prueba restaura, pero NO respalda"
 # =====================================================================
 
 # El trío que sostiene la garantía, y es estructural: timers.sh deriva qué units
-# corresponden de la composición SIN perfiles. Con backup ahí, un timers-install en
+# corresponden de la composición SIN perfiles. Con backup ahí, un up-timers en
 # prueba dejaría una corrida nocturna escribiendo en el repositorio de producción.
 
 no_contiene "backup fuera de la composición por defecto" "backup" \

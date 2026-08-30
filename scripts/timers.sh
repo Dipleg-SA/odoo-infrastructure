@@ -122,7 +122,7 @@ install() {
   lista=$(bases) || return 1
 
   if [ "$(id -u)" -ne 0 ] && [ "$DESTINO" = "/etc/systemd/system" ]; then
-    ui_bad "timers-install necesita root" "sudo make timers-install" >&2
+    ui_bad "up-timers necesita root" "sudo make up-timers" >&2
     return 2
   fi
 
@@ -153,16 +153,51 @@ install() {
   ui_ok "activos:$timers"
 }
 
+# --- Desinstalar ---
+# La contraparte de install: todas las units de ESTE proyecto, no solo las
+# sobrantes. Mismo glob por prefijo que limpiar_sobrantes, sin cruzar contra
+# 'bases' — acá se sacan todas, corresponda o no la capa hoy.
+
+remove() {
+  local archivo base
+
+  if [ "$(id -u)" -ne 0 ] && [ "$DESTINO" = "/etc/systemd/system" ]; then
+    ui_bad "down-timers necesita root" "sudo make down-timers" >&2
+    return 2
+  fi
+
+  for archivo in "$DESTINO/$PROYECTO-"*.timer; do
+    [ -e "$archivo" ] || continue
+    base=$(basename "$archivo" .timer)
+    systemctl disable --now "$base.timer" >/dev/null 2>&1
+    rm -f "$DESTINO/$base.timer" "$DESTINO/$base.service"
+    ui_ok "removida: $base.{service,timer}"
+  done
+
+  if [ -e "$DESTINO/$PROYECTO-notify@.service" ]; then
+    rm -f "$DESTINO/$PROYECTO-notify@.service"
+    ui_ok "removida: $PROYECTO-notify@.service"
+  fi
+
+  systemctl daemon-reload
+}
+
 case "$VERBO" in
-  install) ui_plan_start "timers-install ($PROYECTO)"
+  install) ui_plan_start "up-timers ($PROYECTO)"
            ui_step 1 "Instalación de las units de systemd que declare la composición (backup, renovación de certificado)."
            install; ec=$?
+           ui_plan_end
+           if [ "$ec" -eq 0 ]; then ui_ok "up-timers listo"; else ui_bad "up-timers falló" "exit $ec"; fi
            echo
-           ui_step 2 "Finalizado."
-           if [ "$ec" -eq 0 ]; then ui_ok "timers-install listo"; else ui_bad "timers-install falló" "exit $ec"; fi
+           exit "$ec" ;;
+  remove)  ui_plan_start "down-timers ($PROYECTO)"
+           ui_step 1 "Desinstalación de todas las units de systemd de este checkout."
+           remove; ec=$?
+           ui_plan_end
+           if [ "$ec" -eq 0 ]; then ui_ok "down-timers listo"; else ui_bad "down-timers falló" "exit $ec"; fi
            echo
            exit "$ec" ;;
   units)   units ;;
   notify)  notify ;;
-  *)       ui_bad "uso: $(basename "$0") install|units|notify" "" >&2; exit 2 ;;
+  *)       ui_bad "uso: $(basename "$0") install|remove|units|notify" "" >&2; exit 2 ;;
 esac
