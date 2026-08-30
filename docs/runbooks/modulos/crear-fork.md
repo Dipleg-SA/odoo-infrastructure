@@ -24,10 +24,14 @@ Un repositorio declarado en el manifiesto de este checkout, con su worktree sinc
 ```bash
 # origen propio
 echo "<url-de-tu-repo> custom-addons" >> addons/addons.txt
+```
 
+```bash
 # origen de terceros (categoría "oca" o "third-party" según corresponda)
 echo "<url-de-tu-fork> oca" >> addons/addons.txt
+```
 
+```bash
 make addons-sync
 ```
 

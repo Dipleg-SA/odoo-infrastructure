@@ -8,7 +8,7 @@ No aplica a Odoo Enterprise sin acceso git — ver [crear-enterprise](crear-ente
 
 ## Objetivo
 
-Módulo scaffoldeado, instalado y corriendo en tu entorno de desarrollo.
+Módulo con el esqueleto generado, instalado y corriendo en tu entorno de desarrollo.
 
 ## A mano
 
@@ -20,17 +20,36 @@ Decidir el nombre técnico (`snake_case`). Tenelo presente contra la precedencia
 cd addons/<categoría>/<repo> && git checkout -b feat/<nombre-del-modulo> && cd -
 ```
 
-```bash
-docker compose run --rm \
-  -v "$PWD/addons:/scaffold" -u "$(id -u):$(id -g)" \
-  --entrypoint odoo odoo scaffold <nombre_tecnico> /scaffold/<categoría>/<repo>
+**Generar el esqueleto directo en `addons/<categoría>/<repo>/<nombre_tecnico>/`** — archivos de host, sin Docker: el mount de `/mnt/extra-addons` es read-only adentro del contenedor, pero eso nunca frenó al host, y la plantilla no depende de nada que solo exista dentro de la imagen.
+
+```
+<nombre_tecnico>/
+├── __init__.py             # from . import models
+├── __manifest__.py
+├── models/__init__.py      # vacío hasta que haya un modelo real
+├── views/                  # vacío hasta la primera vista
+├── security/ir.model.access.csv   # solo el header, sin filas hasta que exista un modelo
+└── data/                   # vacío hasta el primer dato
 ```
 
-Tres partes, y ninguna es opcional:
+Deliberadamente sin `controllers/` ni `demo/` — se agregan cuando el módulo los necesita, no antes — y sin modelo de ejemplo: arrancar de un `models/__init__.py` vacío evita limpiar después un modelo mal nombrado.
 
-- **`--entrypoint odoo`** — sin él, `stacks/odoo/image/entrypoint.sh` intercepta cualquier argumento asumiendo que es un flag de instalación (`-i`/`-u`) y le antepone `-c/-d/--db_host`, que rompe el `scaffold` (no toca la base).
-- **`-v "$PWD/addons:/scaffold"`** — el servicio monta `./addons` en `/mnt/extra-addons` **read-only** (`stacks/odoo/compose.yaml`), a propósito: en operación normal Odoo nunca escribe en los addons. Scaffoldear ahí falla con `OSError: [Errno 30] Read-only file system`. Este segundo mount del mismo directorio, en modo escritura, es solo para este comando.
-- **`-u "$(id -u):$(id -g)"`** — sin él, los archivos quedan con el owner del usuario del contenedor y no vas a poder commitearlos desde el host sin `chown`.
+`__manifest__.py` con datos reales, no placeholders:
+
+```python
+{
+    'name': "<Nombre legible>",
+    'summary': "<una línea real>",
+    'author': "<tu organización>",
+    'category': '<categoría>',
+    'version': '1.0.0',
+    'license': 'LGPL-3',
+    'depends': ['base'],   # lo que corresponda — sin adivinar
+    'data': [
+        # 'security/ir.model.access.csv',
+    ],
+}
+```
 
 ```bash
 make odoo-install MODULES=<nombre_tecnico>
