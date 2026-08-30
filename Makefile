@@ -1,12 +1,12 @@
 include .make/main.mk
 
-.PHONY: help up down logs ps nuke build \
+.PHONY: help up down logs ps nuke reset build \
         secrets-init secrets-perms secrets-check config-init \
-        host-init host-verify timers-install notify-test monitoring-role \
+        host-init host-verify up-timers down-timers notify-test monitoring-role \
         cert-issue cert-renew \
         backup-run backup-integrity restore \
         addons-sync addons odoo-install odoo-update odoo-modules pydeps-check pydeps-sync \
-        require-modules require-backups require-restore require-root test verify \
+        require-modules require-backups require-restore require-root require-not-production test verify \
         $(foreach s,$(STACKS),$(s)-up $(s)-down $(s)-restart $(s)-logs $(s)-ps $(s)-verify) \
         $(foreach s,$(STACKS_ONESHOT),$(s)-logs $(s)-ps $(s)-verify)
 .DEFAULT_GOAL := help
@@ -16,28 +16,31 @@ include .make/main.mk
 # cabeceras '# --- Título ---' y la anotación '##' de cada target, no mantiene nada aparte.
 
 help:
-	@awk -v stacks="$(STACKS)" -v oneshot="$(STACKS_ONESHOT)" -f .make/help.awk $(MAKEFILE_LIST)
+	@awk -v stacks="$(STACKS)" -v oneshot="$(STACKS_ONESHOT)" \
+	     -v m_borde="$(MACRO_BORDE)" -v m_datos="$(MACRO_DATOS)" \
+	     -v m_app="$(MACRO_APP)" -v m_obs="$(MACRO_OBS)" \
+	     -f .make/help.awk $(MAKEFILE_LIST)
 
-# --- Inicialización de un deploy nuevo ---
-# En orden: secrets-init y config-init, cargar los valores a mano, secrets-perms,
-# secrets-check. Los scripts ya imprimen su propio ▶/✓/✗: el target no lo duplica.
+# ============================================================
+# HOST — comandos que no son de un stack puntual
+# ============================================================
+
+# --- [HOST] Secrets y configuración ---
+# Bootstrap de un deploy nuevo: secrets-init y config-init, cargar los valores a
+# mano, secrets-perms, secrets-check. Los scripts ya imprimen su ▶/✓/✗ propio.
 
 secrets-init: ## Genera los secrets iniciales (valores dummy a completar a mano)
 	scripts/secrets-init.sh
 
-# --- Permisos de secrets ---
 # Un solo script con el mapa de GIDs: --apply escribe (requiere root), --check valida.
-
 secrets-perms: ## Aplica permisos de secrets (requiere root)
 	scripts/secrets-perms.sh --apply
 
 secrets-check: ## Verifica permisos de secrets
 	scripts/secrets-perms.sh --check
 
-# --- Config real de cada stack activo ---
 # Mismo mecanismo que secrets-init, pero para los .conf/.ini/.yaml gitignoreados de
 # stacks/*/config/ y addons/: un cp idempotente desde el .example de cada uno.
-
 config-init: ## Bootstrapea los config reales desde su .example
 	scripts/config-init.sh
 
@@ -67,30 +70,24 @@ host-init: require-root ## Aplica la rotación de logs del daemon (requiere root
 	  ui_run "host-init" sh -c \
 	    'cp host/daemon.json /etc/docker/daemon.json && systemctl restart docker'
 
-timers-install: ## Instala y activa las units de systemd de este stack (requiere root)
+up-timers: ## Instala y activa las units de systemd de este stack (requiere root)
 	scripts/timers.sh install
+
+down-timers: ## Desinstala las units de systemd de este checkout (requiere root)
+	scripts/timers.sh remove
 
 notify-test: TARGET=notify-test
 notify-test: require-root ## Dispara el aviso de fallo de punta a punta (requiere root)
 	@. scripts/lib/ui.sh; unidad="$$(scripts/timers.sh notify)prueba.service"; \
 	  ui_start "notify-test: $$unidad"; \
 	  if ! systemctl start "$$unidad"; then \
-	    ui_bad "notify-test falló" "systemctl no pudo arrancar $$unidad — ¿corriste 'sudo make timers-install'? Últimas líneas del journal:"; \
+	    ui_bad "notify-test falló" "systemctl no pudo arrancar $$unidad — ¿corriste 'sudo make up-timers'? Últimas líneas del journal:"; \
 	    journalctl -u "$$unidad" -n 20 --no-pager; exit 1; \
 	  fi; \
 	  resultado=$$(systemctl show -p Result --value "$$unidad"); \
 	  if [ "$$resultado" = "success" ]; then ui_ok "notify-test listo — Result=success, ahora confirmá que el mail llegó"; \
 	  else ui_bad "notify-test falló" "Result=$$resultado — últimas líneas del journal:"; \
 	    journalctl -u "$$unidad" -n 20 --no-pager; exit 1; fi
-
-# --- Certificados ---
-# Emisión a mano la primera vez, renovación por timer — nunca con up/down/restart.
-
-cert-issue: ## Emite el certificado inicial
-	stacks/certbot/scripts/cert.sh issue
-
-cert-renew: ## Renueva el certificado
-	stacks/certbot/scripts/cert.sh renew
 
 # --- Tests ---
 # Los tres entrypoints, addons.sh y los derivadores de verify, cert y secrets. No
@@ -116,22 +113,6 @@ verify: ## Verifica el deploy completo — o <stack>-verify para uno solo
 host-verify: ## Verifica los prerrequisitos del SO (systemd, rotación de logs, secrets)
 	scripts/verify-host.sh
 
-# --- [SEXTETO] Ciclo de vida, stack por stack ---
-# Sexteto (o trío, para STACKS_ONESHOT) generado en .make/; help.awk sintetiza la descripción.
-
-# --- Respaldos (árbol nuevo) ---
-# El diario respalda y purga; el check verifica integridad del repositorio. No hay
-# 'full': en restic todo snapshot es completo y la retención GFS la hace forget.
-
-backup-run: require-backups ## Corre el backup diario (dump + filestore en un snapshot)
-	stacks/backup/scripts/backup.sh daily
-
-backup-integrity: require-backups ## Verifica la integridad del repositorio (restic check)
-	stacks/backup/scripts/backup.sh check
-
-restore: require-restore ## Restaura filestore y base desde un snapshot — SNAPSHOT=latest
-	stacks/backup/scripts/restore.sh $(or $(SNAPSHOT),latest)
-
 # --- Ciclo de vida del stack completo ---
 
 up: ## Levanta el stack completo
@@ -146,19 +127,33 @@ logs: ## Sigue los logs de todos los servicios
 ps: ## Lista el estado de los contenedores
 	@. scripts/ui/components.sh; salida=$$(docker compose ps) || exit $$?; printf '%s\n' "$$salida" | ui_color_status | ui_table_frame
 
-# --- Nuke ---
-# El más destructivo del Makefile. Confirmación: tipear la palabra 'nuke', no Y/N.
-# Nunca toca secrets/ ni .env — son credenciales de terceros, no derivables de nada.
+# nuke: el más destructivo del Makefile — confirmación tipeando la palabra, no Y/N,
+# y nunca toca secrets/ ni .env. reset es lo mismo pero solo los volúmenes: containers,
+# imágenes y addons/ quedan como están, así que el up posterior no rebuildea nada.
 
 nuke: ## Borra TODO: containers/imágenes/volúmenes del stack + addons/ + state/
 	@. scripts/lib/ui.sh; \
 	  ui_warn "esto borra los datos de este stack" \
 	    "volúmenes, imágenes propias, addons/ y state/ — secrets/ y .env NO se tocan"; \
-	  ui_confirm_nuke || exit 1; \
+	  ui_confirm nuke || exit 1; \
 	  ui_run "nuke" sh -c 'docker compose down -v --rmi local --remove-orphans && \
 	    rm -rf addons/.repos addons/*/*/ state/textfile/*.prom state/meta/*.txt'
 
-# --- Addons ---
+# Mismo indicador que require-backups, leído al revés: backup sin profiles: solo
+# está en producción (en staging tiene profiles: [restore]; en development no está).
+require-not-production:
+	@. scripts/lib/ui.sh; docker compose config --services 2>/dev/null | grep -qx backup && \
+	  { ui_bad "$(TARGET) no corre en producción" "este checkout tiene la capa de backups activa sin profiles: — es producción" >&2; exit 2; } || true
+
+reset: TARGET=reset
+reset: require-not-production ## Borra los datos (volúmenes) y vuelve a levantar limpio — nunca en producción
+	@. scripts/lib/ui.sh; \
+	  ui_warn "esto borra los datos de este stack" \
+	    "volúmenes (base, filestore, dumps) — containers, imágenes y addons/ quedan igual"; \
+	  ui_confirm reset || exit 1; \
+	  ui_run "reset" sh -c 'docker compose down -v && docker compose up -d'
+
+# --- [STACK:addons] Gestión de addons ---
 # sync clona/actualiza los árboles desde addons/addons.txt; puro host, sin contenedores.
 
 addons-sync: ## Clona/actualiza los addons desde addons/addons.txt
@@ -174,7 +169,7 @@ addons: ## Muestra el estado de los addons
 build: ## Construye las imágenes propias de este stack
 	@. scripts/lib/ui.sh; ui_run "build" docker compose build
 
-# --- Dependencias Python de los addons ---
+# --- [STACK:addons] Dependencias Python ---
 # check es puro host (corre en 'make test'); sync necesita Docker para resolver
 # versión contra la imagen base. Ninguno de los dos rebuildea la imagen.
 
@@ -184,7 +179,14 @@ pydeps-check: ## Verifica que requirements.txt cubra las external_dependencies d
 pydeps-sync: ## Pinea en requirements.txt lo que declaren los addons y todavía falte
 	scripts/pydeps.sh sync
 
-# --- Instalar/actualizar módulos ---
+# ============================================================
+# STACKS — sexteto genérico + lo puntual de cada uno, agrupado
+# ============================================================
+
+# --- [SEXTETO] Ciclo de vida, stack por stack ---
+# Sexteto (o trío, para STACKS_ONESHOT) generado en .make/; help.awk sintetiza la descripción.
+
+# --- [STACK:odoo] Instalar/actualizar módulos ---
 # El one-off corre -i/-u con la conexión explícita a postgres:5432. El up -d va
 # siempre, aunque el one-off falle: si no, un -i con error deja produccion abajo.
 # --name: el servicio declara container_name, y sin un nombre propio el one-off
@@ -225,27 +227,45 @@ odoo-modules: ## Lista los módulos instalados en la base
 	  printf '%s\n' "$$salida" | column -t -s "$$(printf '\t')" \
 	  | awk 'NR==1 {print; n=length($$0); s=""; for(i=0;i<n;i++) s=s "-"; print s; next} {print}'
 
-# --- Guardas de capa ---
-# Le preguntan a la composición, no a una variable: qué capas trae cada stack ya
-# lo dice su entrypoint, y declararlo dos veces es una divergencia esperando.
+# --- [STACK:backup] Operación ---
+# El diario respalda y purga; el check verifica integridad del repositorio. No hay
+# 'full': en restic todo snapshot es completo y la retención GFS la hace forget.
 
+# Le pregunta a la composición, no a una variable: qué capas trae cada stack ya
+# lo dice su entrypoint, y declararlo dos veces es una divergencia esperando.
 require-backups:
 	@. scripts/lib/ui.sh; docker compose config --services 2>/dev/null | grep -qx backup || \
 	  { ui_bad "este stack no incluye la capa de backups" "es exclusiva de producción — revisar COMPOSE_FILE en .env" >&2; exit 2; }
 
-# --- Respaldar vs restaurar ---
 # Dos guardas y no una: respaldar es de producción, restaurar es de los dos entornos.
 # La diferencia sale de la composición, no de una lista — el entrypoint de prueba le
 # pone profiles: [restore] al servicio backup, así que queda fuera del default (y de
 # lo que ve timers.sh) pero sigue alcanzable para restaurar.
-#
 require-restore:
 	@. scripts/lib/ui.sh; docker compose --profile restore config --services 2>/dev/null | grep -qx backup || \
 	  { ui_bad "este stack no incluye la capa de restore" "revisar COMPOSE_FILE en .env" >&2; exit 2; }
 
-# --- Observabilidad ---
-# El rol de monitoreo no sale de la imagen: lo crea el operador contra la base ya
-# viva. DROP+CREATE lo hace repetible, y con eso sirve también para rotar la clave.
+backup-run: require-backups ## Corre el backup diario (dump + filestore en un snapshot)
+	stacks/backup/scripts/backup.sh daily
+
+backup-integrity: require-backups ## Verifica la integridad del repositorio (restic check)
+	stacks/backup/scripts/backup.sh check
+
+restore: require-restore ## Restaura filestore y base desde un snapshot — SNAPSHOT=latest
+	stacks/backup/scripts/restore.sh $(or $(SNAPSHOT),latest)
+
+# --- [STACK:alloy] Rol de monitoreo ---
+# No sale de la imagen: lo crea el operador contra la base ya viva. DROP+CREATE lo
+# hace repetible, y con eso sirve también para rotar la clave.
 
 monitoring-role: ## Crea (o rota) el rol de solo lectura que scrapea Postgres
 	stacks/alloy/scripts/monitoring-role.sh
+
+# --- [STACK:certbot] Certificados ---
+# Emisión a mano la primera vez, renovación por timer — nunca con up/down/restart.
+
+cert-issue: ## Emite el certificado inicial
+	stacks/certbot/scripts/cert.sh issue
+
+cert-renew: ## Renueva el certificado
+	stacks/certbot/scripts/cert.sh renew

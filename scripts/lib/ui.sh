@@ -60,10 +60,10 @@ ui_color_status() {
 }
 
 # --- Confirmación destructiva ---
-# Pide escribir 'nuke' literal, no Y/N; devuelve 1 sin tocar nada si no coincide.
+# Pide escribir la palabra literal, no Y/N; devuelve 1 sin tocar nada si no coincide.
 
-ui_confirm_nuke() {
-  local confirmacion
-  read -r -p "Escribí 'nuke' para confirmar: " confirmacion
-  [ "$confirmacion" = "nuke" ] || { ui_skip "cancelado"; return 1; }
+ui_confirm() {
+  local palabra="$1" confirmacion
+  read -r -p "Escribí '$palabra' para confirmar: " confirmacion
+  [ "$confirmacion" = "$palabra" ] || { ui_skip "cancelado"; return 1; }
 }

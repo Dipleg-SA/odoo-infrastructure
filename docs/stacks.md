@@ -28,7 +28,7 @@ es el caso real de producción y prueba.
 **Que prueba no respalde es estructural, no una omisión.** Su entrypoint le pone
 `profiles: [restore]` al stack `backup`, así que queda fuera de la composición por
 defecto — y `timers.sh`, que deriva las units de ahí, no instala los timers de backup.
-Sin eso, un `sudo make timers-install` en prueba dejaría una corrida nocturna
+Sin eso, un `sudo make up-timers` en prueba dejaría una corrida nocturna
 escribiendo en el repositorio de producción y apagando su alerta de backup viejo.
 `compose run` alcanza igual al servicio con el perfil inactivo, así que restaurar
 funciona sin activar nada.
