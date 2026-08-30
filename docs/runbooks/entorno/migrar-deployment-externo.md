@@ -38,6 +38,8 @@ Cada nombre técnico de esa lista que no sea de la base de Odoo tiene que estar 
 
 **3. El nombre de base es fijo.** Este stack no lo parametriza: el entrypoint corre `-d odoo`, y `stacks/odoo/config/odoo.conf` trae `dbfilter = ^odoo$` con `list_db = False`. La base de origen aterriza llamándose `odoo` se llamara como se llamara, y el directorio del filestore se renombra con ella — el filestore se indexa por nombre de base.
 
+El directorio de destino de ese filestore **nunca está vacío**, ni en un stack recién levantado: el primer arranque corre `-i base`, que crea `filestore/odoo/` con los assets por defecto de Odoo. `docker cp` sobre un directorio que ya existe no lo reemplaza — copia el origen *adentro*, un nivel de más, sin que ningún comando falle ni avise. El paso 5 lo cubre con un `rm -rf` explícito antes de copiar; no lo saltees razonando que el stack "parece" vacío.
+
 **4. La regla de consistencia base ↔ filestore.** Un adjunto vive partido: la fila en `ir_attachment` y el archivo en el filestore. Copiarlos desalineados es la falla silenciosa de este sistema — arranca sano y el problema aparece meses después.
 
 > **Frená el Odoo de origen antes del dump y dejalo frenado hasta terminar la copia del filestore.**
@@ -88,17 +90,33 @@ docker stop <contenedor-odoo-origen>   # si lo habías vuelto a levantar
 ```bash
 docker compose up -d backup
 docker compose exec -u 0:0 backup mkdir -p /data/odoo/filestore
+docker compose exec -u 0:0 backup rm -rf /data/odoo/filestore/odoo
 docker cp /tmp/filestore-origen <proyecto>-backup:/data/odoo/filestore/odoo
 docker compose exec -u 0:0 backup chown -R 100:101 /data/odoo/filestore
 ```
 
-El `docker cp` hace el renombrado en el mismo movimiento: el directorio de origen llega como `odoo`, que es el nombre que el stack espera. `<proyecto>` es el `COMPOSE_PROJECT_NAME` del `.env`.
+El `rm -rf` no es opcional ni siquiera en un stack recién levantado — ver el punto 3 de *A mano*: sin él, `docker cp` anida el filestore migrado adentro del que ya existía, y el resultado no tira ningún error, solo adjuntos que no aparecen. El `docker cp` hace el renombrado en el mismo movimiento: el directorio de origen llega como `odoo`, que es el nombre que el stack espera. `<proyecto>` es el `COMPOSE_PROJECT_NAME` del `.env`.
 
-**6. Neutralizar — solo si el destino no es producción.** Sin esto la copia manda mail y pega contra las integraciones reales del origen:
+**Si este paso hay que repetirlo** —por ejemplo, porque una corrida anterior quedó mal y el stack ya llegó a levantarse (paso 7)— volvé a `docker compose stop odoo` antes de tocar el filestore otra vez. Con Odoo arriba puede haber escrito adjuntos propios (íconos de módulos, por ejemplo) directamente en ese mismo directorio; un `rm -rf` con la aplicación viva se los lleva puestos junto con lo que sí había que limpiar.
+
+> **`neutralize` nunca corre contra el destino real.** Es lo que apaga cron, medios de pago y demás integraciones para que un ensayo no le pegue al mundo real — correrlo sobre el deployment que va a quedar sirviendo tráfico real lo deja con esas integraciones apagadas.
+
+**6. Neutralizar — solo si el destino no es producción:**
 
 ```bash
-docker compose run --rm odoo -d odoo --stop-after-init neutralize
+docker compose run --rm --entrypoint bash -T odoo -c '
+  paths=()
+  for category in enterprise custom-addons oca third-party; do
+    for repo in /mnt/extra-addons/$category/*/; do [ -d "$repo" ] && paths+=("${repo%/}"); done
+  done
+  ADDONS_PATH=$(IFS=,; echo "${paths[*]}")
+  DB_PASSWORD="$(cat /run/secrets/postgres_password)"
+  odoo neutralize -c /etc/odoo/odoo.conf --addons-path="$ADDONS_PATH" -d odoo \
+    --db_host=postgres --db_port=5432 --db_user=odoo --db_password="$DB_PASSWORD"
+'
 ```
+
+No es el `docker compose run --rm odoo -d odoo --stop-after-init neutralize` que uno esperaría: [`entrypoint.sh`](../../../stacks/odoo/image/entrypoint.sh) intercepta cualquier argumento del `run` y arma `odoo -c ... -d odoo --no-http "$@" ...` — `neutralize` deja de ser el primer argumento, que es donde Odoo exige el subcomando, y falla con "unrecognized parameters" sin tocar nada. Por eso acá se pasa por alto el entrypoint (`--entrypoint bash`) y se arma el `addons_path` a mano, con el mismo glob por categorías que usa el entrypoint real.
 
 **7. Levantar y poner los módulos al día:**
 
@@ -126,6 +144,8 @@ Las cuatro. Cada una cubre una falla que las otras no ven.
    scripts/integrity-check.sh
    ```
    Salida esperada: `referenciados: N | faltantes: 0`, exit `0`. Cada línea `FALTA:` es un adjunto cuya fila vino en el dump y cuyo archivo no vino en el filestore.
+
+   **Si da `faltantes` > 0, antes de asumir que la migración lo rompió, comprobá si ya faltaba en el origen** — un `ir_attachment` puede quedar huérfano ahí por años sin que nadie lo note. Con el origen todavía accesible (paso 4 de *A mano*: no se apaga hasta cerrar esta verificación), cada hash de una línea `FALTA:` se busca directo en `<data_dir-origen>/filestore/<base-origen>/<hash>`: si tampoco está ahí, es un huérfano preexistente y no bloquea el cierre de la migración; documentalo y seguí. Si sí está en el origen y no en el destino, ahí la falla es de la copia — revisar el punto 3 de *A mano* antes de reintentar el paso 5.
 
 ### Al terminar
 
