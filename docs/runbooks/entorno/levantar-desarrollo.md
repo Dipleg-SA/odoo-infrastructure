@@ -129,10 +129,16 @@ Exige el servicio `healthy`, que acepte conexiones, los logs sin errores de perm
 
 **Objetivo** — el árbol de addons de tu rama en disco y la imagen de Odoo construida.
 
-**A mano** — completar `addons/addons.txt`, que `config-init` ya bootstrapeó en el bloque 2. Si todavía no declaraste ningún repo propio, ver [crear-fork](../modulos/crear-fork.md).
+**A mano** — completar `addons/addons.txt`, que `config-init` ya bootstrapeó en el bloque 2. Si todavía no declaraste ningún repo propio, ver [gestionar-fork § Crear](../modulos/gestionar-fork.md#crear).
 
 ```bash
 nano addons/addons.txt
+```
+
+`ADDONS_BRANCH` en tu `.env` es una rama de feature nueva: todavía no existe en ningún repo del manifiesto. `addons-sync` arma worktrees, no crea ramas — sin este paso falla al primer intento.
+
+```bash
+make addons-branch
 ```
 
 ```bash
@@ -209,4 +215,4 @@ Tiene que haber un juego de volúmenes por nombre de proyecto —`development-sa
 - [ ] El login responde `200` en el puerto de este checkout
 - [ ] Los volúmenes llevan el nombre de este checkout y no los comparte otro
 
-De acá en más, el trabajo real sigue en [crear-modulo](../modulos/crear-modulo.md) o [actualizar-modulo](../modulos/actualizar-modulo.md), y la validación de lo que hiciste en [validar-modulo-desarrollo](../validacion/validar-modulo-desarrollo.md).
+De acá en más, el trabajo real sigue en [gestionar-modulo](../modulos/gestionar-modulo.md), y la validación de lo que hiciste en [validar-modulo-desarrollo](../validacion/validar-modulo-desarrollo.md).

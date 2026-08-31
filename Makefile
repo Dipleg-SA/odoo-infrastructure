@@ -5,7 +5,7 @@ include .make/main.mk
         host-init host-verify up-timers down-timers notify-test monitoring-role \
         cert-issue cert-renew \
         backup-run backup-integrity restore \
-        addons-sync addons odoo-install odoo-update odoo-modules pydeps-check pydeps-sync \
+        addons-sync addons addons-branch odoo-install odoo-update odoo-modules pydeps-check pydeps-sync \
         require-modules require-backups require-restore require-root require-not-production test verify \
         $(foreach s,$(STACKS),$(s)-up $(s)-down $(s)-restart $(s)-logs $(s)-ps $(s)-verify) \
         $(foreach s,$(STACKS_ONESHOT),$(s)-logs $(s)-ps $(s)-verify)
@@ -161,6 +161,14 @@ addons-sync: ## Clona/actualiza los addons desde addons/addons.txt
 
 addons: ## Muestra el estado de los addons
 	@. scripts/lib/ui.sh; ui_run "addons" scripts/addons.sh status
+
+# --- [STACK:addons] Rama nueva de checkout de desarrollo ---
+# Antes del primer addons-sync de un checkout: crea ADDONS_BRANCH en origin de
+# cada repo, partiendo de la versión del Dockerfile. Falla si ya existe o si
+# ADDONS_BRANCH no se redeclaró en .env todavía.
+
+addons-branch: ## Crea ADDONS_BRANCH (rama de feature en .env) en origin de cada addon
+	scripts/addons.sh branch
 
 # --- Imágenes propias ---
 # Todo stack construye la suya, aunque el Dockerfile sea un FROM pineado y nada más.
