@@ -48,6 +48,8 @@ declarar() { printf '%s\t%s\n' "$2" "$3" >> "$1/addons/addons.txt"; }
 sync()     { (cd "$1" && ./scripts/addons.sh sync 2>&1); }
 estado()   { (cd "$1" && ./scripts/addons.sh status 2>&1); }
 sync_code(){ (cd "$1" && ./scripts/addons.sh sync >/dev/null 2>&1; echo $?); }
+branch()      { (cd "$1" && ./scripts/addons.sh branch "${2:-}" 2>&1); }
+branch_code() { (cd "$1" && ./scripts/addons.sh branch "${2:-}" >/dev/null 2>&1; echo $?); }
 
 # =====================================================================
 titulo "sync inicial"
@@ -158,5 +160,38 @@ rm -rf "$ROOT3/addons/production"
 sync "$ROOT3" >/dev/null 2>&1
 mkdir -p "$ROOT3/addons/oca/repo_ajeno"
 contiene "status lista lo que no está en el manifiesto" "huérfano: oca/repo_ajeno" "$(estado "$ROOT3")"
+
+# =====================================================================
+titulo "branch: crea la rama de feature antes del primer sync"
+# =====================================================================
+
+ADDON2=$(crear_addon otro_modulo)
+ROOT4=$(crear_checkout caso4 feat/nueva)
+declarar "$ROOT4" "$ADDON2" custom-addons
+
+igual "branch sale con 0" "0" "$(branch_code "$ROOT4")"
+igual "y crea la rama en el remoto" "0" \
+  "$(git -C "$ADDON2" show-ref --verify -q refs/heads/feat/nueva; echo $?)"
+
+igual "y ahora sync arma el worktree sobre ella" "0" "$(sync_code "$ROOT4")"
+igual "en la rama declarada" "feat/nueva" \
+  "$(git -C "$ROOT4/addons/custom-addons/otro_modulo" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+
+contiene "correrlo de nuevo avisa que ya existe" "ya existe" "$(branch "$ROOT4")"
+igual    "y no falla" "0" "$(branch_code "$ROOT4")"
+
+# =====================================================================
+titulo "branch: guardas"
+# =====================================================================
+
+ROOT5=$(crear_checkout caso5 "")
+declarar "$ROOT5" "$ADDON2" custom-addons
+igual    "sin rama de feature propia en .env, aborta" "1" "$(branch_code "$ROOT5")"
+contiene "y dice por qué" "declará una rama de feature" "$(branch "$ROOT5")"
+
+ROOT6=$(crear_checkout caso6 feat/otra)
+declarar "$ROOT6" "$ADDON2" custom-addons
+igual    "una rama base inexistente falla" "1" "$(branch_code "$ROOT6" "99.0")"
+contiene "nombrando la que falta" "origin/99.0 no existe" "$(branch "$ROOT6" "99.0")"
 
 resumen

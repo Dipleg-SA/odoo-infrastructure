@@ -2,7 +2,7 @@
 
 ## Cuándo se usa
 
-Justo después de aplicar un cambio en producción —el último paso de [actualizar-modulo](../modulos/actualizar-modulo.md), incluida la primera vez que un módulo se instala ahí— para confirmar que quedó bien antes de dar el deploy por cerrado y seguir con otra cosa.
+Justo después de aplicar un cambio en producción —el último paso de [gestionar-modulo § Actualizar](../modulos/gestionar-modulo.md#actualizar), incluida la primera vez que un módulo se instala ahí— para confirmar que quedó bien antes de dar el deploy por cerrado y seguir con otra cosa.
 
 ## Objetivo
 
@@ -36,4 +36,4 @@ A mano:
 
 ---
 
-Si algo requiere revertir, no hay un "deshacer" de módulo: el camino es un nuevo cambio a través de [actualizar-modulo](../modulos/actualizar-modulo.md), validado de nuevo en staging. Si el problema es de datos, no de código, ver [backup-restore/](../backup-restore/).
+Si algo requiere revertir, no hay un "deshacer" de módulo: el camino es un nuevo cambio a través de [gestionar-modulo § Actualizar](../modulos/gestionar-modulo.md#actualizar), validado de nuevo en staging. Si el problema es de datos, no de código, ver [backup-restore/](../backup-restore/).

@@ -183,7 +183,7 @@ Cubre el servicio `healthy`, que acepte conexiones, los logs sin errores de perm
 
 **Objetivo** — el árbol de módulos en disco y la imagen de Odoo construida. El bloque 6 no arranca sin esto: el entrypoint aborta si el `addons_path` queda vacío.
 
-**A mano** — completar `addons/addons.txt`, que `config-init` ya bootstrapeó en el bloque 2, con tus repos, uno por línea (`URL categoría`). Si no tenés ninguno todavía, podés dejarlo vacío y volver después (ver [crear-fork](../modulos/crear-fork.md)).
+**A mano** — completar `addons/addons.txt`, que `config-init` ya bootstrapeó en el bloque 2, con tus repos, uno por línea (`URL categoría`). Si no tenés ninguno todavía, podés dejarlo vacío y volver después (ver [gestionar-fork § Crear](../modulos/gestionar-fork.md#crear)).
 
 ```bash
 nano addons/addons.txt
@@ -219,7 +219,7 @@ make odoo-up && make odoo-logs
 
 El entrypoint detecta que la base está vacía y corre `-i base --stop-after-init` con la conexión explícita a `postgres:5432`, antes de que el entrypoint oficial arme su propia espera. Esperá `HTTP service (werkzeug) running` y cortá los logs con Ctrl-C.
 
-**Ahora cambiá la contraseña de `admin`.** Después, si corresponde instalar módulos, ver [crear-modulo](../modulos/crear-modulo.md) o [actualizar-modulo](../modulos/actualizar-modulo.md).
+**Ahora cambiá la contraseña de `admin`.** Después, si corresponde instalar módulos, ver [gestionar-modulo](../modulos/gestionar-modulo.md).
 
 ```bash
 make odoo-verify

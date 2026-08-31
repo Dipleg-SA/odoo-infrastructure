@@ -2,7 +2,7 @@
 
 ## Cuándo se usa
 
-Necesitás subir, bajar, reiniciar o inspeccionar el servicio `odoo` sin tocar el resto del stack. **No es donde instalás o actualizás módulos** — eso vive en [crear-modulo](../modulos/crear-modulo.md)/[actualizar-modulo](../modulos/actualizar-modulo.md), que paran y levantan el servicio como parte de un `-i`/`-u` explícito, no de este runbook.
+Necesitás subir, bajar, reiniciar o inspeccionar el servicio `odoo` sin tocar el resto del stack. **No es donde instalás o actualizás módulos** — eso vive en [gestionar-modulo](../modulos/gestionar-modulo.md), que para y levanta el servicio como parte de un `-i`/`-u` explícito, no de este runbook.
 
 ## Objetivo
 

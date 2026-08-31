@@ -2,7 +2,7 @@
 
 ## Cuándo se usa
 
-Terminaste (o estás en medio de) el bucle de [crear-modulo](../modulos/crear-modulo.md)/[actualizar-modulo](../modulos/actualizar-modulo.md) en tu entorno local y necesitás confirmar que el módulo hace lo que tiene que hacer antes de gastar un ciclo de staging con él. Es la barrera más barata de las tres — falla rápido y sin tocar nada compartido.
+Terminaste (o estás en medio de) el bucle de [gestionar-modulo](../modulos/gestionar-modulo.md) en tu entorno local y necesitás confirmar que el módulo hace lo que tiene que hacer antes de gastar un ciclo de staging con él. Es la barrera más barata de las tres — falla rápido y sin tocar nada compartido.
 
 ## Objetivo
 
@@ -42,4 +42,4 @@ Lo que `odoo-verify` **no** cubre, porque es específico de tu módulo, va a man
 
 ---
 
-Con esto en verde, seguí a [validar-modulo-staging](validar-modulo-staging.md) como parte de la integración ([actualizar-modulo](../modulos/actualizar-modulo.md)).
+Con esto en verde, seguí a [validar-modulo-staging](validar-modulo-staging.md) como parte de la integración ([gestionar-modulo § Actualizar](../modulos/gestionar-modulo.md#actualizar)).

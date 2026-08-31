@@ -2,7 +2,7 @@
 
 ## Cuándo se usa
 
-Puesta en marcha del segundo stack, en el mismo servidor que producción — necesario antes de validar cualquier cambio de módulo (ver [actualizar-modulo](../modulos/actualizar-modulo.md)) o de correr el simulacro semestral de restore. Asume producción ya operativa: si este es el primer stack del servidor, el procedimiento es [levantar-produccion](levantar-produccion.md) entero.
+Puesta en marcha del segundo stack, en el mismo servidor que producción — necesario antes de validar cualquier cambio de módulo (ver [gestionar-modulo § Actualizar](../modulos/gestionar-modulo.md#actualizar)) o de correr el simulacro semestral de restore. Asume producción ya operativa: si este es el primer stack del servidor, el procedimiento es [levantar-produccion](levantar-produccion.md) entero.
 
 Son los **mismos nueve bloques y los mismos comandos** que producción: eso lo dice su entrypoint, así que `make nginx-up` levanta acá dos contenedores en vez de tres. Dos bloques no corresponden y se saltean.
 

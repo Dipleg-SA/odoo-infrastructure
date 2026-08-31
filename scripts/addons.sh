@@ -20,7 +20,8 @@ BARE_DIR="addons/.repos"
 # Un árbol por checkout: qué entorno es este lo dice .env, no un subdirectorio.
 # El default sale del tag de la imagen, único lugar donde vive la versión de Odoo.
 
-ADDONS_BRANCH="${ADDONS_BRANCH:-$(sed -n 's/^FROM odoo:\([0-9.]*\).*/\1/p' stacks/odoo/image/Dockerfile | head -1)}"
+VERSION="$(sed -n 's/^FROM odoo:\([0-9.]*\).*/\1/p' stacks/odoo/image/Dockerfile | head -1)"
+ADDONS_BRANCH="${ADDONS_BRANCH:-$VERSION}"
 
 if [ -z "$ADDONS_BRANCH" ]; then
   echo "addons.sh: no se pudo leer la versión del tag FROM odoo: del Dockerfile" >&2
@@ -255,6 +256,51 @@ list_orphans() {
   done
 }
 
+# --- Rama nueva de checkout de desarrollo ---
+# Cada checkout de development es su propia rama en cada repo; sync no la crea,
+# solo arma el worktree sobre la que ya exista. Sin esto, un ADDONS_BRANCH nuevo
+# en .env falla al primer 'addons-sync' porque origin/<rama> no existe todavía.
+
+cmd_branch() {
+  local base="${1:-$VERSION}" url category name bare err
+  require_manifest
+
+  if [ "$ADDONS_BRANCH" = "$base" ]; then
+    echo "addons.sh: ADDONS_BRANCH ('$ADDONS_BRANCH') es igual a la rama base — declará una rama de feature en .env primero" >&2
+    exit 1
+  fi
+
+  ui_plan_start "addons branch"
+  ui_step 1 "Creando '$ADDONS_BRANCH' desde 'origin/$base' en cada repo de $MANIFEST."
+
+  while read -r url category; do
+    name=$(module_name "$url")
+    bare="$BARE_DIR/$name.git"
+    ensure_bare "$url" "$bare" || continue
+    if git -C "$bare" show-ref --verify -q "refs/remotes/origin/$ADDONS_BRANCH"; then
+      warn "$name: origin/$ADDONS_BRANCH ya existe, no se toca"
+      continue
+    fi
+    if ! git -C "$bare" show-ref --verify -q "refs/remotes/origin/$base"; then
+      fail "$name: origin/$base no existe, no se puede ramificar"
+      continue
+    fi
+    if ! err=$(git -C "$bare" push origin "refs/remotes/origin/$base:refs/heads/$ADDONS_BRANCH" 2>&1); then
+      fail "$name: push de '$ADDONS_BRANCH' falló — $err"
+    fi
+  done < <(manifest_entries)
+
+  ui_plan_end
+  if [ "$FAILED" -ne 0 ]; then
+    ui_bad "addons branch terminó con errores" "ver arriba" >&2
+    echo
+    exit 1
+  fi
+
+  ui_ok "addons branch listo — '$ADDONS_BRANCH' creada en origin de cada repo"
+  echo
+}
+
 cmd_status() {
   local url category name
   require_manifest
@@ -273,5 +319,6 @@ cmd_status() {
 case "${1:-}" in
   sync) shift; cmd_sync "$@" ;;
   status) shift; cmd_status "$@" ;;
-  *) echo "uso: $(basename "$0") sync|status" >&2; exit 2 ;;
+  branch) shift; cmd_branch "$@" ;;
+  *) echo "uso: $(basename "$0") sync|status|branch" >&2; exit 2 ;;
 esac
