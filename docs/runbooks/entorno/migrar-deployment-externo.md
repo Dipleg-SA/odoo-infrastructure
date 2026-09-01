@@ -122,7 +122,7 @@ No es el `docker compose run --rm odoo -d odoo --stop-after-init neutralize` que
 
 ```bash
 docker compose up -d
-make odoo-update MODULES=all
+make addons-update MODULES=all
 ```
 
 El `-u all` no es opcional aunque el mayor coincida: entre builds de una misma serie hay versiones de módulo que suben, y sin la actualización el esquema queda a medio camino.

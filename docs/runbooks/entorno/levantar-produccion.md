@@ -190,18 +190,18 @@ nano addons/addons.txt
 ```
 
 ```bash
-make addons-sync && make build
+make repo-sync && make build
 ```
 
 El token de git de solo lectura ya tiene que estar en `~/.git-credentials` — lo piden los repos privados del manifiesto, los forks públicos no.
 
-**El build no clona nada.** Instala las dependencias Python de `addons/requirements.txt` si el archivo existe —lo escribe `make pydeps-sync`— y copia el entrypoint, nada más. La consecuencia buscada: desplegar un cambio de módulo no vuelve a requerir un rebuild.
+**El build no clona nada.** Instala las dependencias Python de `addons/requirements.txt` si el archivo existe —lo escribe `make addons-deps`— y copia el entrypoint, nada más. La consecuencia buscada: desplegar un cambio de módulo no vuelve a requerir un rebuild.
 
 ```bash
-make addons
+make repo-status
 ```
 
-Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, todas en `limpio`. Un `(sin worktree)` o un `sucio` es un sync incompleto. Si un repo privado falló con `Repository not found` o `Authentication failed`, al token le faltan permisos: alcanza con lectura de contenidos sobre tu organización. Un `huérfano: categoría/nombre` al final es un directorio que quedó en disco después de sacarlo del manifiesto — `addons-sync` no lo borra solo. Es un chequeo visual — `make odoo-verify` lo vuelve a validar mecánicamente en el bloque siguiente.
+Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, todas en `limpio`. Un `(sin worktree)` o un `sucio` es un sync incompleto. Si un repo privado falló con `Repository not found` o `Authentication failed`, al token le faltan permisos: alcanza con lectura de contenidos sobre tu organización. Un `huérfano: categoría/nombre` al final es un directorio que quedó en disco después de sacarlo del manifiesto — `repo-sync` no lo borra solo. Es un chequeo visual — `make odoo-verify` lo vuelve a validar mecánicamente en el bloque siguiente.
 
 ---
 

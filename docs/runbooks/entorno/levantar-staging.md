@@ -175,11 +175,11 @@ nano addons/addons.txt
 ```
 
 ```bash
-make addons-sync && make build
+make repo-sync && make build
 ```
 
 ```bash
-make addons
+make repo-status
 ```
 
 Encabeza con la rama declarada (`<versión>-stag`) y sigue con una fila por repo del manifiesto, todas en `limpio`. Un `huérfano: categoría/nombre` al final es un directorio que quedó en disco después de sacarlo del manifiesto.

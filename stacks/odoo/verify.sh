@@ -52,9 +52,9 @@ v_odoo() {
   sucios=$(printf '%s\n' "$estado" | awk '$NF=="sucio" {print $2}' | tr '\n' ' ')
   faltan=$(printf '%s\n' "$estado" | grep 'sin worktree' | awk '{print $2}' | tr '\n' ' ')
   if [ -z "$estado" ]; then
-    bad "worktrees del checkout presentes" "árbol vacío — correr make addons-sync"
+    bad "worktrees del checkout presentes" "árbol vacío — correr make repo-sync"
   elif [ -n "$faltan" ]; then
-    bad "worktrees del checkout presentes" "sin clonar: $faltan — correr make addons-sync"
+    bad "worktrees del checkout presentes" "sin clonar: $faltan — correr make repo-sync"
   elif [ -n "$sucios" ]; then
     bad "worktrees del checkout limpios" "sucios: $sucios — addons.sh no actualiza un worktree con cambios"
   else

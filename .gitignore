@@ -8,6 +8,11 @@
 secrets/
 .env
 
+# --- Workspace de VS Code ---
+# Lo genera 'make dev-workspace' desde este mismo .env; local a cada checkout.
+
+dev.code-workspace
+
 # --- Clave de cuenta ACME ---
 # Ya no se genera —certbot escribe en un volumen—, pero un checkout viejo la tiene.
 

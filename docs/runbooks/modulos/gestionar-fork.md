@@ -2,7 +2,7 @@
 
 ## Cuándo se usa
 
-Tres momentos del mismo repositorio: **crearlo** (vas a incorporar un módulo cuyo código no arranca de un `make odoo-install` sobre algo que ya existe en el árbol), **actualizarlo** (salió una versión nueva del original y la querés traer a tu fork) o **eliminarlo** (ya no lo usás y querés sacarlo del árbol). Los tres comparten el mismo modelo: un repositorio declarado en `addons/addons.txt`, del que el checkout es dueño de su propia copia.
+Tres momentos del mismo repositorio: **crearlo** (vas a incorporar un módulo cuyo código no arranca de un `make addons-install` sobre algo que ya existe en el árbol), **actualizarlo** (salió una versión nueva del original y la querés traer a tu fork) o **eliminarlo** (ya no lo usás y querés sacarlo del árbol). Los tres comparten el mismo modelo: un repositorio declarado en `addons/addons.txt`, del que el checkout es dueño de su propia copia.
 
 Crear aplica a dos orígenes distintos, con el mismo procedimiento salvo por el primer paso:
 
@@ -36,10 +36,10 @@ echo "<url-de-tu-fork> oca" >> addons/addons.txt
 ```
 
 ```bash
-make addons-sync
+make repo-sync
 ```
 
-En un checkout de desarrollo, si `ADDONS_BRANCH` es una rama de feature que todavía no existe en este repo nuevo, `addons-sync` falla al armar el worktree — creala primero con `make addons-branch` (ver [levantar-desarrollo § 5](../entorno/levantar-desarrollo.md)).
+En un checkout de desarrollo, si `ADDONS_BRANCH` es una rama de feature que todavía no existe en este repo nuevo, `repo-sync` falla al armar el worktree — creala primero con `make repo-branch` (ver [levantar-desarrollo § 5](../entorno/levantar-desarrollo.md)).
 
 Solo si el origen es de terceros, para poder traer versiones nuevas del original más adelante (ver [Actualizar](#actualizar) más abajo):
 
@@ -51,7 +51,7 @@ git -C addons/.repos/<repo>.git fetch upstream
 ### Verificación
 
 ```bash
-make addons
+make repo-status
 ```
 
 Tiene que mostrar el repositorio, limpio, en la rama declarada. Si es de terceros:
@@ -86,10 +86,10 @@ git push --force origin <rama>-stag
 Traer y validar en el servidor de staging:
 
 ```bash
-make addons-sync
+make repo-sync
 ```
 
-Si `addons-sync` avisa que el `merge --ff-only` no avanzó en línea recta (staging se reescribió con `--force`), nombra los dos comandos posibles: `git rebase origin/<rama>-stag` para integrar, o `git reset --hard origin/<rama>-stag` si los commits locales son descartables.
+Si `repo-sync` avisa que el `merge --ff-only` no avanzó en línea recta (staging se reescribió con `--force`), nombra los dos comandos posibles: `git rebase origin/<rama>-stag` para integrar, o `git reset --hard origin/<rama>-stag` si los commits locales son descartables.
 
 Probá de verdad en staging. Recién validado, promover:
 
@@ -102,16 +102,16 @@ git push origin <rama>
 Aplicar en producción:
 
 ```bash
-make addons-sync
-make pydeps-check
-make odoo-update MODULES=<módulos-afectados>
+make repo-sync
+make addons-deps
+make addons-update MODULES=<módulos-afectados>
 ```
 
 ### Verificación
 
 ```bash
-make addons          # limpio, en la rama esperada, en cada checkout
-make odoo-modules    # en producción, muestra la versión nueva
+make repo-status      # limpio, en la rama esperada, en cada checkout
+make addons-modules    # en producción, muestra la versión nueva
 make verify
 ```
 
@@ -123,7 +123,7 @@ make verify
 
 ### A mano
 
-Si el módulo está instalado en alguna base, desinstalalo desde ahí antes de seguir (Ajustes → Aplicaciones → Desinstalar). Este repo no expone un comando CLI de desinstalación —Odoo no tiene un flag `-u`/`-i` simétrico para eso—, y dejar registros en `ir_module_module` apuntando a código que ya no existe puede romper el próximo arranque o `make odoo-update`.
+Si el módulo está instalado en alguna base, desinstalalo desde ahí antes de seguir (Ajustes → Aplicaciones → Desinstalar). Este repo no expone un comando CLI de desinstalación —Odoo no tiene un flag `-u`/`-i` simétrico para eso—, y dejar registros en `ir_module_module` apuntando a código que ya no existe puede romper el próximo arranque o `make addons-update`.
 
 ### Comandos
 
@@ -145,7 +145,7 @@ docker compose restart odoo
 ### Verificación
 
 ```bash
-make addons
+make repo-status
 ```
 
 Ya no debería listar ese repo ni marcarlo como huérfano.

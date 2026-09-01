@@ -1,5 +1,5 @@
 # --- Manifiesto de addons ---
-# Una línea por repositorio: URL + categoría. `make addons-sync` rearma el árbol
+# Una línea por repositorio: URL + categoría. `make repo-sync` rearma el árbol
 # entero desde acá. Se bootstrapea con `cp`, igual que requirements.txt.example.
 
 # Categorías válidas, en orden de precedencia del addons_path:

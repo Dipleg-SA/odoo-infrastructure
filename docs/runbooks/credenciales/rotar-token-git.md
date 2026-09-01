@@ -2,13 +2,13 @@
 
 ## Cuándo se usa
 
-El token de solo lectura sobre tu organización (el que usa `addons-sync` para clonar/traer los repos privados del manifiesto) venció o toca rotarlo. **No es un secret de Compose** — vive en `~/.git-credentials` del host, nunca dentro de un contenedor, porque el clonado ocurre en el host y ningún contenedor lo consume.
+El token de solo lectura sobre tu organización (el que usa `repo-sync` para clonar/traer los repos privados del manifiesto) venció o toca rotarlo. **No es un secret de Compose** — vive en `~/.git-credentials` del host, nunca dentro de un contenedor, porque el clonado ocurre en el host y ningún contenedor lo consume.
 
 El archivo es **por máquina, no por checkout**: rotarlo una vez en el servidor cubre a producción y staging juntas —comparten `~/.git-credentials`, ver [crear-token-git-lectura](../entorno/crear-token-git-lectura.md)—, y hay que repetirlo aparte en cada máquina de desarrollo.
 
 ## Objetivo
 
-`~/.git-credentials` actualizado en cada lugar donde vive, `addons-sync` funcionando de nuevo, el token viejo revocado.
+`~/.git-credentials` actualizado en cada lugar donde vive, `repo-sync` funcionando de nuevo, el token viejo revocado.
 
 ## A mano
 
@@ -31,14 +31,14 @@ read -rs GIT_TOKEN && printf 'https://%s:%s@%s\n' "$GIT_USER" "$GIT_TOKEN" "$GIT
   && chmod 600 ~/.git-credentials && echo "OK: credencial guardada"
 ```
 
-No hace falta recrear ningún contenedor: `addons-sync` corre en el host, y usa `~/.git-credentials` en cada invocación.
+No hace falta recrear ningún contenedor: `repo-sync` corre en el host, y usa `~/.git-credentials` en cada invocación.
 
 ## Verificación
 
 ```bash
-make addons-sync
+make repo-sync
 ```
 
 Sale con `0`, sin `Repository not found` ni `Authentication failed`. Si alguno de esos dos aparece, revisar que el token tenga los permisos justos (lectura de contenidos sobre la organización) antes de asumir que es un problema de otra cosa.
 
-Recién con `addons-sync` limpio **en todos los checkouts que lo usaban**, revocar el token viejo en el proveedor git.
+Recién con `repo-sync` limpio **en todos los checkouts que lo usaban**, revocar el token viejo en el proveedor git.

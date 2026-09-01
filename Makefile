@@ -1,11 +1,11 @@
 include .make/main.mk
 
 .PHONY: help up down logs ps nuke reset build \
-        secrets-init secrets-perms secrets-check config-init \
+        secrets-init secrets-perms secrets-check config-init dev-workspace \
         host-init host-verify up-timers down-timers notify-test monitoring-role \
         cert-issue cert-renew \
         backup-run backup-integrity restore \
-        addons-sync addons addons-branch odoo-install odoo-update odoo-modules pydeps-check pydeps-sync \
+        repo-sync repo-status repo-branch addons-install addons-update addons-modules addons-deps \
         require-modules require-backups require-restore require-root require-not-production test verify \
         $(foreach s,$(STACKS),$(s)-up $(s)-down $(s)-restart $(s)-logs $(s)-ps $(s)-verify) \
         $(foreach s,$(STACKS_ONESHOT),$(s)-logs $(s)-ps $(s)-verify)
@@ -43,6 +43,13 @@ secrets-check: ## Verifica permisos de secrets
 # stacks/*/config/ y addons/: un cp idempotente desde el .example de cada uno.
 config-init: ## Bootstrapea los config reales desde su .example
 	scripts/config-init.sh
+
+# --- [HOST] Workspace de VS Code ---
+# Un folder por tipo de addon + la raíz de infra, generado desde .env — para
+# no mezclar edición de módulos con archivos de infraestructura en el mismo árbol.
+
+dev-workspace: ## Genera dev.code-workspace: un folder por tipo de addon + infra
+	scripts/vscode-workspace.sh
 
 # --- Config de sistema operativo ---
 # Lo único del repo que se instala FUERA del checkout, y por eso pide root: la
@@ -153,21 +160,21 @@ reset: require-not-production ## Borra los datos (volúmenes) y vuelve a levanta
 	  ui_confirm reset || exit 1; \
 	  ui_run "reset" sh -c 'docker compose down -v && docker compose up -d'
 
-# --- [STACK:addons] Gestión de addons ---
+# --- [STACK:repo] Árbol de addons ---
 # sync clona/actualiza los árboles desde addons/addons.txt; puro host, sin contenedores.
 
-addons-sync: ## Clona/actualiza los addons desde addons/addons.txt
+repo-sync: ## Clona/actualiza los addons desde addons/addons.txt
 	scripts/addons.sh sync
 
-addons: ## Muestra el estado de los addons
-	@. scripts/lib/ui.sh; ui_run "addons" scripts/addons.sh status
+repo-status: ## Muestra el estado de los addons
+	@. scripts/lib/ui.sh; ui_run "repo-status" scripts/addons.sh status
 
-# --- [STACK:addons] Rama nueva de checkout de desarrollo ---
-# Antes del primer addons-sync de un checkout: crea ADDONS_BRANCH en origin de
+# --- [STACK:repo] Rama nueva de checkout de desarrollo ---
+# Antes del primer repo-sync de un checkout: crea ADDONS_BRANCH en origin de
 # cada repo, partiendo de la versión del Dockerfile. Falla si ya existe o si
 # ADDONS_BRANCH no se redeclaró en .env todavía.
 
-addons-branch: ## Crea ADDONS_BRANCH (rama de feature en .env) en origin de cada addon
+repo-branch: ## Crea ADDONS_BRANCH (rama de feature en .env) en origin de cada addon
 	scripts/addons.sh branch
 
 # --- Imágenes propias ---
@@ -180,11 +187,11 @@ build: ## Construye las imágenes propias de este stack
 # --- [STACK:addons] Dependencias Python ---
 # check es puro host (corre en 'make test'); sync necesita Docker para resolver
 # versión contra la imagen base. Ninguno de los dos rebuildea la imagen.
+# El '-' en check: Make aborta el target ante cualquier línea que falle, y un
+# check con faltantes es justo el caso en el que sync tiene que correr igual.
 
-pydeps-check: ## Verifica que requirements.txt cubra las external_dependencies declaradas
-	scripts/pydeps.sh check
-
-pydeps-sync: ## Pinea en requirements.txt lo que declaren los addons y todavía falte
+addons-deps: ## Verifica requirements.txt contra las external_dependencies y pinea lo que falte
+	-scripts/pydeps.sh check
 	scripts/pydeps.sh sync
 
 # ============================================================
@@ -194,7 +201,7 @@ pydeps-sync: ## Pinea en requirements.txt lo que declaren los addons y todavía 
 # --- [SEXTETO] Ciclo de vida, stack por stack ---
 # Sexteto (o trío, para STACKS_ONESHOT) generado en .make/; help.awk sintetiza la descripción.
 
-# --- [STACK:odoo] Instalar/actualizar módulos ---
+# --- [STACK:addons] Instalar/actualizar módulos ---
 # El one-off corre -i/-u con la conexión explícita a postgres:5432. El up -d va
 # siempre, aunque el one-off falle: si no, un -i con error deja produccion abajo.
 # --name: el servicio declara container_name, y sin un nombre propio el one-off
@@ -207,29 +214,29 @@ require-modules:
 	@. scripts/lib/ui.sh; test -n "$(MODULES)" || \
 	  { ui_bad "falta MODULES" "uso: make $(TARGET) MODULES=nombre_del_modulo" >&2; exit 2; }
 
-odoo-install: TARGET=odoo-install
-odoo-install: require-modules ## Instala módulos — MODULES=nombre obligatorio
-	@. scripts/lib/ui.sh; ui_start "odoo-install $(MODULES)"; \
+addons-install: TARGET=addons-install
+addons-install: require-modules ## Instala módulos — MODULES=nombre obligatorio
+	@. scripts/lib/ui.sh; ui_start "addons-install $(MODULES)"; \
 	  docker compose stop odoo || exit $$?; \
 	  docker compose run --rm --name odoo-oneoff odoo -i $(MODULES) --stop-after-init; \
 	  estado=$$?; \
 	  docker compose up -d odoo; \
-	  if [ "$$estado" -eq 0 ]; then ui_ok "odoo-install listo"; \
-	  else ui_bad "odoo-install falló" "exit $$estado — el servicio se levantó igual"; fi; \
+	  if [ "$$estado" -eq 0 ]; then ui_ok "addons-install listo"; \
+	  else ui_bad "addons-install falló" "exit $$estado — el servicio se levantó igual"; fi; \
 	  exit "$$estado"
 
-odoo-update: TARGET=odoo-update
-odoo-update: require-modules ## Actualiza módulos — MODULES=nombre obligatorio
-	@. scripts/lib/ui.sh; ui_start "odoo-update $(MODULES)"; \
+addons-update: TARGET=addons-update
+addons-update: require-modules ## Actualiza módulos — MODULES=nombre obligatorio
+	@. scripts/lib/ui.sh; ui_start "addons-update $(MODULES)"; \
 	  docker compose stop odoo || exit $$?; \
 	  docker compose run --rm --name odoo-oneoff odoo -u $(MODULES) --stop-after-init; \
 	  estado=$$?; \
 	  docker compose up -d odoo; \
-	  if [ "$$estado" -eq 0 ]; then ui_ok "odoo-update listo"; \
-	  else ui_bad "odoo-update falló" "exit $$estado — el servicio se levantó igual"; fi; \
+	  if [ "$$estado" -eq 0 ]; then ui_ok "addons-update listo"; \
+	  else ui_bad "addons-update falló" "exit $$estado — el servicio se levantó igual"; fi; \
 	  exit "$$estado"
 
-odoo-modules: ## Lista los módulos instalados en la base
+addons-modules: ## Lista los módulos instalados en la base
 	@salida=$$(docker compose exec -T postgres psql -U odoo -d odoo -A -F "$$(printf '\t')" --pset footer=off -c \
 	  "SELECT name, latest_version FROM ir_module_module WHERE state='installed' ORDER BY name") || exit $$?; \
 	  printf '%s\n' "$$salida" | column -t -s "$$(printf '\t')" \

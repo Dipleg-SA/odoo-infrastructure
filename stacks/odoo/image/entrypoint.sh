@@ -18,7 +18,7 @@ done
 ADDONS_PATH=$(IFS=,; echo "${paths[*]}")
 
 if [ "${#paths[@]}" -eq 0 ]; then
-  echo "odoo-entrypoint: addons_path vacío — ¿corriste make addons-sync antes de levantar el stack?" >&2
+  echo "odoo-entrypoint: addons_path vacío — ¿corriste make repo-sync antes de levantar el stack?" >&2
   exit 1
 fi
 
@@ -49,7 +49,7 @@ cp /etc/odoo/odoo.conf "$RUNTIME_CONF"
 
 DB_PASSWORD="$(cat /run/secrets/postgres_password)"
 
-# --- Modo one-off: -i/-u explícitos del operador (make odoo-install/odoo-update) ---
+# --- Modo one-off: -i/-u explícitos del operador (make addons-install/addons-update) ---
 # Conexión explícita, no heredada de HOST/PORT: corre antes de que el entrypoint oficial arme su propia espera.
 
 if [ "$#" -gt 0 ]; then
