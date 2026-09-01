@@ -11,7 +11,7 @@ El módulo funcionando en producción real, sin errores en los logs, y el estado
 ## Comandos
 
 ```bash
-make odoo-modules
+make addons-modules
 ```
 
 Confirma la versión instalada, leída de `ir_module_module` — la fuente de verdad, no una lista paralela.

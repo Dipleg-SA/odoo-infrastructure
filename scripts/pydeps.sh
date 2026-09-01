@@ -16,7 +16,7 @@ REQUIREMENTS="addons/requirements.txt"
 
 require_requirements() {
   if [ ! -f "$REQUIREMENTS" ]; then
-    ui_bad "no existe $REQUIREMENTS" "cp $REQUIREMENTS.example $REQUIREMENTS — y después 'make pydeps-sync'"
+    ui_bad "no existe $REQUIREMENTS" "cp $REQUIREMENTS.example $REQUIREMENTS — y después 'make addons-deps'"
     exit 1
   fi
 }

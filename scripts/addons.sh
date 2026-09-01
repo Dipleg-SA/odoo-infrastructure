@@ -163,7 +163,7 @@ sync_repo() {
 
 cmd_sync() {
   local url category invalid=0 viejo
-  ui_plan_start "addons sync"
+  ui_plan_start "repo sync"
   ui_step 1 "Sincronización de los addons declarados en $MANIFEST sobre la rama $ADDONS_BRANCH."
   require_manifest
 
@@ -211,12 +211,12 @@ cmd_sync() {
 
   ui_plan_end
   if [ "$FAILED" -ne 0 ]; then
-    ui_bad "addons sync terminó con errores" "ver arriba" >&2
+    ui_bad "repo sync terminó con errores" "ver arriba" >&2
     echo
     exit 1
   fi
 
-  ui_ok "addons sync listo — $(manifest_entries | wc -l | tr -d ' ') repositorio(s) sincronizado(s)"
+  ui_ok "repo sync listo — $(manifest_entries | wc -l | tr -d ' ') repositorio(s) sincronizado(s)"
   echo
 }
 
@@ -259,7 +259,7 @@ list_orphans() {
 # --- Rama nueva de checkout de desarrollo ---
 # Cada checkout de development es su propia rama en cada repo; sync no la crea,
 # solo arma el worktree sobre la que ya exista. Sin esto, un ADDONS_BRANCH nuevo
-# en .env falla al primer 'addons-sync' porque origin/<rama> no existe todavía.
+# en .env falla al primer 'repo-sync' porque origin/<rama> no existe todavía.
 
 cmd_branch() {
   local base="${1:-$VERSION}" url category name bare err
@@ -270,7 +270,7 @@ cmd_branch() {
     exit 1
   fi
 
-  ui_plan_start "addons branch"
+  ui_plan_start "repo branch"
   ui_step 1 "Creando '$ADDONS_BRANCH' desde 'origin/$base' en cada repo de $MANIFEST."
 
   while read -r url category; do
@@ -292,12 +292,12 @@ cmd_branch() {
 
   ui_plan_end
   if [ "$FAILED" -ne 0 ]; then
-    ui_bad "addons branch terminó con errores" "ver arriba" >&2
+    ui_bad "repo branch terminó con errores" "ver arriba" >&2
     echo
     exit 1
   fi
 
-  ui_ok "addons branch listo — '$ADDONS_BRANCH' creada en origin de cada repo"
+  ui_ok "repo branch listo — '$ADDONS_BRANCH' creada en origin de cada repo"
   echo
 }
 

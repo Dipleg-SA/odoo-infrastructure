@@ -1,9 +1,9 @@
 # --- Pines de dependencias Python ---
-# Un pin por línea, en formato pip (`paquete==versión`). Lo escribe `make pydeps-sync`
+# Un pin por línea, en formato pip (`paquete==versión`). Lo escribe `make addons-deps`
 # desde las external_dependencies de los manifiestos: no se edita a mano.
 
-# `make pydeps-check` falla si un addon declara una dependencia que no está acá, y
-# avisa —sin fallar— de los pines que ya ningún addon declara.
+# `make addons-deps` audita y pinea lo que falte en un solo paso — nunca hace
+# falta correrlo dos veces. Avisa, sin fallar, de los pines que ya ningún addon declara.
 
 # Cambiarlo es lo único, junto al entrypoint, que dispara un rebuild de la imagen:
 # los addons llegan por bind-mount y no la tocan.

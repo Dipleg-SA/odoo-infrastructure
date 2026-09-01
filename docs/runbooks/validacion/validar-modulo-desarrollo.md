@@ -11,7 +11,7 @@ El módulo instalado sin errores, con el comportamiento esperado probado a mano 
 ## Comandos
 
 ```bash
-make odoo-update MODULES=<nombre_tecnico>
+make addons-update MODULES=<nombre_tecnico>
 ```
 
 Revisar los logs de la corrida, no solo el exit code — un `-u` puede terminar con `0` y haber logueado un warning que importa:
@@ -23,7 +23,7 @@ docker compose logs --since 5m odoo | grep -iE 'error|traceback|warn'
 Confirmar la versión instalada:
 
 ```bash
-make odoo-modules
+make addons-modules
 ```
 
 ## Verificación
@@ -37,7 +37,7 @@ Sirve igual en desarrollo que en cualquier otro entorno — cubre que Odoo respo
 Lo que `odoo-verify` **no** cubre, porque es específico de tu módulo, va a mano:
 
 - Entrar a `http://127.0.0.1:${HTTP_PORT}` y probar el flujo real que el cambio agrega o modifica — no solo que la vista carga, sino que la acción que dispara hace lo que tiene que hacer.
-- Si el módulo declara `external_dependencies.python`, confirmar que `make pydeps-check` está en verde antes de dar el cambio por probado — un error de import que no aparece en desarrollo porque la librería ya estaba instalada de otra vez sí va a aparecer en un rebuild limpio.
+- Si el módulo declara `external_dependencies.python`, confirmar que `make addons-deps` está en verde antes de dar el cambio por probado — un error de import que no aparece en desarrollo porque la librería ya estaba instalada de otra vez sí va a aparecer en un rebuild limpio.
 - Si tocaste datos de demo o vistas, recargar sin caché (los assets de Odoo se cachean agresivo) para no confundir un cambio no aplicado con un bug.
 
 ---

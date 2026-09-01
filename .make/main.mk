@@ -10,7 +10,7 @@ STACKS_ONESHOT := certbot
 
 MACRO_BORDE := nginx cloudflared dnsmasq certbot
 MACRO_DATOS := postgres backup
-MACRO_APP   := odoo addons
+MACRO_APP   := odoo repo addons
 MACRO_OBS   := prometheus loki grafana alloy
 
 include .make/layouts.mk

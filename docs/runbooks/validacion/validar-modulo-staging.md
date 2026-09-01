@@ -11,9 +11,9 @@ El comportamiento confirmado contra datos reales —staging se siembra restauran
 ## Comandos
 
 ```bash
-make addons-sync
-make pydeps-check   # + pydeps-sync/build si el cambio agregó una dependencia Python
-make odoo-update MODULES=<nombre_tecnico>   # o odoo-install, si es la primera vez de este módulo
+make repo-sync
+make addons-deps   # + build si el cambio agregó una dependencia Python
+make addons-update MODULES=<nombre_tecnico>   # o addons-install, si es la primera vez de este módulo
 ```
 
 Revisar los logs de la corrida:

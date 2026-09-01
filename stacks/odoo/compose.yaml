@@ -5,7 +5,7 @@ services:
   odoo:
     build:
       context: ./image
-      # El requirements.txt lo escribe pydeps-sync desde los manifiestos y no se
+      # El requirements.txt lo escribe 'make addons-deps' desde los manifiestos y no se
       # versiona: vive con los addons, fuera del contexto de build. Relativo a
       # este compose.yaml, no a 'context': additional_contexts no seguía a
       # 'context' cuando el Dockerfile se movió a image/ — se probó.

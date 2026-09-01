@@ -135,18 +135,18 @@ Exige el servicio `healthy`, que acepte conexiones, los logs sin errores de perm
 nano addons/addons.txt
 ```
 
-`ADDONS_BRANCH` en tu `.env` es una rama de feature nueva: todavía no existe en ningún repo del manifiesto. `addons-sync` arma worktrees, no crea ramas — sin este paso falla al primer intento.
+`ADDONS_BRANCH` en tu `.env` es una rama de feature nueva: todavía no existe en ningún repo del manifiesto. `repo-sync` arma worktrees, no crea ramas — sin este paso falla al primer intento.
 
 ```bash
-make addons-branch
+make repo-branch
 ```
 
 ```bash
-make addons-sync && make build
+make repo-sync && make build
 ```
 
 ```bash
-make addons
+make repo-status
 ```
 
 Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, todas en `limpio`. Un `huérfano: categoría/nombre` al final es un directorio que quedó en disco después de sacarlo del manifiesto.
