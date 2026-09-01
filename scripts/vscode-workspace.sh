@@ -12,26 +12,20 @@ if [ -f .env ]; then . ./.env; fi
 
 ROOT="$(pwd)"
 OUT="dev.code-workspace"
-
-# --- Color estable por checkout ---
-# Hash del nombre a un índice de paleta fija: mismo checkout, mismo color
-# siempre; checkouts distintos, colores distintos sin elegir a mano.
-
-PALETTE=(2d5f3f 5f2d4f 2d4f5f 5f4f2d 4f2d5f 2d5f2d)
-HASH=$(cksum <<<"$COMPOSE_PROJECT_NAME" | cut -d' ' -f1)
-COLOR="${PALETTE[$((HASH % ${#PALETTE[@]}))]}"
+COLOR="1a4d7a"
 
 cat > "$OUT" <<EOF
 {
   "folders": [
-    { "name": "🏢 enterprise",    "path": "$ROOT/addons/enterprise" },
-    { "name": "📦 custom-addons", "path": "$ROOT/addons/custom-addons" },
-    { "name": "🔧 oca",           "path": "$ROOT/addons/oca" },
-    { "name": "🌐 third-party",   "path": "$ROOT/addons/third-party" },
-    { "name": "⚙️ infra — solo terminal, NO editar", "path": "$ROOT" }
+    { "name": "enterprise",    "path": "$ROOT/addons/enterprise" },
+    { "name": "custom-addons", "path": "$ROOT/addons/custom-addons" },
+    { "name": "oca",           "path": "$ROOT/addons/oca" },
+    { "name": "third-party",   "path": "$ROOT/addons/third-party" },
+    { "name": "infra — solo terminal, NO editar", "path": "$ROOT" }
   ],
   "settings": {
     "window.title": "$COMPOSE_PROJECT_NAME — \${rootName}",
+    "terminal.integrated.cwd": "$ROOT",
     "workbench.colorCustomizations": {
       "titleBar.activeBackground": "#$COLOR",
       "titleBar.activeForeground": "#ffffff",
@@ -41,4 +35,17 @@ cat > "$OUT" <<EOF
 }
 EOF
 
-ui_ok "generado $OUT"
+# --- Recorte del root de infra ---
+# addons/ ya está representado por los cuatro folders de arriba; sin ocultarlo
+# acá VS Code lo escanea dos veces y duplica el estado de git de cada módulo.
+
+mkdir -p .vscode
+cat > .vscode/settings.json <<EOF
+{
+  "files.exclude": {
+    "addons": true
+  }
+}
+EOF
+
+ui_ok "generado $OUT y .vscode/settings.json"
