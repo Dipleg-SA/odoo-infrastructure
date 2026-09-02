@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Qué se espera del stack nginx. Dueño único de estos valores: docs/runbooks/
+# Qué se espera del stack nginx. Dueño único de estos valores: el runbook
 # nombra el comando, los valores viven acá.
 #
 # Corre solo (stacks/nginx/verify.sh) o sourceado por scripts/verify-stacks.sh,

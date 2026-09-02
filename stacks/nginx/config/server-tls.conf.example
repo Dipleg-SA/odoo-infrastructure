@@ -9,7 +9,7 @@
 #
 # El certificado tiene que existir ANTES del primer arranque — nginx no levanta
 # con un ssl_certificate ausente. Lo emite certbot, que con DNS-01 no necesita
-# que nginx esté vivo (ver docs/runbooks/entorno/levantar-produccion.md).
+# que nginx esté vivo (ver docs/entorno/levantar-produccion.md).
 
 # --- Redirección al hostname canónico ---
 # $server_name y NO $host: $host devuelve lo que el cliente escribió y descarta el

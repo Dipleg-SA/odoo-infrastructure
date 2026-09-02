@@ -2,7 +2,7 @@
 
 ## Cuándo se usa
 
-Después de levantar la capa `edge` en producción ([levantar-produccion](levantar-produccion.md), bloque 3 · Edge) — `dnsmasq` queda sano y resolviendo el hostname público a la IP local, pero nadie de la LAN lo consulta hasta que el router se lo indique por DHCP. Exclusivo de producción: `dnsmasq` corre solo ahí (`network_mode: host` sobre el `53`, sin segunda instancia posible — ver [compose.yaml](../../../stacks/dnsmasq/compose.yaml)).
+Después de levantar la capa `edge` en producción ([levantar-produccion](levantar-produccion.md), bloque 3 · Edge) — `dnsmasq` queda sano y resolviendo el hostname público a la IP local, pero nadie de la LAN lo consulta hasta que el router se lo indique por DHCP. Exclusivo de producción: `dnsmasq` corre solo ahí (`network_mode: host` sobre el `53`, sin segunda instancia posible — ver [compose.yaml](../../stacks/dnsmasq/compose.yaml)).
 
 ## Objetivo
 
@@ -22,7 +22,7 @@ sudo ufw status | grep 53/udp   # tiene que listar la regla recién agregada
 Configuración en el router/DHCP de la red, fuera de este repositorio — el mecanismo exacto varía por fabricante, el concepto es el mismo en cualquiera:
 
 1. **Reservar la IP del servidor.** El campo DNS del DHCP guarda una IP fija; si el servidor la recibe dinámicamente, el día que cambie el router sigue apuntando a una IP vieja y la LAN pierde resolución en silencio. Reservar la MAC del servidor a `${LOCAL_IP}` — la sección suele llamarse "reserva de direcciones" o "DHCP reservation".
-2. **DNS primario → `${LOCAL_IP}`.** La misma IP que `dnsmasq` bindea (`listen-address` en [dnsmasq.conf](../../../stacks/dnsmasq/config/dnsmasq.conf.example)).
+2. **DNS primario → `${LOCAL_IP}`.** La misma IP que `dnsmasq` bindea (`listen-address` en [dnsmasq.conf](../../stacks/dnsmasq/config/dnsmasq.conf.example)).
 3. **DNS secundario → un resolver público**, el mismo que dnsmasq usa de forwarder (`1.1.1.1`/`8.8.8.8`, fijos en `stacks/dnsmasq/config/dnsmasq.conf`) u otro cualquiera. No es cosmético: si la capa `edge` se cae (mantenimiento, `make nginx-down`, un `make nuke`), la LAN necesita a dónde caer.
 4. **Aplicar y renovar.** Un cambio de DHCP no empuja a los clientes ya conectados — o esperan a que expire su lease, o hace falta forzar la renovación (reconectar Wi-Fi, `ipconfig /renew`, reiniciar el dispositivo).
 

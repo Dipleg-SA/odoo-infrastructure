@@ -74,7 +74,11 @@ Se descartó agrupar por responsabilidad operativa (`db` = postgres + pgbouncer,
 = nginx + certbot). Agrupa bien, pero deja la frontera a criterio: cada servicio nuevo
 reabre la discusión de a qué grupo pertenece.
 
-`addons` no es un stack: no tiene contenedor. Es un script.
+`addons` no es un stack: no tiene contenedor. Es un script — y por la misma razón, el
+código de los módulos no vive en este repositorio: cada módulo es un repo git aparte,
+que este script clona y actualiza. Cómo se relaciona ese código ajeno con esta
+infraestructura está en [`vision.md`](vision.md); el mecanismo del script, en los
+comentarios de [`scripts/addons.sh`](../scripts/addons.sh).
 
 ## Qué declara cada quién
 

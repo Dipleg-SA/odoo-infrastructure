@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Qué se espera del stack loki. Dueño único de estos valores: docs/runbooks/
+# Qué se espera del stack loki. Dueño único de estos valores: el runbook
 # nombra el comando, los valores viven acá.
 #
 # Sin `sano`: la imagen es distroless estricta y no tiene healthcheck posible. El

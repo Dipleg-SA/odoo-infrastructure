@@ -8,7 +8,7 @@ Son los **mismos nueve bloques y los mismos comandos** que producción: eso lo d
 
 ## Objetivo
 
-Un segundo stack con su propio hostname, su propio certificado y su propio túnel, **sembrado con los datos de producción por un restore**. Sembrarlo y hacer el simulacro de restore son la misma operación — es la ocasión natural para el ejercicio que [`PRINCIPLES.md`](../../../PRINCIPLES.md) exige y que siempre se posterga.
+Un segundo stack con su propio hostname, su propio certificado y su propio túnel, **sembrado con los datos de producción por un restore**. Sembrarlo y hacer el simulacro de restore son la misma operación — es la ocasión natural para el ejercicio que [`PRINCIPLES.md`](../../PRINCIPLES.md) exige y que siempre se posterga.
 
 | Bloque | Acá | |
 |---|---|---|
@@ -22,7 +22,7 @@ Un segundo stack con su propio hostname, su propio certificado y su propio túne
 | 8 · Monitoring | **no corresponde** — la observabilidad es exclusiva de producción | — |
 | 9 · Cierre | ✓ | ✓ |
 
-Los tres ausentes son exclusivos de producción, y el `53` en `network_mode: host` no admite un segundo `dnsmasq` de ninguna forma. Ver [stacks.md](../../stacks.md) para qué comparte cada entorno.
+Los tres ausentes son exclusivos de producción, y el `53` en `network_mode: host` no admite un segundo `dnsmasq` de ninguna forma. Ver [stacks.md](../stacks.md) para qué comparte cada entorno.
 
 ---
 

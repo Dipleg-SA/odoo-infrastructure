@@ -96,7 +96,7 @@ dentro de la red `app` de su propio proyecto, así que solo ve la suya.
 **El resolver de la LAN no lo decide este repositorio.** `dnsmasq` resuelve el hostname
 para quien le pregunte, pero quién le pregunta lo reparte el DHCP del router. Es un
 prerrequisito escrito en
-[configurar-dhcp-dns-lan.md](runbooks/entorno/configurar-dhcp-dns-lan.md), un `dig` sin
+[configurar-dhcp-dns-lan.md](entorno/configurar-dhcp-dns-lan.md), un `dig` sin
 `@` desde un equipo de la LAN, y un `omitir` explícito en el verify de dnsmasq que dice
 que desde el servidor no se puede verificar. **Sigue sin haber mecanismo**, porque no lo
 hay del lado del stack — lo que hay es que dejó de dar verde por accidente.
