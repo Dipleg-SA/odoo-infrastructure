@@ -47,7 +47,7 @@ La relación entre ambos es de **orquestación, no de contención**: este repo n
 incorpora ese código a su propia historia — lo clona, lo actualiza y lo monta. Lo único
 que sabe de cada módulo es una línea en `addons/addons.txt`: su URL y su categoría
 (`enterprise` · `custom-addons` · `oca` · `third-party`, el mismo orden que resuelve el
-`addons_path` — ver «Gestión de addons» más abajo). `make repo-sync` recorre ese
+`addons_path` — ver «Gestión de addons: bind-mount» más abajo). `make repo-sync` recorre ese
 manifiesto, clona cada repo en bare y arma un worktree por módulo sobre la rama que
 declara el checkout — el mecanismo completo está en los comentarios de
 [`scripts/addons.sh`](scripts/addons.sh). El resultado es un árbol en disco que el
@@ -92,7 +92,7 @@ odoo · postgres · nginx · certbot · cloudflared · backup
 prometheus · loki · grafana · alloy
 ```
 
-Más `dnsmasq`, opcional según la topología del cliente — ver «Acceso: LAN o solo túnel».
+Más `dnsmasq`, opcional según la topología del cliente — ver «`dnsmasq` y `certbot`: cuándo entran».
 
 La palabra operativa es **propias**, no «que corre». La primera versión de esta regla
 decía que un contenedor con `profiles:` no era un stack, porque una operación de una vez
