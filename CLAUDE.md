@@ -2,7 +2,7 @@
 
 Guía para Claude Code (claude.ai/code) al trabajar en este repositorio.
 
-Acá va **solo lo que no se deduce leyendo el repositorio**. Las reglas están en [`PRINCIPLES.md`](PRINCIPLES.md), la forma del árbol y por qué es así en [`docs/modular-architecture.md`](docs/modular-architecture.md), y cómo se corre cada cosa en `make help`. Nada de eso se repite acá: un hecho escrito dos veces es un hecho que hay que mantener dos veces.
+Acá va **solo lo que no se deduce leyendo el repositorio**. Las reglas están en [`PRINCIPLES.md`](PRINCIPLES.md), la forma del árbol y por qué es así en [`ARCHITECTURE.md`](ARCHITECTURE.md), y cómo se corre cada cosa en `make help`. Nada de eso se repite acá: un hecho escrito dos veces es un hecho que hay que mantener dos veces.
 
 ## Idioma
 
@@ -65,14 +65,13 @@ para siempre. Vive en los comentarios de los dos archivos y en ningún chequeo.
 
 | Archivo | Contenido |
 |---|---|
-| `docs/vision.md` | panorama de conjunto: qué es esto, cómo se relaciona con los repos de módulos, cómo se levanta un Odoo funcional de punta a punta |
 | `PRINCIPLES.md` | las reglas, en imperativo, como restricciones y no como formas del árbol |
-| `docs/modular-architecture.md` | qué es un stack, qué declara cada quién, y la estructura |
-| `docs/architecture.md` | por qué esta herramienta y no otra, y qué se descartó |
-| `docs/stacks.md` | qué comparte cada entorno y las decisiones por entorno |
+| `ARCHITECTURE.md` | panorama de conjunto, relación con los repos de módulos, por qué esta herramienta y no otra, qué es un stack y qué declara cada quién, qué comparte cada entorno, y la estructura |
 | `docs/entorno/` · `docs/modulos/` · `docs/validacion/` · `docs/backup-restore/` · `docs/operacion/` · `docs/credenciales/` | manual de procedimientos: un archivo por procedimiento, genérico. Plantilla — Cuándo se usa · Objetivo · A mano · Comandos · Verificación |
+| `CONTRIBUTING.md` | cómo proponer un cambio: qué leer antes, idioma, verificación, convención de PR |
+| `SECURITY.md` | cómo reportar una vulnerabilidad, y qué está fuera de alcance |
 
-El contexto histórico, los incidentes y las justificaciones largas van a `docs/`, **nunca inline** en el código.
+El contexto histórico, los incidentes y las justificaciones largas van a `ARCHITECTURE.md`, **nunca inline** en el código.
 
 ## De dónde viene este repositorio
 

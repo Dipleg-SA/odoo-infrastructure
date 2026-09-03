@@ -22,7 +22,7 @@ Un segundo stack con su propio hostname, su propio certificado y su propio túne
 | 8 · Monitoring | **no corresponde** — la observabilidad es exclusiva de producción | — |
 | 9 · Cierre | ✓ | ✓ |
 
-Los tres ausentes son exclusivos de producción, y el `53` en `network_mode: host` no admite un segundo `dnsmasq` de ninguna forma. Ver [stacks.md](../stacks.md) para qué comparte cada entorno.
+Los tres ausentes son exclusivos de producción, y el `53` en `network_mode: host` no admite un segundo `dnsmasq` de ninguna forma. Ver [ARCHITECTURE.md § Entornos](../../ARCHITECTURE.md#entornos) para qué comparte cada entorno.
 
 ---
 

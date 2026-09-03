@@ -25,7 +25,7 @@ docker exec <contenedor-odoo-origen> odoo --version
 grep '^FROM odoo:' stacks/odoo/image/Dockerfile
 ```
 
-Si los mayores difieren, **este runbook no aplica**: es un upgrade de versión mayor, y la vía en la edición comunitaria está en [`docs/architecture.md`](../architecture.md) § Upgrade de versión mayor. Si coinciden en el mayor pero no en el build, seguí — el paso 6 lo resuelve.
+Si los mayores difieren, **este runbook no aplica**: es un upgrade de versión mayor, y la vía en la edición comunitaria está en [`ARCHITECTURE.md`](../../ARCHITECTURE.md#aplicación) § Upgrade de versión mayor. Si coinciden en el mayor pero no en el build, seguí — el paso 6 lo resuelve.
 
 **2. Los módulos instalados en origen tienen que existir en este checkout.** Es el trabajo real de la migración; el dump es la parte fácil.
 

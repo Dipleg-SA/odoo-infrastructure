@@ -23,7 +23,7 @@ Un stack es un contenedor con todo lo suyo en su carpeta: `compose.yaml`, `image
 
 Este repo es solo la infraestructura. El código de los módulos de Odoo vive en otros
 repositorios, uno por módulo, declarados en `addons/addons.txt` — el panorama completo
-de esa relación está en [`docs/vision.md`](docs/vision.md).
+de esa relación está en [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Empezar
 
@@ -44,24 +44,21 @@ make up         # levantar todo
 
 | Documento | Responde |
 |---|---|
-| [`docs/vision.md`](docs/vision.md) | ¿Qué es esto, cómo se relaciona con los repos de módulos, y cómo se levanta un Odoo funcional? |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | ¿Qué es esto, cómo se relaciona con los repos de módulos, por qué esta herramienta y no otra, qué es un stack, y qué comparte cada entorno? |
 | [`PRINCIPLES.md`](PRINCIPLES.md) | ¿Qué reglas sigue este stack, y por qué? |
-| [`docs/architecture.md`](docs/architecture.md) | ¿Por qué esta herramienta y no otra? |
-| [`docs/modular-architecture.md`](docs/modular-architecture.md) | ¿Qué es un stack, y qué declara cada quién? |
-| [`docs/stacks.md`](docs/stacks.md) | ¿Qué comparte cada entorno, y qué colisiona si conviven dos? |
 | [`docs/entorno/`](docs/entorno/) | ¿Cómo levanto producción, staging o desarrollo? |
 | [`docs/modulos/`](docs/modulos/) | ¿Cómo creo o modifico un módulo? |
 | [`docs/validacion/`](docs/validacion/) | ¿Cómo confirmo que un cambio anduvo? |
 | [`docs/backup-restore/`](docs/backup-restore/) | ¿Cómo hago o recupero un backup? |
 | [`docs/operacion/`](docs/operacion/) | ¿Cómo opero una capa del stack en el día a día? |
 | [`docs/credenciales/`](docs/credenciales/) | ¿Cómo roto una credencial? |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | ¿Cómo propongo un cambio? |
+| [`SECURITY.md`](SECURITY.md) | ¿Cómo reporto una vulnerabilidad? |
 
 ## Cómo está pensado
 
 Estas ideas gobiernan el resto y explican casi todas las decisiones — el racional
-completo, con las alternativas descartadas, vive en
-[`docs/architecture.md`](docs/architecture.md) y
-[`docs/modular-architecture.md`](docs/modular-architecture.md).
+completo, con las alternativas descartadas, vive en [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 **Con un solo servidor, "robusto" no es alta disponibilidad.** Prioriza evitar pérdida de datos primero, y visibilidad operativa —detectar y diagnosticar caídas rápido— después. Alta disponibilidad real no es alcanzable con un único servidor, así que ninguna decisión se toma para acercarse a ella.
 

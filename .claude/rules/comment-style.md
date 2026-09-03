@@ -25,7 +25,7 @@ odoo.conf/grafana.ini):
 - Objetivo: con esas dos líneas de comentario alguien debe entender qué hace el
   bloque y por qué, sin tener que leer el código de abajo.
 - Contexto histórico, incidentes pasados o justificaciones largas van a
-  `docs/architecture.md`, no inline.
+  `ARCHITECTURE.md`, no inline.
 
 ## Ejemplo (`stacks/postgres/config/postgresql.conf`)
 
