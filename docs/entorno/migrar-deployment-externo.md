@@ -25,7 +25,7 @@ docker exec <contenedor-odoo-origen> odoo --version
 grep '^FROM odoo:' stacks/odoo/image/Dockerfile
 ```
 
-Si los mayores difieren, **este runbook no aplica**: es un upgrade de versión mayor, y la vía en la edición comunitaria está en [`docs/architecture.md`](../../architecture.md) § Upgrade de versión mayor. Si coinciden en el mayor pero no en el build, seguí — el paso 6 lo resuelve.
+Si los mayores difieren, **este runbook no aplica**: es un upgrade de versión mayor, y la vía en la edición comunitaria está en [`ARCHITECTURE.md`](../../ARCHITECTURE.md#aplicación) § Upgrade de versión mayor. Si coinciden en el mayor pero no en el build, seguí — el paso 6 lo resuelve.
 
 **2. Los módulos instalados en origen tienen que existir en este checkout.** Es el trabajo real de la migración; el dump es la parte fácil.
 
@@ -116,7 +116,7 @@ docker compose run --rm --entrypoint bash -T odoo -c '
 '
 ```
 
-No es el `docker compose run --rm odoo -d odoo --stop-after-init neutralize` que uno esperaría: [`entrypoint.sh`](../../../stacks/odoo/image/entrypoint.sh) intercepta cualquier argumento del `run` y arma `odoo -c ... -d odoo --no-http "$@" ...` — `neutralize` deja de ser el primer argumento, que es donde Odoo exige el subcomando, y falla con "unrecognized parameters" sin tocar nada. Por eso acá se pasa por alto el entrypoint (`--entrypoint bash`) y se arma el `addons_path` a mano, con el mismo glob por categorías que usa el entrypoint real.
+No es el `docker compose run --rm odoo -d odoo --stop-after-init neutralize` que uno esperaría: [`entrypoint.sh`](../../stacks/odoo/image/entrypoint.sh) intercepta cualquier argumento del `run` y arma `odoo -c ... -d odoo --no-http "$@" ...` — `neutralize` deja de ser el primer argumento, que es donde Odoo exige el subcomando, y falla con "unrecognized parameters" sin tocar nada. Por eso acá se pasa por alto el entrypoint (`--entrypoint bash`) y se arma el `addons_path` a mano, con el mismo glob por categorías que usa el entrypoint real.
 
 **7. Levantar y poner los módulos al día:**
 

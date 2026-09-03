@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Qué se espera del stack backup. Dueño único de estos valores: docs/runbooks/
+# Qué se espera del stack backup. Dueño único de estos valores: el runbook
 # nombra el comando, los valores viven acá.
 
 . "$(dirname "${BASH_SOURCE[0]}")/../../scripts/lib/verify.sh"

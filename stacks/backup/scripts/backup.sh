@@ -46,7 +46,7 @@ KEEP_MONTHLY=3
 # --- Umbral de aviso del dump ---
 # pg_dump relee la base entera en cada corrida. Cuando ese tiempo se va de mano,
 # la estrategia de snapshot dejó de alcanzar y toca reconsiderarla (ver
-# docs/modular-architecture.md). Se avisa, no se falla: es una señal, no una avería.
+# ARCHITECTURE.md). Se avisa, no se falla: es una señal, no una avería.
 
 DUMP_AVISO_SEGUNDOS=1800
 

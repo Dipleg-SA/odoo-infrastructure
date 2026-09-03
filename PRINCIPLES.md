@@ -2,7 +2,7 @@
 
 Las reglas que este stack sigue siempre. Cada una nombra un mecanismo concreto y dice por qué existe: no son buenas prácticas genéricas, son las decisiones que el código de este repositorio ya implementa.
 
-Una regla enuncia una **restricción**, no una forma del árbol. Un principio que nombra una carpeta caduca con la próxima reorganización; uno que nombra un límite de la herramienta no caduca nunca. La forma vive en [`docs/modular-architecture.md`](docs/modular-architecture.md).
+Una regla enuncia una **restricción**, no una forma del árbol. Un principio que nombra una carpeta caduca con la próxima reorganización; uno que nombra un límite de la herramienta no caduca nunca. La forma vive en [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 **Obligatorio** — romperlo rompe una garantía del diseño. **Recomendado** — desviarse exige un motivo escrito. **Opcional** — queda a criterio de quien opera.
 

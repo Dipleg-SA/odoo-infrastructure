@@ -112,7 +112,7 @@ test: ## Corre los tests del repo, sin Docker ni red
 
 # --- Verificación del deploy ---
 # Cada stacks/<nombre>/verify.sh es dueño de qué se espera de él; el orquestador solo
-# decide cuáles corre. docs/runbooks/ nombra el target, nunca los valores esperados.
+# decide cuáles corre. Los runbooks nombran el target, nunca los valores esperados.
 
 verify: ## Verifica el deploy completo — o <stack>-verify para uno solo
 	scripts/verify-stacks.sh all

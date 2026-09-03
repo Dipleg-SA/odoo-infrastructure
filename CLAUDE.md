@@ -2,7 +2,7 @@
 
 Guía para Claude Code (claude.ai/code) al trabajar en este repositorio.
 
-Acá va **solo lo que no se deduce leyendo el repositorio**. Las reglas están en [`PRINCIPLES.md`](PRINCIPLES.md), la forma del árbol y por qué es así en [`docs/modular-architecture.md`](docs/modular-architecture.md), y cómo se corre cada cosa en `make help`. Nada de eso se repite acá: un hecho escrito dos veces es un hecho que hay que mantener dos veces.
+Acá va **solo lo que no se deduce leyendo el repositorio**. Las reglas están en [`PRINCIPLES.md`](PRINCIPLES.md), la forma del árbol y por qué es así en [`ARCHITECTURE.md`](ARCHITECTURE.md), y cómo se corre cada cosa en `make help`. Nada de eso se repite acá: un hecho escrito dos veces es un hecho que hay que mantener dos veces.
 
 ## Idioma
 
@@ -33,7 +33,7 @@ Para scripts, `bash -n` y después correrlos de verdad. **Correr `make verify` e
 - **`entrypoint.sh` de Odoo genera config en runtime.** El `addons_path` sale de un glob sobre cuatro categorías en orden de precedencia (`enterprise > custom-addons > oca > third-party`); `admin_passwd` y `smtp_password` se appendean al conf desde su secret, y `smtp_server`/`port`/`user` desde `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER` del `.env`. Por eso `odoo.conf` se versiona tal cual, sin `.example`: no le queda ningún valor por deployment. `ODOO_DISABLE_SMTP=1` gana sobre el `.env` y fuerza `smtp_server` vacío.
 - **La imagen de Odoo lee sus pines de un contexto de build aparte.** `requirements.txt` queda fuera del contexto de build, así que llega por `additional_contexts` y `COPY --from`. El corchete de `requirements.tx[t]` no es un typo: hace el `COPY` opcional —con cero matches, un glob normal aborta el build— para que un checkout sin pines buildee igual. El `RUN` que lo instala va condicionado con `if`, no con `&&`: un `;` ahí dejaría que un `pip install` fallado devuelva 0 y produzca una imagen sin dependencias.
 - **Las units de systemd llevan el nombre del proyecto adelante**, y `scripts/timers.sh` es dueño único de ese nombre y de qué units corresponden — lo deriva de la composición, no de una lista. Las verificaciones le preguntan en vez de repetir nombres, y con eso dos checkouts en el mismo host no se pisan las units.
-- **Cada stack es dueño de qué se chequea y qué se espera de él.** El `verify` de arriba orquesta: corre el de cada stack presente y junta resultados, sin saber qué espera ninguno. `docs/runbooks/` nombra el comando; los valores esperados no se duplican en la documentación.
+- **Cada stack es dueño de qué se chequea y qué se espera de él.** El `verify` de arriba orquesta: corre el de cada stack presente y junta resultados, sin saber qué espera ninguno. Los runbooks nombran el comando; los valores esperados no se duplican en la documentación.
 
 ## Invariantes que viven en dos archivos
 
@@ -66,13 +66,12 @@ para siempre. Vive en los comentarios de los dos archivos y en ningún chequeo.
 | Archivo | Contenido |
 |---|---|
 | `PRINCIPLES.md` | las reglas, en imperativo, como restricciones y no como formas del árbol |
-| `docs/modular-architecture.md` | qué es un stack, qué declara cada quién, y la estructura |
-| `docs/architecture.md` | por qué esta herramienta y no otra, y qué se descartó |
-| `docs/stacks.md` | qué comparte cada entorno y las decisiones por entorno |
-| `docs/roadmap.md` | plan de implementación por etapas |
-| `docs/runbooks/` | manual de procedimientos: un archivo por procedimiento, genérico. Dos plantillas — Cuándo se usa · Objetivo · A mano · Comandos · Verificación para lo deliberado; Síntoma · Diagnóstico · Fix para troubleshooting |
+| `ARCHITECTURE.md` | panorama de conjunto, relación con los repos de módulos, por qué esta herramienta y no otra, qué es un stack y qué declara cada quién, qué comparte cada entorno, y la estructura |
+| `docs/entorno/` · `docs/modulos/` · `docs/validacion/` · `docs/backup-restore/` · `docs/operacion/` · `docs/credenciales/` | manual de procedimientos: un archivo por procedimiento, genérico. Plantilla — Cuándo se usa · Objetivo · A mano · Comandos · Verificación |
+| `CONTRIBUTING.md` | cómo proponer un cambio: qué leer antes, idioma, verificación, convención de PR |
+| `SECURITY.md` | cómo reportar una vulnerabilidad, y qué está fuera de alcance |
 
-El contexto histórico, los incidentes y las justificaciones largas van a `docs/`, **nunca inline** en el código.
+El contexto histórico, los incidentes y las justificaciones largas van a `ARCHITECTURE.md`, **nunca inline** en el código.
 
 ## De dónde viene este repositorio
 

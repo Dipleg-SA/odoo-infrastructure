@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Qué se espera del stack postgres. Dueño único de estos valores: docs/runbooks/
+# Qué se espera del stack postgres. Dueño único de estos valores: el runbook
 # nombra el comando, los valores viven acá.
 #
 # Corre solo (stacks/postgres/verify.sh) o sourceado por scripts/verify-stacks.sh,
