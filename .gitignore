@@ -10,8 +10,10 @@ secrets/
 
 # --- Workspace de VS Code ---
 # Lo genera 'make dev-workspace' desde este mismo .env; local a cada checkout.
+# El nombre sale de COMPOSE_PROJECT_NAME (production.code-workspace,
+# staging.code-workspace, development-<feature>.code-workspace), no es fijo.
 
-dev.code-workspace
+*.code-workspace
 .vscode/
 
 # --- Clave de cuenta ACME ---
