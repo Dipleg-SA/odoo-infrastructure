@@ -48,17 +48,6 @@ ui_run() {
   return "$ec"
 }
 
-# --- Color del estado en 'docker compose ps' ---
-# Verde sano, rojo caído, amarillo todo lo demás; el 't' corta tras el primer match para no repintar.
-
-ui_color_status() {
-  sed -E \
-    -e "s/(Up.*\(healthy\))\$/${UI_GREEN}\1${UI_RESET}/;t" \
-    -e "s/(Up.*\(unhealthy\))\$/${UI_RED}\1${UI_RESET}/;t" \
-    -e "s/((Exited|Restarting|Dead).*)\$/${UI_RED}\1${UI_RESET}/;t" \
-    -e "s/((Up|Created|Paused).*)\$/${UI_YELLOW}\1${UI_RESET}/;t"
-}
-
 # --- Confirmación destructiva ---
 # Pide escribir la palabra literal, no Y/N; devuelve 1 sin tocar nada si no coincide.
 
