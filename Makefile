@@ -48,7 +48,7 @@ config-init: ## Bootstrapea los config reales desde su .example
 # Un folder por tipo de addon + la raíz de infra, generado desde .env — para
 # no mezclar edición de módulos con archivos de infraestructura en el mismo árbol.
 
-dev-workspace: ## Genera dev.code-workspace: un folder por tipo de addon + infra
+dev-workspace: ## Genera <entorno>.code-workspace: un folder por tipo de addon + infra
 	scripts/vscode-workspace.sh
 
 # --- Config de sistema operativo ---

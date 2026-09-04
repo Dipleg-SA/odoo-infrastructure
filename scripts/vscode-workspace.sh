@@ -11,7 +11,7 @@ if [ -f .env ]; then . ./.env; fi
 : "${COMPOSE_PROJECT_NAME:?declarar COMPOSE_PROJECT_NAME en .env}"
 
 ROOT="$(pwd)"
-OUT="dev.code-workspace"
+OUT="$COMPOSE_PROJECT_NAME.code-workspace"
 COLOR="1a4d7a"
 
 cat > "$OUT" <<EOF
