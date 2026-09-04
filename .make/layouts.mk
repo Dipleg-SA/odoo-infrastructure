@@ -15,7 +15,7 @@ $(1)-logs:
 	@. scripts/ui/components.sh; ui_section "$(1)-logs: siguiendo (Ctrl-C para salir)"; docker compose logs -f $(1)
 
 $(1)-ps:
-	@. scripts/ui/components.sh; salida=$$$$(docker compose ps $(1)) || exit $$$$?; printf '%s\n' "$$$$salida" | ui_color_status | ui_table_frame
+	@. scripts/ui/components.sh; salida=$$$$(docker compose ps --format "{{.Name}}$$$$(printf '\t'){{.Status}}$$$$(printf '\t'){{.Ports}}" $(1)) || exit $$$$?; printf '%s\n' "$$$$salida" | ui_ps_table
 
 $(1)-verify:
 	scripts/verify-stacks.sh $(1)
@@ -30,7 +30,7 @@ $(1)-logs:
 	@. scripts/ui/components.sh; ui_section "$(1)-logs: siguiendo (Ctrl-C para salir)"; docker compose logs -f $(1)
 
 $(1)-ps:
-	@. scripts/ui/components.sh; salida=$$$$(docker compose ps $(1)) || exit $$$$?; printf '%s\n' "$$$$salida" | ui_color_status | ui_table_frame
+	@. scripts/ui/components.sh; salida=$$$$(docker compose ps --format "{{.Name}}$$$$(printf '\t'){{.Status}}$$$$(printf '\t'){{.Ports}}" $(1)) || exit $$$$?; printf '%s\n' "$$$$salida" | ui_ps_table
 
 $(1)-verify:
 	scripts/verify-stacks.sh $(1)
