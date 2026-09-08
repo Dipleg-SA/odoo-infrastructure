@@ -1,3 +1,9 @@
+# --- Shell de las recetas ---
+# Sin esto Make usa /bin/sh (dash en Debian/Ubuntu), que no entiende el $'\033[...'
+# de ui.sh y lo imprime literal en vez de interpretarlo como color.
+
+SHELL := bash
+
 include .make/main.mk
 
 .PHONY: help up down logs ps nuke reset build \
@@ -132,7 +138,7 @@ logs: ## Sigue los logs de todos los servicios
 	@. scripts/ui/components.sh; ui_section "logs: siguiendo todo el stack (Ctrl-C para salir)"; docker compose logs -f
 
 ps: ## Lista el estado de los contenedores
-	@. scripts/ui/components.sh; salida=$$(docker compose ps) || exit $$?; printf '%s\n' "$$salida" | ui_color_status | ui_table_frame
+	@. scripts/ui/components.sh; salida=$$(docker compose ps --format "{{.Name}}$$(printf '\t'){{.Status}}$$(printf '\t'){{.Ports}}") || exit $$?; printf '%s\n' "$$salida" | ui_ps_table
 
 # nuke: el más destructivo del Makefile — confirmación tipeando la palabra, no Y/N,
 # y nunca toca secrets/ ni .env. reset es lo mismo pero solo los volúmenes: containers,
