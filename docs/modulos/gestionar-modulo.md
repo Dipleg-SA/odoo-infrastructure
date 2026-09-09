@@ -4,11 +4,76 @@
 
 Tres momentos del mismo módulo: **crearlo** (necesitás uno nuevo dentro de un repositorio ya declarado y sincronizado), **actualizarlo** (le vas a cambiar código, vista o dato — cubre también la primera vez que se instala en un entorno donde nunca corrió) o **eliminarlo** (ya no cumple una función y lo sacás del árbol).
 
-Transversal a custom-addons, oca y third-party. No aplica a Odoo Enterprise sin acceso git — ver [crear-enterprise](crear-enterprise.md).
+Transversal a custom-addons, oca y third-party. No aplica a Odoo Enterprise sin acceso git — ver [gestionar-enterprise](gestionar-enterprise.md).
 
 ## Objetivo
 
 El módulo con el cambio que corresponda —esqueleto nuevo, código actualizado, o ausencia total— validado en staging y aplicado en producción.
+
+## Flujo rápido
+
+Este es el recorrido completo para crear o cambiar un módulo. Las secciones siguientes explican cada paso y los casos de excepción.
+
+1. **Preparar el checkout de desarrollo.** El repositorio tiene que estar declarado en `addons/addons.txt`. Si la rama de feature declarada en `ADDONS_BRANCH` todavía no existe, crearla antes de sincronizar:
+
+   ```bash
+   make repo-branch
+   make repo-sync
+   ```
+
+2. **Crear una rama y desarrollar el módulo** dentro de `addons/<categoría>/<repo>/`. Si el manifiesto agrega una dependencia Python, resolverla y reconstruir antes de instalar o actualizar:
+
+   ```bash
+   make addons-deps
+   make build   # solo si addons-deps agregó o cambió pines
+   ```
+
+3. **Aplicar y probar en desarrollo.** Elegir el comando según el estado de la base:
+
+   ```bash
+   make addons-install MODULES=<nombre_tecnico>  # primera vez en esta base
+   # o
+   make addons-update MODULES=<nombre_tecnico>   # ya estaba instalado
+   make odoo-verify
+   ```
+
+4. **Integrar la feature a `<rama>-stag`** con Git y publicarla. En el servidor de staging:
+
+   ```bash
+   make repo-sync
+   make addons-deps
+   make build   # solo si addons-deps agregó o cambió pines
+   make addons-install MODULES=<nombre_tecnico>  # primera vez en staging
+   # o
+   make addons-update MODULES=<nombre_tecnico>   # ya estaba instalado
+   make verify
+   ```
+
+5. **Promover la feature validada a `<rama>`** con Git. En producción:
+
+   ```bash
+   make repo-sync
+   make addons-deps
+   make build   # solo si addons-deps agregó o cambió pines
+   make addons-install MODULES=<nombre_tecnico>  # primera vez en producción
+   # o
+   make addons-update MODULES=<nombre_tecnico>   # ya estaba instalado
+   make verify
+   ```
+
+6. **Confirmar el resultado** en cada entorno que corresponda:
+
+   ```bash
+   make addons-modules
+   make repo-status
+   ```
+
+| Situación | Comando |
+| --- | --- |
+| La rama declarada de desarrollo aún no existe | `make repo-branch` y `make repo-sync` |
+| El módulo nunca estuvo instalado en esa base | `make addons-install MODULES=<nombre_tecnico>` |
+| El módulo ya está instalado | `make addons-update MODULES=<nombre_tecnico>` |
+| El manifiesto agregó una dependencia Python | `make addons-deps` y, si agregó pines, `make build` |
 
 ---
 
@@ -55,6 +120,13 @@ Deliberadamente sin `controllers/` ni `demo/` — se agregan cuando el módulo l
 }
 ```
 
+Si el manifiesto declara `external_dependencies.python`, resolverlas y reconstruir antes de instalar: el pin queda en `addons/requirements.txt`, pero la librería solo entra al contenedor durante el build.
+
+```bash
+make addons-deps
+make build   # solo si addons-deps agregó o cambió pines
+```
+
 ```bash
 make addons-install MODULES=<nombre_tecnico>
 ```
@@ -83,10 +155,18 @@ cd addons/<categoría>/<repo>
 git checkout -b feat/nombre-del-cambio
 ```
 
+Si el cambio agregó una dependencia Python al manifiesto, resolverla y reconstruir antes de actualizar:
+
+```bash
+make addons-deps
+make build   # solo si addons-deps agregó o cambió pines
+```
+
 Desde acá `repo-sync` deja de tocar ese repositorio, y lo avisa cada vez que corre. Trabajás y probás en loop:
 
 ```bash
 make addons-update MODULES=<nombre_tecnico>
+make odoo-verify
 ```
 
 **Integración a staging.** La rama de staging es descartable en todo momento — nunca contiene nada que no exista además en una `feat/*` o en producción:
@@ -103,9 +183,10 @@ git push --force origin <rama>-stag
 ```bash
 make repo-sync
 make addons-deps
+make build   # solo si addons-deps agregó o cambió pines
 ```
 
-Si el cambio agregó una dependencia Python nueva, `addons-deps` la pinea en `requirements.txt`: `docker compose build odoo` antes de seguir.
+Después seguí [validar módulo en staging](../validacion/validar-modulo-staging.md): ahí corrés `make addons-install` o `make addons-update`, revisás la corrida y probás el flujo real contra los datos restaurados de producción. No promociones hasta que esa validación esté en verde.
 
 El servidor nunca mergea ni pushea, solo trae. Si `repo-sync` avisa que el `merge --ff-only` no avanzó (staging se reescribió con `--force`), nombra los dos comandos:
 
@@ -131,8 +212,17 @@ Sube exactamente lo que validaste, no lo que haya acumulado la rama de staging.
 ```bash
 make repo-sync
 make addons-deps
-make addons-install MODULES=<nombre_tecnico>   # primera vez que este módulo se instala en este entorno
-make addons-update MODULES=<nombre_tecnico>    # cualquier otra vez
+make build   # solo si addons-deps agregó o cambió pines
+```
+
+Después elegí **uno** de estos comandos, nunca los dos:
+
+```bash
+make addons-install MODULES=<nombre_tecnico>   # primera vez que este módulo se instala en producción
+```
+
+```bash
+make addons-update MODULES=<nombre_tecnico>    # el módulo ya estaba instalado en producción
 ```
 
 ### Verificación

@@ -83,6 +83,34 @@ pinear "$ROOT" "python_dateutil==2.9.0"
 igual "'Python-Dateutil' declarado == 'python_dateutil' pineado" "0" "$(check_code "$ROOT")"
 
 # =====================================================================
+titulo "check: un rango de versión queda cubierto por su pin"
+# =====================================================================
+
+ROOT=$(crear_checkout caso_rango)
+declarar_modulo "$ROOT" custom-addons mi_modulo 'authlib>=1.6.12,<1.7.0'
+pinear "$ROOT" "Authlib==1.6.12"
+
+igual "Authlib pineado cubre la declaración con rango" "0" "$(check_code "$ROOT")"
+
+# =====================================================================
+titulo "sync: conserva el rango literal al resolver"
+# =====================================================================
+
+ROOT=$(crear_checkout caso_rango_sync)
+declarar_modulo "$ROOT" custom-addons mi_modulo 'authlib>=1.6.12,<1.7.0'
+STUB=$(mktemp -d)
+cat > "$STUB/salida" <<'JSON'
+{"version": "1", "install": [{"metadata": {"name": "Authlib", "version": "1.6.12"}}]}
+JSON
+
+igual "sale con 0" "0" "$(sync_code "$ROOT" "$STUB")"
+contiene "le pasa a pip el rango original" "authlib>=1.6.12,<1.7.0" "$(cat "$STUB/llamadas")"
+no_contiene "no transforma los puntos del rango" "authlib>=1-6-12,<1-7-0" "$(cat "$STUB/llamadas")"
+igual "queda pineado con la versión resuelta" "0" \
+  "$(grep -qx 'Authlib==1.6.12' "$ROOT/addons/requirements.txt"; echo $?)"
+rm -rf "$STUB"
+
+# =====================================================================
 titulo "check: huérfano — avisa, no falla"
 # =====================================================================
 
