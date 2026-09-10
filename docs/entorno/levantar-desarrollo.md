@@ -157,13 +157,13 @@ Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, tod
 
 **Objetivo** — Odoo sirviendo por nginx en loopback.
 
-**A mano** — nada: `odoo.conf` es un archivo versionado, sin nada que bootstrapear ni editar. `ODOO_DISABLE_SMTP=1`, forzado en `envs/development.yaml`, deja `smtp_server` vacío pase lo que pase en `.env`.
+**A mano** — nada: `odoo.conf` es un archivo versionado, sin nada que bootstrapear ni editar. `make odoo-up` configura automáticamente `report.url` con la dirección interna `http://odoo:8069` y `web.base.url` con el puerto público de development. `ODOO_DISABLE_SMTP=1`, forzado en `envs/development.yaml`, deja `smtp_server` vacío pase lo que pase en `.env`.
 
 ```bash
 make odoo-up && make odoo-logs
 ```
 
-La base arranca vacía: el entrypoint detecta que no está inicializada y corre `-i base` contra `postgres:5432`. La primera vez tarda. Esperá `HTTP service (werkzeug) running` y cortá los logs con Ctrl-C.
+La base arranca vacía: el entrypoint detecta que no está inicializada y corre `-i base` contra `postgres:5432`. La primera vez tarda. Esperá `HTTP service (werkzeug) running` y cortá los logs con Ctrl-C. Si restaurás una base, volvé a usar `make odoo-up`: además de levantar Odoo, reaplica la configuración de URLs de reportes.
 
 ```bash
 make odoo-verify

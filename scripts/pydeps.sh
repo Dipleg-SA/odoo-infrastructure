@@ -58,11 +58,25 @@ PY
 
 norm() { tr 'A-Z_.' 'a-z--'; }
 
-declared_names() {
-  local files=() f
+# Un requisito puede traer un rango (``authlib>=1.6.12``), pero ese rango no
+# forma parte de su identidad. Se conserva literal para pasarlo a pip; solo el
+# nombre se normaliza al comparar contra requirements.txt.
+requirement_name() {
+  sed -E 's/^[[:space:]]*([A-Za-z0-9][A-Za-z0-9._-]*).*/\1/' | norm
+}
+
+declared_pairs() {
+  local files=() f requirement
   while IFS= read -r f; do files+=("$f"); done < <(manifest_files)
   [ "${#files[@]}" -eq 0 ] && return 0
-  declared_deps "${files[@]}" | norm | sort -u
+
+  while IFS= read -r requirement; do
+    printf '%s\t%s\n' "$(printf '%s\n' "$requirement" | requirement_name)" "$requirement"
+  done < <(declared_deps "${files[@]}")
+}
+
+declared_names() {
+  declared_pairs | cut -f1 | sort -u
 }
 
 pinned_names() {
@@ -79,6 +93,14 @@ comparar_nombres() {
   pinned=$(pinned_names) || true
   MISSING=$(comm -23 <(printf '%s' "$declared") <(printf '%s' "$pinned"))
   ORPHANS=$(comm -13 <(printf '%s' "$declared") <(printf '%s' "$pinned"))
+}
+
+# MISSING contiene nombres normalizados. Para resolver, recuperar los requisitos
+# originales: pip necesita los puntos de la versión y cualquier otro specifier.
+missing_requirements() {
+  [ -n "$MISSING" ] || return 0
+  awk -F '\t' 'NR == FNR { missing[$1] = 1; next } missing[$1] { print $2 }' \
+    <(printf '%s\n' "$MISSING") <(declared_pairs)
 }
 
 # --- check: sin red, sin Docker ---
@@ -105,18 +127,20 @@ cmd_check() {
 # --no-deps a propósito: pinea solo lo declarado, las transitivas las resuelve pip en build time.
 
 cmd_sync() {
-  local missing image reporte resueltos pedidos resueltos_n
+  local missing image reporte resueltos pedidos resueltos_n requirement
+  local requests=()
 
   require_requirements
   comparar_nombres
-  missing="$MISSING"
+  missing=$(missing_requirements)
   ui_plan_start "pydeps sync"
   if [ -z "$missing" ]; then
     ui_step 1 "Nada nuevo que pinear en $REQUIREMENTS."
     ui_ok "pydeps sync: nada nuevo que pinear"
   else
     image=$(sed -n 's/^FROM \(.*\)$/\1/p' stacks/odoo/image/Dockerfile | head -1)
-    pedidos=$(wc -l <<<"$missing" | tr -d ' ')
+    while IFS= read -r requirement; do requests+=("$requirement"); done <<<"$missing"
+    pedidos="${#requests[@]}"
     ui_step 1 "Resolución de $pedidos paquete(s) contra $image."
 
     # --- --ignore-installed ---
@@ -124,7 +148,7 @@ cmd_sync() {
 
     if ! reporte=$(docker run --rm "$image" \
         pip install --break-system-packages --dry-run --quiet --no-deps --ignore-installed \
-          --report - $missing 2>&1); then
+          --report - "${requests[@]}" 2>&1); then
       ui_bad "pydeps sync: no se pudo resolver contra $image" "$(tail -1 <<<"$reporte")"
       ui_plan_end
       return 1

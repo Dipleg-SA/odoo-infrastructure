@@ -330,6 +330,16 @@ descartó: los módulos declaran dependencias de Python, y sin imagen propia no 
 instalarlas. El build queda disparado solo por un cambio de dependencias o del
 entrypoint, nunca por un addon — que es exactamente lo que se buscaba.
 
+**Las operaciones de módulos pasan por la API ORM de Odoo.** `make addons-install`,
+`make addons-update` y `make addons-uninstall` comparten un runner en el host que detiene
+Odoo, ejecuta `odoo shell --no-http` y llama a `button_immediate_install`,
+`button_immediate_upgrade` o `button_immediate_uninstall` sobre `ir.module.module`.
+No se escriben estados de módulos mediante SQL ni se agregan endpoints HTTP. El runner
+serializa operaciones en el host y conserva el contenedor one-off con nombre fijo como
+segunda guarda ante procesos huérfanos. El código del addon debe seguir montado durante
+la operación; por eso la desinstalación precede a `repo-sync` o a quitar el worktree. Al
+terminar, el runner vuelve a levantar Odoo y revalida la configuración de reportes.
+
 **Precedencia si dos módulos coinciden en nombre:** `enterprise` > `custom-addons` >
 `oca` > `third-party` > core. La arma el entrypoint recorriendo las categorías en ese
 orden, por glob y no por un listado a mano. **Advertencia:** Odoo no documenta la
@@ -1045,7 +1055,8 @@ odoo-infrastructure/
 │   ├── verify-stacks.sh         ← orquesta: corre el de cada stack presente
 │   ├── verify-host.sh           ← lo que es del SO, no de ningún stack
 │   ├── secrets-init.sh · secrets-perms.sh · config-init.sh
-│   ├── addons.sh · pydeps.sh · integrity-check.sh · failure-notify.sh
+│   ├── addons.sh · odoo-module-operation.sh · odoo-report-config.sh
+│   ├── pydeps.sh · integrity-check.sh · failure-notify.sh
 │   ├── timers.sh
 │   └── lib/{ui.sh,verify.sh,compose.sh}
 │

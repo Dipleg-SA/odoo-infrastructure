@@ -1,0 +1,225 @@
+#!/usr/bin/env bash
+# Ejecuta operaciones de módulos mediante la API ORM de Odoo.
+#
+# El código de los addons debe seguir montado cuando se ejecuta este script. La
+# desinstalación ocurre antes de quitar un módulo del manifiesto o del worktree.
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+. scripts/lib/ui.sh
+
+if [ -f .env ]; then
+  set -a
+  . ./.env
+  set +a
+fi
+
+ACCION="${1:-}"
+MODULOS="${MODULES:-}"
+
+case "$ACCION" in
+  install|update|uninstall) ;;
+  *)
+    ui_bad "operación de módulos inválida" "usar install, update o uninstall"
+    exit 2
+    ;;
+esac
+
+if [ -z "$MODULOS" ]; then
+  ui_bad "faltan módulos" "usar MODULES=nombre_del_modulo[,otro_modulo]"
+  exit 2
+fi
+
+case ",$MODULOS," in
+  *,\ *,*|*,,*|,*[!a-zA-Z0-9_,]*,*)
+    ui_bad "MODULES inválido" "usar nombres técnicos separados por comas, sin espacios"
+    exit 2
+    ;;
+esac
+
+if [ "$ACCION" = uninstall ] && [ "$MODULOS" = all ]; then
+  ui_bad "desinstalación masiva bloqueada" "addons-uninstall requiere módulos explícitos"
+  exit 2
+fi
+
+LOCK_DIR="${ODOO_OPERATION_LOCK_DIR:-${TMPDIR:-/tmp}/odoo-module-operation.lock}"
+LOCK_PID="$LOCK_DIR/pid"
+LOCK_ADQUIRIDO=0
+
+adquirir_lock() {
+  if mkdir "$LOCK_DIR" 2>/dev/null; then
+    printf '%s\n' "$$" > "$LOCK_PID"
+    LOCK_ADQUIRIDO=1
+    return 0
+  fi
+
+  local pid=""
+  if [ -r "$LOCK_PID" ]; then
+    pid=$(cat "$LOCK_PID" 2>/dev/null || true)
+  fi
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    ui_bad "hay otra operación de módulos en curso" "pid $pid — esperá a que termine"
+    exit 2
+  fi
+
+  # Si el proceso murió pero dejó el contenedor one-off, no liberar el lock a
+  # ciegas: ese contenedor podría seguir usando la base.
+  if docker ps -a --filter 'name=^/odoo-oneoff$' --format '{{.Names}}' 2>/dev/null | grep -qx odoo-oneoff; then
+    ui_bad "hay un contenedor one-off pendiente" "revisar odoo-oneoff antes de reintentar"
+    exit 2
+  fi
+
+  rm -f "$LOCK_PID"
+  rmdir "$LOCK_DIR" 2>/dev/null || {
+    ui_bad "no se pudo recuperar el lock de operaciones" "$LOCK_DIR"
+    exit 2
+  }
+  adquirir_lock
+}
+
+liberar_lock() {
+  if [ "$LOCK_ADQUIRIDO" -eq 1 ]; then
+    rm -f "$LOCK_PID"
+    rmdir "$LOCK_DIR" 2>/dev/null || true
+    LOCK_ADQUIRIDO=0
+  fi
+}
+
+python_operacion() {
+  docker compose run --rm --name odoo-oneoff \
+    -e "ODOO_OPERATION=$ACCION" \
+    -e "ODOO_MODULES=$MODULOS" \
+    -e "ODOO_PHASE=$1" \
+    -e "CONFIRM=${CONFIRM:-}" \
+    odoo shell --no-http <<'PY'
+import os
+import sys
+
+Modules = env['ir.module.module'].sudo()
+operation = os.environ['ODOO_OPERATION']
+phase = os.environ['ODOO_PHASE']
+requested = [name.strip() for name in os.environ['ODOO_MODULES'].split(',') if name.strip()]
+
+if operation != 'uninstall':
+    Modules.update_list()
+
+if requested == ['all']:
+    states = {
+        'install': [('state', '=', 'uninstalled')],
+        'update': [('state', 'in', ('installed', 'to upgrade'))],
+    }
+    selected = Modules.search(states[operation])
+else:
+    selected = Modules.search([('name', 'in', requested)])
+
+found = set(selected.mapped('name'))
+missing = sorted(set(requested) - found) if requested != ['all'] else []
+if missing:
+    print('Módulos no encontrados: %s' % ', '.join(missing))
+    sys.exit(2)
+
+valid_states = {
+    'install': {'uninstalled'},
+    'update': {'installed', 'to upgrade'},
+    'uninstall': {'installed', 'to upgrade'},
+}
+invalid = selected.filtered(lambda module: module.state not in valid_states[operation])
+if invalid:
+    print('Módulos fuera de estado para %s: %s' % (
+        operation,
+        ', '.join('%s=%s' % (module.name, module.state) for module in invalid),
+    ))
+    sys.exit(2)
+
+if not selected:
+    print('No hay módulos para %s.' % operation)
+    sys.exit(2)
+
+if operation == 'uninstall':
+    impacted = selected | selected.downstream_dependencies()
+    print('Módulos solicitados: %s' % ', '.join(selected.mapped('name')))
+    print('Módulos afectados: %s' % ', '.join(impacted.mapped('name')))
+    if phase == 'preflight':
+        sys.exit(0)
+    if os.environ.get('CONFIRM') != 'desinstalar':
+        print("Falta CONFIRM=desinstalar para ejecutar la desinstalación.")
+        sys.exit(2)
+    selected.button_immediate_uninstall()
+elif operation == 'install':
+    selected.button_immediate_install()
+elif operation == 'update':
+    selected.button_immediate_upgrade()
+PY
+}
+
+ODOO_DETENIDO=0
+
+levantar_odoo() {
+  local estado_original="$1" estado_up=0 estado_config=0
+
+  if [ "$ODOO_DETENIDO" -ne 1 ]; then
+    return "$estado_original"
+  fi
+
+  if ui_run "levantar Odoo" docker compose up -d odoo; then
+    estado_up=0
+  else
+    estado_up=$?
+  fi
+  ODOO_DETENIDO=0
+
+  if [ "$estado_up" -eq 0 ]; then
+    if ui_run "validar configuración de reportes" make odoo-report-config; then
+      estado_config=0
+    else
+      estado_config=$?
+    fi
+  fi
+
+  if [ "$estado_original" -ne 0 ]; then
+    return "$estado_original"
+  fi
+  [ "$estado_up" -ne 0 ] && return "$estado_up"
+  return "$estado_config"
+}
+
+limpiar() {
+  local estado=$?
+  local estado_restaurar=0
+  trap - EXIT
+  set +e
+  levantar_odoo "$estado"
+  estado_restaurar=$?
+  liberar_lock
+  exit "$estado_restaurar"
+}
+
+adquirir_lock
+trap limpiar EXIT
+
+ui_start "addons-$ACCION $MODULOS"
+ODOO_DETENIDO=1
+if ui_run "detener Odoo" docker compose stop odoo; then
+  :
+else
+  estado_detener=$?
+  exit "$estado_detener"
+fi
+
+if [ "$ACCION" = uninstall ]; then
+  ui_step 1 "Previsualizar módulos afectados antes de desinstalar."
+  python_operacion preflight
+  if [ "${CONFIRM:-}" != desinstalar ]; then
+    ui_confirm desinstalar
+  fi
+fi
+
+if [ "$ACCION" = uninstall ]; then
+  ui_step 2 "Ejecutar la desinstalación mediante la API ORM de Odoo."
+else
+  ui_step 1 "Ejecutar la operación mediante la API ORM de Odoo."
+fi
+
+estado_operacion=0
+python_operacion apply || estado_operacion=$?
+exit "$estado_operacion"

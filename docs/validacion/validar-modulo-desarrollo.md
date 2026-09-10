@@ -14,7 +14,7 @@ El módulo instalado sin errores, con el comportamiento esperado probado a mano 
 make addons-update MODULES=<nombre_tecnico>
 ```
 
-Revisar los logs de la corrida, no solo el exit code — un `-u` puede terminar con `0` y haber logueado un warning que importa:
+Revisar los logs de la corrida, no solo el exit code — una actualización puede terminar con `0` y haber logueado un warning que importa:
 
 ```bash
 docker compose logs --since 5m odoo | grep -iE 'error|traceback|warn'

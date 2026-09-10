@@ -49,10 +49,19 @@ cp /etc/odoo/odoo.conf "$RUNTIME_CONF"
 
 DB_PASSWORD="$(cat /run/secrets/postgres_password)"
 
-# --- Modo one-off: -i/-u explícitos del operador (make addons-install/addons-update) ---
+# --- Modo one-off: operaciones explícitas del operador (make addons-*) ---
 # Conexión explícita, no heredada de HOST/PORT: corre antes de que el entrypoint oficial arme su propia espera.
 
 if [ "$#" -gt 0 ]; then
+  # `shell` es un subcomando de Odoo, no un flag del servidor. Mantenerlo
+  # después de `odoo` evita que el entrypoint lo convierta en un parámetro
+  # inválido y conserva el mismo runtime conf y conexión que los one-off.
+  if [ "${1:-}" = "shell" ]; then
+    shift
+    exec odoo shell -c "$RUNTIME_CONF" -d odoo --no-http "$@" \
+      --db_host=postgres --db_port=5432 --db_user=odoo --db_password="$DB_PASSWORD"
+  fi
+
   exec odoo -c "$RUNTIME_CONF" -d odoo --no-http "$@" \
     --db_host=postgres --db_port=5432 --db_user=odoo --db_password="$DB_PASSWORD"
 fi

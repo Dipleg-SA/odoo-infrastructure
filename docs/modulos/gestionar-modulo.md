@@ -4,11 +4,79 @@
 
 Tres momentos del mismo módulo: **crearlo** (necesitás uno nuevo dentro de un repositorio ya declarado y sincronizado), **actualizarlo** (le vas a cambiar código, vista o dato — cubre también la primera vez que se instala en un entorno donde nunca corrió) o **eliminarlo** (ya no cumple una función y lo sacás del árbol).
 
-Transversal a custom-addons, oca y third-party. No aplica a Odoo Enterprise sin acceso git — ver [crear-enterprise](crear-enterprise.md).
+Transversal a custom-addons, oca y third-party. No aplica a Odoo Enterprise sin acceso git — ver [gestionar-enterprise](gestionar-enterprise.md).
 
 ## Objetivo
 
 El módulo con el cambio que corresponda —esqueleto nuevo, código actualizado, o ausencia total— validado en staging y aplicado en producción.
+
+## Flujo rápido
+
+Este es el recorrido completo para crear o cambiar un módulo. Las secciones siguientes explican cada paso y los casos de excepción.
+
+1. **Preparar el checkout de desarrollo.** El repositorio tiene que estar declarado en `addons/addons.txt`. Si la rama de feature declarada en `ADDONS_BRANCH` todavía no existe, crearla antes de sincronizar:
+
+   ```bash
+   make repo-branch
+   make repo-sync
+   ```
+
+2. **Crear una rama y desarrollar el módulo** dentro de `addons/<categoría>/<repo>/`. Si el manifiesto agrega una dependencia Python, resolverla y reconstruir antes de instalar o actualizar:
+
+   ```bash
+   make addons-deps
+   make build   # solo si addons-deps agregó o cambió pines
+   ```
+
+3. **Aplicar y probar en desarrollo.** Elegir el comando según el estado de la base:
+
+   ```bash
+   make addons-install MODULES=<nombre_tecnico>  # primera vez en esta base
+   # o
+   make addons-update MODULES=<nombre_tecnico>   # ya estaba instalado
+   # o
+   make addons-uninstall MODULES=<nombre_tecnico> # retirar un módulo instalado
+   make odoo-verify
+   ```
+
+4. **Integrar la feature a `<rama>-stag`** con Git y publicarla. En el servidor de staging:
+
+   ```bash
+   make repo-sync
+   make addons-deps
+   make build   # solo si addons-deps agregó o cambió pines
+   make addons-install MODULES=<nombre_tecnico>  # primera vez en staging
+   # o
+   make addons-update MODULES=<nombre_tecnico>   # ya estaba instalado
+   make verify
+   ```
+
+5. **Promover la feature validada a `<rama>`** con Git. En producción:
+
+   ```bash
+   make repo-sync
+   make addons-deps
+   make build   # solo si addons-deps agregó o cambió pines
+   make addons-install MODULES=<nombre_tecnico>  # primera vez en producción
+   # o
+   make addons-update MODULES=<nombre_tecnico>   # ya estaba instalado
+   make verify
+   ```
+
+6. **Confirmar el resultado** en cada entorno que corresponda:
+
+   ```bash
+   make addons-modules
+   make repo-status
+   ```
+
+| Situación | Comando |
+| --- | --- |
+| La rama declarada de desarrollo aún no existe | `make repo-branch` y `make repo-sync` |
+| El módulo nunca estuvo instalado en esa base | `make addons-install MODULES=<nombre_tecnico>` |
+| El módulo ya está instalado | `make addons-update MODULES=<nombre_tecnico>` |
+| Retirar un módulo instalado | `make addons-uninstall MODULES=<nombre_tecnico>` |
+| El manifiesto agregó una dependencia Python | `make addons-deps` y, si agregó pines, `make build` |
 
 ---
 
@@ -55,6 +123,13 @@ Deliberadamente sin `controllers/` ni `demo/` — se agregan cuando el módulo l
 }
 ```
 
+Si el manifiesto declara `external_dependencies.python`, resolverlas y reconstruir antes de instalar: el pin queda en `addons/requirements.txt`, pero la librería solo entra al contenedor durante el build.
+
+```bash
+make addons-deps
+make build   # solo si addons-deps agregó o cambió pines
+```
+
 ```bash
 make addons-install MODULES=<nombre_tecnico>
 ```
@@ -83,10 +158,18 @@ cd addons/<categoría>/<repo>
 git checkout -b feat/nombre-del-cambio
 ```
 
+Si el cambio agregó una dependencia Python al manifiesto, resolverla y reconstruir antes de actualizar:
+
+```bash
+make addons-deps
+make build   # solo si addons-deps agregó o cambió pines
+```
+
 Desde acá `repo-sync` deja de tocar ese repositorio, y lo avisa cada vez que corre. Trabajás y probás en loop:
 
 ```bash
 make addons-update MODULES=<nombre_tecnico>
+make odoo-verify
 ```
 
 **Integración a staging.** La rama de staging es descartable en todo momento — nunca contiene nada que no exista además en una `feat/*` o en producción:
@@ -103,9 +186,10 @@ git push --force origin <rama>-stag
 ```bash
 make repo-sync
 make addons-deps
+make build   # solo si addons-deps agregó o cambió pines
 ```
 
-Si el cambio agregó una dependencia Python nueva, `addons-deps` la pinea en `requirements.txt`: `docker compose build odoo` antes de seguir.
+Después seguí [validar módulo en staging](../validacion/validar-modulo-staging.md): ahí corrés `make addons-install` o `make addons-update`, revisás la corrida y probás el flujo real contra los datos restaurados de producción. No promociones hasta que esa validación esté en verde.
 
 El servidor nunca mergea ni pushea, solo trae. Si `repo-sync` avisa que el `merge --ff-only` no avanzó (staging se reescribió con `--force`), nombra los dos comandos:
 
@@ -131,8 +215,17 @@ Sube exactamente lo que validaste, no lo que haya acumulado la rama de staging.
 ```bash
 make repo-sync
 make addons-deps
-make addons-install MODULES=<nombre_tecnico>   # primera vez que este módulo se instala en este entorno
-make addons-update MODULES=<nombre_tecnico>    # cualquier otra vez
+make build   # solo si addons-deps agregó o cambió pines
+```
+
+Después elegí **uno** de estos comandos, nunca los dos:
+
+```bash
+make addons-install MODULES=<nombre_tecnico>   # primera vez que este módulo se instala en producción
+```
+
+```bash
+make addons-update MODULES=<nombre_tecnico>    # el módulo ya estaba instalado en producción
 ```
 
 ### Verificación
@@ -143,9 +236,9 @@ make addons-modules    # en producción, versión nueva o módulo recién instal
 make verify
 ```
 
-**Nota — qué corre en cada lado.** El servidor nunca hace `commit`/`merge`/`push`: solo `fetch`/`reset --hard`/`merge --ff-only` vía `repo-sync`, y `-i`/`-u` vía los `make` targets. Todo commit, merge y push pasa por tu máquina. Es deliberado: nada en el disco del servidor es irrecuperable — perder `addons/` entero se arregla con `make repo-sync`.
+**Nota — qué corre en cada lado.** El servidor nunca hace `commit`/`merge`/`push`: solo `fetch`/`reset --hard`/`merge --ff-only` vía `repo-sync`, y las operaciones de módulos vía los `make` targets. Todo commit, merge y push pasa por tu máquina. Es deliberado: nada en el disco del servidor es irrecuperable — perder `addons/` entero se arregla con `make repo-sync`.
 
-`make addons-install`/`addons-update` **detienen el servicio** mientras corren: es un paso explícito del operador, nunca algo que dispare el arranque del contenedor. Si el paso falla, el servicio se levanta igual y el comando reporta el error.
+`make addons-install`/`addons-update`/`addons-uninstall` **detienen el servicio** mientras corren y ejecutan la operación mediante la API ORM interna de Odoo: es un paso explícito del operador, nunca algo que dispare el arranque del contenedor. Si el paso falla, el servicio se levanta igual y el comando reporta el error. La desinstalación muestra primero los módulos afectados por dependencias y exige confirmación explícita.
 
 ---
 
@@ -155,11 +248,19 @@ El módulo ya no cumple una función — se reemplazó, se dio de baja el proces
 
 **Objetivo** — el módulo desinstalado de cada base donde corría, y su código fuera del repo, integrado por el mismo camino que cualquier otro cambio.
 
-**A mano.** Desinstalar antes de sacar el código, no después: al revés que instalar, borrar el directorio de un módulo que sigue `installed` en `ir_module_module` deja un registro apuntando a nada, y el próximo arranque o `-u` falla. Desinstalá desde Ajustes → Aplicaciones en cada entorno, en el mismo orden en que vas a promover el cambio.
+**A mano.** Desinstalar antes de sacar el código, no después: al revés que instalar, borrar el directorio de un módulo que sigue `installed` en `ir_module_module` deja un registro apuntando a nada, y el próximo arranque o una actualización falla. Usá `make addons-uninstall` en cada entorno, en el mismo orden en que vas a promover el cambio.
 
 ### Comandos
 
 El código viaja por el mismo camino de integración que [Actualizar](#actualizar) —rama de staging descartable, promoción a tu rama base, `repo-sync` en cada entorno— con dos diferencias: desinstalás el módulo en cada entorno *antes* de sincronizar ahí, no instalás ni actualizás después; y el cambio de código es un `git rm`, no una edición.
+
+Antes de retirar el código, ejecutá:
+
+```bash
+make addons-uninstall MODULES=<nombre_tecnico>
+```
+
+En producción, confirmá antes que existe un backup reciente y verificable. El comando conserva el addon montado, calcula las dependencias afectadas mediante la API ORM de Odoo, solicita confirmación y deja el servicio levantado aunque la operación falle.
 
 ```bash
 cd addons/<categoría>/<repo>

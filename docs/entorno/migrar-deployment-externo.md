@@ -125,7 +125,7 @@ docker compose up -d
 make addons-update MODULES=all
 ```
 
-El `-u all` no es opcional aunque el mayor coincida: entre builds de una misma serie hay versiones de módulo que suben, y sin la actualización el esquema queda a medio camino.
+La actualización de todos los módulos no es opcional aunque el mayor coincida: entre builds de una misma serie hay versiones de módulo que suben, y sin la actualización el esquema queda a medio camino.
 
 ## Verificación
 

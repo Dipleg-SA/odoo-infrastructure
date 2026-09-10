@@ -209,7 +209,7 @@ Encabeza con la rama declarada y sigue con una fila por repo del manifiesto, tod
 
 **Objetivo** — Odoo sirviendo por el hostname público con certificado propio. Acá se cierra el 502 que dejó el bloque 3.
 
-**A mano** — nada: `smtp_server`/`port`/`user` los toma el entrypoint de `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER` en `.env`, que ya cargaste en el bloque 2. `odoo.conf` no tiene nada que editar.
+**A mano** — nada: `smtp_server`/`port`/`user` los toma el entrypoint de `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER` en `.env`, que ya cargaste en el bloque 2. `make odoo-up` configura automáticamente `report.url` con `http://odoo:8069` y congela `web.base.url` en `https://$PUBLIC_HOSTNAME`. `odoo.conf` no tiene nada que editar.
 
 **Y la contraseña de `admin`, apenas el sitio responda y antes que cualquier otra cosa.** El `-i base` del primer arranque la deja en `admin`, y para ese momento el sitio ya está publicado en internet por el Tunnel. Entrá a `https://$PUBLIC_HOSTNAME` → Ajustes → Usuarios → `admin` → cambiar contraseña. Es distinta del **master password** (`admin_passwd`), que se gestiona vía `secrets:` y no se toca acá.
 

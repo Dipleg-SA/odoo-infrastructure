@@ -33,8 +33,8 @@ En staging, las capas ausentes (backups, observabilidad, `dnsmasq`) salen como `
 A mano, específico de este módulo:
 
 - Probar el flujo real en la UI de staging, con los datos reales que trajo el último restore — es la única de las tres validaciones que corre contra un volumen de datos comparable al de producción.
-- **Confirmar que no salió correo real.** Staging no lleva credencial SMTP (`SMTP_HOST` vacío en su entrypoint) a propósito: un `-u` que dispare notificaciones, o una tarea programada que venía en la base restaurada, no debe mandar mail de verdad a clientes reales desde el entorno que existe para romper cosas. Si tu cambio depende de que el correo salga, revisar en cambio que Odoo lo haya encolado y fallado al enviar — eso es lo esperado acá, no un bug.
-- Si el módulo toca datos existentes (no solo vistas o lógica nueva), revisar contra los datos reales de staging que la migración/`-u` no rompió nada que ya estaba — es la ventaja de validar acá y no solo en desarrollo con datos de demo.
+- **Confirmar que no salió correo real.** Staging no lleva credencial SMTP (`SMTP_HOST` vacío en su entrypoint) a propósito: una actualización que dispare notificaciones, o una tarea programada que venía en la base restaurada, no debe mandar mail de verdad a clientes reales desde el entorno que existe para romper cosas. Si tu cambio depende de que el correo salga, revisar en cambio que Odoo lo haya encolado y fallado al enviar — eso es lo esperado acá, no un bug.
+- Si el módulo toca datos existentes (no solo vistas o lógica nueva), revisar contra los datos reales de staging que la migración no rompió nada que ya estaba — es la ventaja de validar acá y no solo en desarrollo con datos de demo.
 
 ---
 

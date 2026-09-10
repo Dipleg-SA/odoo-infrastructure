@@ -9,11 +9,64 @@ Crear aplica a dos orígenes distintos, con el mismo procedimiento salvo por el 
 - **Origen propio** — una idea tuya, el repositorio nace vacío en tu organización.
 - **Origen de terceros** (OCA, un proveedor) — el código ya existe en otro lado y su licencia permite forkear.
 
-No aplica a módulos de Odoo Enterprise sin acceso al repositorio privado — ver [crear-enterprise](crear-enterprise.md), que no usa git en absoluto.
+No aplica a módulos de Odoo Enterprise sin acceso al repositorio privado — ver [gestionar-enterprise](gestionar-enterprise.md), que no usa git en absoluto.
 
 ## Objetivo
 
 Un repositorio declarado en el manifiesto de este checkout, con su worktree sincronizado — listo para que [gestionar-modulo](gestionar-modulo.md) trabaje adentro —, al día con su origen cuando corresponde, y fuera del árbol sin dejar restos cuando deja de usarse.
+
+## Flujo rápido
+
+Este es el recorrido completo para incorporar, actualizar o retirar un repositorio de addons. Las secciones siguientes explican los comandos Git y los casos de excepción.
+
+1. **Crear o forkear el repositorio** en tu organización y declararlo en `addons/addons.txt`. En desarrollo, si la rama de `ADDONS_BRANCH` todavía no existe en el repo nuevo:
+
+   ```bash
+   make repo-branch
+   make repo-sync
+   ```
+
+2. **Desarrollar módulos dentro del worktree** con el flujo de [gestionar módulo](gestionar-modulo.md). Para cada cambio que agregue dependencias Python:
+
+   ```bash
+   make addons-deps
+   make build   # solo si addons-deps agregó o cambió pines
+   ```
+
+3. **Actualizar un fork de terceros.** Traer `upstream/<rama>`, integrarlo a `<rama>-stag` con Git y validarlo en staging:
+
+   ```bash
+   make repo-sync
+   make addons-deps
+   make build   # solo si addons-deps agregó o cambió pines
+   make addons-update MODULES=<módulos_afectados>
+   make verify
+   ```
+
+4. **Promover lo validado a `<rama>`** con Git y aplicarlo en producción:
+
+   ```bash
+   make repo-sync
+   make addons-deps
+   make build   # solo si addons-deps agregó o cambió pines
+   make addons-update MODULES=<módulos_afectados>
+   make verify
+   ```
+
+5. **Retirar un repositorio.** Desinstalar antes todos sus módulos instalados en cada base y sacar su línea de `addons/addons.txt` en cada checkout. Luego, en cada entorno:
+
+   ```bash
+   make repo-status
+   make verify
+   ```
+
+| Situación | Comando |
+| --- | --- |
+| La rama de desarrollo aún no existe en el repo nuevo | `make repo-branch` y `make repo-sync` |
+| Incorporar un repo ya creado o forkeado | `make repo-sync` |
+| La actualización agregó dependencias Python | `make addons-deps` y, si agregó pines, `make build` |
+| Actualizar módulos ya instalados de un fork | `make addons-update MODULES=<módulos_afectados>` |
+| Comprobar el árbol tras una incorporación o baja | `make repo-status` |
 
 ---
 
@@ -35,11 +88,12 @@ echo "<url-de-tu-repo> custom-addons" >> addons/addons.txt
 echo "<url-de-tu-fork> oca" >> addons/addons.txt
 ```
 
+En un checkout de desarrollo, si `ADDONS_BRANCH` es una rama de feature que todavía no existe en este repo nuevo, `repo-sync` falla al armar el worktree — creala primero con `make repo-branch` (ver [levantar-desarrollo § 5](../entorno/levantar-desarrollo.md)).
+
 ```bash
+make repo-branch   # solo si esa rama de feature todavía no existe
 make repo-sync
 ```
-
-En un checkout de desarrollo, si `ADDONS_BRANCH` es una rama de feature que todavía no existe en este repo nuevo, `repo-sync` falla al armar el worktree — creala primero con `make repo-branch` (ver [levantar-desarrollo § 5](../entorno/levantar-desarrollo.md)).
 
 Solo si el origen es de terceros, para poder traer versiones nuevas del original más adelante (ver [Actualizar](#actualizar) más abajo):
 
@@ -87,7 +141,13 @@ Traer y validar en el servidor de staging:
 
 ```bash
 make repo-sync
+make addons-deps
+make build   # solo si addons-deps agregó o cambió pines
+make addons-update MODULES=<módulos_afectados>
+make verify
 ```
+
+Probá el flujo real de los módulos afectados antes de promover. Si alguno nunca estuvo instalado en staging, usá `make addons-install MODULES=<nombre_tecnico>` en vez de `addons-update`; el procedimiento completo está en [validar módulo en staging](../validacion/validar-modulo-staging.md).
 
 Si `repo-sync` avisa que el `merge --ff-only` no avanzó en línea recta (staging se reescribió con `--force`), nombra los dos comandos posibles: `git rebase origin/<rama>-stag` para integrar, o `git reset --hard origin/<rama>-stag` si los commits locales son descartables.
 
@@ -104,7 +164,9 @@ Aplicar en producción:
 ```bash
 make repo-sync
 make addons-deps
+make build   # solo si addons-deps agregó o cambió pines
 make addons-update MODULES=<módulos-afectados>
+make verify
 ```
 
 ### Verificación
@@ -123,7 +185,9 @@ make verify
 
 ### A mano
 
-Si el módulo está instalado en alguna base, desinstalalo desde ahí antes de seguir (Ajustes → Aplicaciones → Desinstalar). Este repo no expone un comando CLI de desinstalación —Odoo no tiene un flag `-u`/`-i` simétrico para eso—, y dejar registros en `ir_module_module` apuntando a código que ya no existe puede romper el próximo arranque o `make addons-update`.
+Si alguno de los módulos del repo está instalado en una base, desinstalalo desde ahí antes de seguir con `make addons-uninstall MODULES=<nombre_tecnico>`. El comando usa la API ORM interna de Odoo, muestra los módulos dependientes que también serán afectados y exige confirmación explícita. Dejar registros en `ir_module_module` apuntando a código que ya no existe puede romper el próximo arranque o `make addons-update`.
+
+Repetí la desinstalación y la baja de la línea del manifiesto en desarrollo, staging y producción: `addons/addons.txt` es local a cada checkout y no se promueve por Git.
 
 ### Comandos
 
@@ -142,11 +206,12 @@ Nada que reconstruir: el `addons_path` sale de un glob en runtime sobre lo que h
 docker compose restart odoo
 ```
 
-### Verificación
-
 ```bash
 make repo-status
+make verify
 ```
+
+### Verificación
 
 Ya no debería listar ese repo ni marcarlo como huérfano.
 
