@@ -12,7 +12,7 @@ include .make/main.mk
         host-init host-verify up-timers down-timers notify-test monitoring-role \
         cert-issue cert-renew \
         backup-run backup-integrity restore \
-        repo-sync repo-status repo-branch addons-install addons-update addons-modules addons-deps \
+        repo-sync repo-status repo-branch addons-install addons-update addons-uninstall addons-modules addons-deps \
         require-modules require-backups require-restore require-root require-not-production test verify \
         $(foreach s,$(STACKS),$(s)-up $(s)-down $(s)-restart $(s)-logs $(s)-ps $(s)-verify) \
         $(foreach s,$(STACKS_ONESHOT),$(s)-logs $(s)-ps $(s)-verify)
@@ -213,40 +213,29 @@ addons-deps: ## Verifica requirements.txt contra las external_dependencies y pin
 # --- [SEXTETO] Ciclo de vida, stack por stack ---
 # Sexteto (o trío, para STACKS_ONESHOT) generado en .make/; help.awk sintetiza la descripción.
 
-# --- [STACK:addons] Instalar/actualizar módulos ---
-# El one-off corre -i/-u con la conexión explícita a postgres:5432. El up -d va
-# siempre, aunque el one-off falle: si no, un -i con error deja produccion abajo.
-# --name: el servicio declara container_name, y sin un nombre propio el one-off
-# chocaria contra el del servicio detenido. Dos stacks no pueden correr un
-# one-off a la vez en el mismo host; falla ruidoso.
+# --- [STACK:addons] Operar módulos ---
+# Los tres targets delegan en el mismo runner y en la API ORM de Odoo. El up -d va
+# siempre, aunque el one-off falle: una operación con error no deja producción abajo.
+# El runner serializa operaciones con un lock de host. --name: el servicio declara
+# container_name, y sin un nombre propio el one-off chocaría contra el del servicio
+# detenido; también protege frente a un contenedor huérfano tras un corte.
 
-# MODULES es obligatorio: sin él, odoo consume --stop-after-init como nombre de módulo
-# y deja producción detenida con el contenedor efímero sirviendo indefinidamente.
+# MODULES es obligatorio: evita ejecutar una operación ambigua sobre la base.
 require-modules:
 	@. scripts/lib/ui.sh; test -n "$(MODULES)" || \
 	  { ui_bad "falta MODULES" "uso: make $(TARGET) MODULES=nombre_del_modulo" >&2; exit 2; }
 
 addons-install: TARGET=addons-install
 addons-install: require-modules ## Instala módulos — MODULES=nombre obligatorio
-	@. scripts/lib/ui.sh; ui_start "addons-install $(MODULES)"; \
-	  docker compose stop odoo || exit $$?; \
-	  docker compose run --rm --name odoo-oneoff odoo -i $(MODULES) --stop-after-init; \
-	  estado=$$?; \
-	  docker compose up -d odoo; \
-	  if [ "$$estado" -eq 0 ]; then ui_ok "addons-install listo"; \
-	  else ui_bad "addons-install falló" "exit $$estado — el servicio se levantó igual"; fi; \
-	  exit "$$estado"
+	scripts/odoo-module-operation.sh install
 
 addons-update: TARGET=addons-update
 addons-update: require-modules ## Actualiza módulos — MODULES=nombre obligatorio
-	@. scripts/lib/ui.sh; ui_start "addons-update $(MODULES)"; \
-	  docker compose stop odoo || exit $$?; \
-	  docker compose run --rm --name odoo-oneoff odoo -u $(MODULES) --stop-after-init; \
-	  estado=$$?; \
-	  docker compose up -d odoo; \
-	  if [ "$$estado" -eq 0 ]; then ui_ok "addons-update listo"; \
-	  else ui_bad "addons-update falló" "exit $$estado — el servicio se levantó igual"; fi; \
-	  exit "$$estado"
+	scripts/odoo-module-operation.sh update
+
+addons-uninstall: TARGET=addons-uninstall
+addons-uninstall: require-modules ## Desinstala módulos — MODULES=nombre obligatorio
+	scripts/odoo-module-operation.sh uninstall
 
 addons-modules: ## Lista los módulos instalados en la base
 	@salida=$$(docker compose exec -T postgres psql -U odoo -d odoo -A -F "$$(printf '\t')" --pset footer=off -c \

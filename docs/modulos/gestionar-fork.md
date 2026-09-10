@@ -185,7 +185,7 @@ make verify
 
 ### A mano
 
-Si alguno de los módulos del repo está instalado en una base, desinstalalo desde ahí antes de seguir (Ajustes → Aplicaciones → Desinstalar). Este repo no expone un comando CLI de desinstalación —Odoo no tiene un flag `-u`/`-i` simétrico para eso—, y dejar registros en `ir_module_module` apuntando a código que ya no existe puede romper el próximo arranque o `make addons-update`.
+Si alguno de los módulos del repo está instalado en una base, desinstalalo desde ahí antes de seguir con `make addons-uninstall MODULES=<nombre_tecnico>`. El comando usa la API ORM interna de Odoo, muestra los módulos dependientes que también serán afectados y exige confirmación explícita. Dejar registros en `ir_module_module` apuntando a código que ya no existe puede romper el próximo arranque o `make addons-update`.
 
 Repetí la desinstalación y la baja de la línea del manifiesto en desarrollo, staging y producción: `addons/addons.txt` es local a cada checkout y no se promueve por Git.
 

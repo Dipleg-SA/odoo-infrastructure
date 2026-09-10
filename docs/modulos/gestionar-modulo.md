@@ -34,6 +34,8 @@ Este es el recorrido completo para crear o cambiar un módulo. Las secciones sig
    make addons-install MODULES=<nombre_tecnico>  # primera vez en esta base
    # o
    make addons-update MODULES=<nombre_tecnico>   # ya estaba instalado
+   # o
+   make addons-uninstall MODULES=<nombre_tecnico> # retirar un módulo instalado
    make odoo-verify
    ```
 
@@ -73,6 +75,7 @@ Este es el recorrido completo para crear o cambiar un módulo. Las secciones sig
 | La rama declarada de desarrollo aún no existe | `make repo-branch` y `make repo-sync` |
 | El módulo nunca estuvo instalado en esa base | `make addons-install MODULES=<nombre_tecnico>` |
 | El módulo ya está instalado | `make addons-update MODULES=<nombre_tecnico>` |
+| Retirar un módulo instalado | `make addons-uninstall MODULES=<nombre_tecnico>` |
 | El manifiesto agregó una dependencia Python | `make addons-deps` y, si agregó pines, `make build` |
 
 ---
@@ -233,9 +236,9 @@ make addons-modules    # en producción, versión nueva o módulo recién instal
 make verify
 ```
 
-**Nota — qué corre en cada lado.** El servidor nunca hace `commit`/`merge`/`push`: solo `fetch`/`reset --hard`/`merge --ff-only` vía `repo-sync`, y `-i`/`-u` vía los `make` targets. Todo commit, merge y push pasa por tu máquina. Es deliberado: nada en el disco del servidor es irrecuperable — perder `addons/` entero se arregla con `make repo-sync`.
+**Nota — qué corre en cada lado.** El servidor nunca hace `commit`/`merge`/`push`: solo `fetch`/`reset --hard`/`merge --ff-only` vía `repo-sync`, y las operaciones de módulos vía los `make` targets. Todo commit, merge y push pasa por tu máquina. Es deliberado: nada en el disco del servidor es irrecuperable — perder `addons/` entero se arregla con `make repo-sync`.
 
-`make addons-install`/`addons-update` **detienen el servicio** mientras corren: es un paso explícito del operador, nunca algo que dispare el arranque del contenedor. Si el paso falla, el servicio se levanta igual y el comando reporta el error.
+`make addons-install`/`addons-update`/`addons-uninstall` **detienen el servicio** mientras corren y ejecutan la operación mediante la API ORM interna de Odoo: es un paso explícito del operador, nunca algo que dispare el arranque del contenedor. Si el paso falla, el servicio se levanta igual y el comando reporta el error. La desinstalación muestra primero los módulos afectados por dependencias y exige confirmación explícita.
 
 ---
 
@@ -245,11 +248,19 @@ El módulo ya no cumple una función — se reemplazó, se dio de baja el proces
 
 **Objetivo** — el módulo desinstalado de cada base donde corría, y su código fuera del repo, integrado por el mismo camino que cualquier otro cambio.
 
-**A mano.** Desinstalar antes de sacar el código, no después: al revés que instalar, borrar el directorio de un módulo que sigue `installed` en `ir_module_module` deja un registro apuntando a nada, y el próximo arranque o `-u` falla. Desinstalá desde Ajustes → Aplicaciones en cada entorno, en el mismo orden en que vas a promover el cambio.
+**A mano.** Desinstalar antes de sacar el código, no después: al revés que instalar, borrar el directorio de un módulo que sigue `installed` en `ir_module_module` deja un registro apuntando a nada, y el próximo arranque o una actualización falla. Usá `make addons-uninstall` en cada entorno, en el mismo orden en que vas a promover el cambio.
 
 ### Comandos
 
 El código viaja por el mismo camino de integración que [Actualizar](#actualizar) —rama de staging descartable, promoción a tu rama base, `repo-sync` en cada entorno— con dos diferencias: desinstalás el módulo en cada entorno *antes* de sincronizar ahí, no instalás ni actualizás después; y el cambio de código es un `git rm`, no una edición.
+
+Antes de retirar el código, ejecutá:
+
+```bash
+make addons-uninstall MODULES=<nombre_tecnico>
+```
+
+En producción, confirmá antes que existe un backup reciente y verificable. El comando conserva el addon montado, calcula las dependencias afectadas mediante la API ORM de Odoo, solicita confirmación y deja el servicio levantado aunque la operación falle.
 
 ```bash
 cd addons/<categoría>/<repo>
