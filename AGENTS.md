@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-Guía para Claude Code (claude.ai/code) al trabajar en este repositorio.
+Guía para Codex (Codex.ai/code) al trabajar en este repositorio.
 
 Acá va **solo lo que no se deduce leyendo el repositorio**. Las reglas están en [`PRINCIPLES.md`](PRINCIPLES.md), la forma del árbol y por qué es así en [`ARCHITECTURE.md`](ARCHITECTURE.md), y cómo se corre cada cosa en `make help`. Nada de eso se repite acá: un hecho escrito dos veces es un hecho que hay que mantener dos veces.
 
@@ -8,7 +8,15 @@ Acá va **solo lo que no se deduce leyendo el repositorio**. Las reglas están e
 
 **Todo el repositorio está en español**: comentarios de código, documentación, mensajes de commit y salida de los scripts. Escribí en español, en la misma voz directa que ya usan los archivos. Los identificadores (servicios, variables, targets) quedan en inglés donde ya lo están.
 
-El estilo de comentarios en archivos versionados de código y config es obligatorio y vive en [`.claude/rules/comment-style.md`](.claude/rules/comment-style.md).
+El estilo de comentarios en archivos versionados de código y config es obligatorio y está definido abajo.
+
+## Estilo de comentarios
+
+Cada bloque lógico de código o configuración versionado lleva exactamente dos líneas
+de comentario: un título y una descripción breve, seguidas de una línea en blanco.
+Se usa el carácter de comentario nativo del archivo (`#` en YAML/shell/Postgres,
+`;` en INI). La descripción no se envuelve en varias líneas; el contexto histórico
+y las justificaciones largas van a `ARCHITECTURE.md`.
 
 ## Comandos
 

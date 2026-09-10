@@ -1,0 +1,5 @@
+# Configuración compartida del proyecto para Codex.
+# Las instrucciones de trabajo viven en AGENTS.md y los workflows en .agents/skills/.
+
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
