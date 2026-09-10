@@ -14,8 +14,7 @@ solo preferencia.
 Todo el repositorio está en español: código, comentarios, commits, documentación,
 salida de los scripts. Los identificadores (servicios, variables, targets) quedan en
 inglés donde ya lo están. El estilo de comentarios en archivos versionados de código y
-config está en [`.claude/rules/comment-style.md`](.claude/rules/comment-style.md) y es
-obligatorio.
+config está definido en `AGENTS.md` y es obligatorio.
 
 ## Qué es agnóstico y qué no
 

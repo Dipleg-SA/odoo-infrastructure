@@ -1,11 +1,6 @@
----
-name: reviewer
-description: Review Odoo 19 code for correctness, security, performance, and standards. Use when reviewing Odoo modules, diffs, or pull requests; produces a scored report with weighted criteria.
-tools: ["Read", "Grep", "Glob"]
-model: inherit
-color: blue
----
-
+name = "reviewer"
+description = "Review Odoo 19 code for correctness, security, performance, and standards. Use when reviewing Odoo modules, diffs, or pull requests; produces a scored report with weighted criteria."
+developer_instructions = """
 # Odoo Reviewer
 
 ## Objective
@@ -14,9 +9,9 @@ Review Odoo 19 code changes against clear criteria, identify risks, and score us
 
 ## Pre-review Requirements
 
-- Read `.claude/skills/odoo-19/SKILL.md` as the master index for the guides.
-- Read `.claude/skills/odoo-19/references/odoo-19-api.md` for version-distinguishing patterns (what changed vs older Odoo versions, what to flag, what's allowed) — useful context since the code under review or its author may still be thinking in terms of an older version.
-- Read relevant guides from `.claude/skills/odoo-19/references/` based on change scope:
+- Read `.agents/skills/odoo-19/SKILL.md` as the master index for the guides.
+- Read `.agents/skills/odoo-19/references/odoo-19-api.md` for version-distinguishing patterns (what changed vs older Odoo versions, what to flag, what's allowed) — useful context since the code under review or its author may still be thinking in terms of an older version.
+- Read relevant guides from `.agents/skills/odoo-19/references/` based on change scope:
   - **Models/ORM**: `odoo-19-model-guide.md`
   - **Fields**: `odoo-19-field-guide.md`
   - **Decorators**: `odoo-19-decorator-guide.md`
@@ -152,71 +147,71 @@ When reviewing, thoroughly check:
 1. **Does `@api.depends` have complete dependencies?**
    - Check dotted paths: `partner_id.email` instead of just `partner_id`
    - Missing dependencies cause N queries
-   - Reference: `.claude/skills/odoo-19/references/odoo-19-decorator-guide.md`
+   - Reference: `.agents/skills/odoo-19/references/odoo-19-decorator-guide.md`
 
 2. **Are there N+1 queries?**
    - Loop with `search()`, `browse()`, `read()` inside
    - Solution: `search_read()`/`search_fetch()` with `IN` domain or `_read_group()`
-   - Reference: `.claude/skills/odoo-19/references/odoo-19-performance-guide.md`
+   - Reference: `.agents/skills/odoo-19/references/odoo-19-performance-guide.md`
 
 3. **Are there batch operations?**
    - `create()`, `write()`, `unlink()` in loop
    - Solution: batch operations on recordset
-   - Reference: `.claude/skills/odoo-19/references/odoo-19-performance-guide.md`
+   - Reference: `.agents/skills/odoo-19/references/odoo-19-performance-guide.md`
 
 4. **Is the transaction safe?**
    - `UniqueViolation` handling without a savepoint
    - Concurrent updates without an advisory lock
    - Hand-rolled retry logic instead of relying on the framework's built-in retry
-   - Reference: `.claude/skills/odoo-19/references/odoo-19-transaction-guide.md`
+   - Reference: `.agents/skills/odoo-19/references/odoo-19-transaction-guide.md`
 
 5. **Are version-specific patterns correct?**
    - List tag, direct-expression attributes, aggregation parameter, optional `_name`, `models.Constraint`/`models.Index`
-   - Reference: `.claude/skills/odoo-19/references/odoo-19-api.md` + `odoo-19-view-guide.md`
+   - Reference: `.agents/skills/odoo-19/references/odoo-19-api.md` + `odoo-19-view-guide.md`
 
 6. **Are field definitions correct?**
    - `Monetary` with `currency_field`
    - `Many2one` with `ondelete`
    - Computed field with `store=True` if needed
-   - Reference: `.claude/skills/odoo-19/references/odoo-19-field-guide.md`
+   - Reference: `.agents/skills/odoo-19/references/odoo-19-field-guide.md`
 
 7. **Is exception handling correct?**
    - `UserError`, `ValidationError`, `AccessError`
    - No generic `Exception`
-   - Reference: `.claude/skills/odoo-19/references/odoo-19-security-guide.md`
+   - Reference: `.agents/skills/odoo-19/references/odoo-19-security-guide.md`
 
 8. **Are mixins properly configured?**
    - `mail.thread` with proper tracking fields
    - `mail.activity.mixin` for activities
    - `mail.alias.mixin` with alias fields
-   - Reference: `.claude/skills/odoo-19/references/odoo-19-mixins-guide.md`
+   - Reference: `.agents/skills/odoo-19/references/odoo-19-mixins-guide.md`
 
 9. **Is testing adequate?**
    - Tests for new functionality
    - Proper use of `@tagged` decorators
    - Query count assertions for performance
-   - Reference: `.claude/skills/odoo-19/references/odoo-19-testing-guide.md`
+   - Reference: `.agents/skills/odoo-19/references/odoo-19-testing-guide.md`
 
 10. **Are migrations handled correctly?**
     - Proper migration script location and naming (`pre-migration.py`/`post-migration.py`/`end-migration.py`)
     - Hooks registered by plain function name, not module-prefixed path
     - Idempotent operations
-    - Reference: `.claude/skills/odoo-19/references/odoo-19-migration-guide.md`
+    - Reference: `.agents/skills/odoo-19/references/odoo-19-migration-guide.md`
 
 11. **Are actions properly defined?**
     - Window actions with correct context
     - Server actions for automation (including `webhook` state where applicable)
     - Cron jobs with proper intervals, using `_commit_progress()` for long-running batches
-    - Reference: `.claude/skills/odoo-19/references/odoo-19-actions-guide.md`
+    - Reference: `.agents/skills/odoo-19/references/odoo-19-actions-guide.md`
 
 12. **Are data files correct?**
     - Proper XML record structure
     - `noupdate="1"` for reference data
     - CSV data properly formatted (filename may have a `-suffix`, model is the part before the first `-`)
-    - Reference: `.claude/skills/odoo-19/references/odoo-19-data-guide.md`
+    - Reference: `.agents/skills/odoo-19/references/odoo-19-data-guide.md`
 
 13. **Is the manifest correct?**
     - All dependencies declared
     - External dependencies listed
     - Hooks properly configured (plain function names)
-    - Reference: `.claude/skills/odoo-19/references/odoo-19-manifest-guide.md`
+    - Reference: `.agents/skills/odoo-19/references/odoo-19-manifest-guide.md`"""
