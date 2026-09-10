@@ -190,7 +190,7 @@ Encabeza con la rama declarada (`<versión>-stag`) y sigue con una fila por repo
 
 **Objetivo** — Odoo sirviendo por el hostname de staging, con los datos de producción adentro.
 
-**A mano** — `odoo.conf` ya lo bootstrapeó `config-init` en el bloque 2. No hace falta editar `smtp_server`/`port`/`user`: `ODOO_DISABLE_SMTP=1` los fuerza vacíos, sin importar lo que traiga el `.example`. La base no arranca vacía, así que no hay `-i base` ni contraseña de `admin` por defecto: **las credenciales son las de producción**, y eso incluye a los usuarios reales. Es la razón por la que este stack fuerza `ODOO_DISABLE_SMTP=1`.
+**A mano** — `odoo.conf` ya lo bootstrapeó `config-init` en el bloque 2. `make odoo-up` configura automáticamente `report.url` con `http://odoo:8069` y congela `web.base.url` en el hostname público de staging. No hace falta editar `smtp_server`/`port`/`user`: `ODOO_DISABLE_SMTP=1` los fuerza vacíos, sin importar lo que traiga el `.example`. La base no arranca vacía, así que no hay `-i base` ni contraseña de `admin` por defecto: **las credenciales son las de producción**, y eso incluye a los usuarios reales. Es la razón por la que este stack fuerza `ODOO_DISABLE_SMTP=1`.
 
 ```bash
 make odoo-up && make odoo-logs

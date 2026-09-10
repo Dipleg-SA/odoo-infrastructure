@@ -4,6 +4,7 @@
 define stack_sextet
 $(1)-up:
 	@. scripts/lib/ui.sh; ui_run "$(1)-up" docker compose up -d $(1)
+	@if [ "$(1)" = "odoo" ]; then $(MAKE) odoo-report-config; fi
 
 $(1)-down:
 	@. scripts/lib/ui.sh; ui_run "$(1)-down" docker compose rm -sf $(1)

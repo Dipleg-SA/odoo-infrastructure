@@ -8,6 +8,7 @@ include .make/main.mk
 
 .PHONY: help up down logs ps nuke reset build \
         secrets-init secrets-perms secrets-check config-init dev-workspace \
+        odoo-report-config \
         host-init host-verify up-timers down-timers notify-test monitoring-role \
         cert-issue cert-renew \
         backup-run backup-integrity restore \
@@ -49,6 +50,9 @@ secrets-check: ## Verifica permisos de secrets
 # stacks/*/config/ y addons/: un cp idempotente desde el .example de cada uno.
 config-init: ## Bootstrapea los config reales desde su .example
 	scripts/config-init.sh
+
+odoo-report-config: ## Configura las URLs pública e interna de los reportes Odoo
+	scripts/odoo-report-config.sh
 
 # --- [HOST] Workspace de VS Code ---
 # Un folder por tipo de addon + la raíz de infra, generado desde .env — para
@@ -130,6 +134,7 @@ host-verify: ## Verifica los prerrequisitos del SO (systemd, rotación de logs, 
 
 up: ## Levanta el stack completo
 	@. scripts/ui/components.sh; ui_section "up: levantando el stack completo"; ui_run "up" docker compose up -d
+	@$(MAKE) odoo-report-config
 
 down: ## Baja el stack completo
 	@. scripts/lib/ui.sh; ui_run "down" docker compose down
@@ -165,6 +170,7 @@ reset: require-not-production ## Borra los datos (volúmenes) y vuelve a levanta
 	    "volúmenes (base, filestore, dumps) — containers, imágenes y addons/ quedan igual"; \
 	  ui_confirm reset || exit 1; \
 	  ui_run "reset" sh -c 'docker compose down -v && docker compose up -d'
+	@$(MAKE) odoo-report-config
 
 # --- [STACK:repo] Árbol de addons ---
 # sync clona/actualiza los árboles desde addons/addons.txt; puro host, sin contenedores.

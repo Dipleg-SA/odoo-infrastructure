@@ -6,10 +6,16 @@
 # que comparte los contadores y emite un único resumen.
 
 . "$(dirname "${BASH_SOURCE[0]}")/../../scripts/lib/verify.sh"
+. scripts/lib/odoo-report.sh
 
 ODOO_CONF=stacks/odoo/config/odoo.conf
 ODOO_DOCKERFILE=stacks/odoo/image/Dockerfile
 ODOO_ENTRYPOINT=stacks/odoo/image/entrypoint.sh
+if odoo_report_resolve_urls; then
+  ODOO_REPORT_URLS_OK=1
+else
+  ODOO_REPORT_URLS_OK=0
+fi
 
 v_odoo() {
   titulo "odoo"
@@ -35,6 +41,25 @@ v_odoo() {
   else
     expect "smtp_server cargado en el runtime conf" "smtp_server = " \
       docker compose exec -T odoo grep "^smtp_server = .\+" /tmp/odoo-runtime.conf
+  fi
+
+  if ! corriendo odoo; then
+    omitir "report.url configurado" "$(motivo odoo)"
+    omitir "web.base.url congelado" "$(motivo odoo)"
+    omitir "REPORT_URL accesible desde Odoo" "$(motivo odoo)"
+  else
+    expect "report.url configurado" "$REPORT_URL" docker compose exec -T postgres psql -U odoo -d odoo -Atc \
+      "SELECT value FROM ir_config_parameter WHERE key = 'report.url'"
+    if [ "$ODOO_REPORT_URLS_OK" -eq 1 ]; then
+      expect "web.base.url configurado" "$PUBLIC_BASE_URL" docker compose exec -T postgres psql -U odoo -d odoo -Atc \
+        "SELECT value FROM ir_config_parameter WHERE key = 'web.base.url'"
+    else
+      aviso "web.base.url configurado" "$ODOO_REPORT_URL_ERROR"
+    fi
+    expect "web.base.url congelado" "True" docker compose exec -T postgres psql -U odoo -d odoo -Atc \
+      "SELECT value FROM ir_config_parameter WHERE key = 'web.base.url.freeze'"
+    expect "REPORT_URL accesible desde Odoo" "200" docker compose exec -T odoo \
+      curl -sS -o /dev/null -w '%{http_code}' "$REPORT_URL/web/health"
   fi
 
   if ! corriendo odoo; then
