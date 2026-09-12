@@ -10,6 +10,17 @@ Son los **mismos nueve bloques y los mismos comandos** que producción: eso lo d
 
 Un segundo stack con su propio hostname, su propio certificado y su propio túnel, **sembrado con los datos de producción por un restore**. Sembrarlo y hacer el simulacro de restore son la misma operación — es la ocasión natural para el ejercicio que [`PRINCIPLES.md`](../../PRINCIPLES.md) exige y que siempre se posterga.
 
+## Flujo rápido
+
+Recorrido para agregar staging a una producción ya operativa, con un checkout y un Tunnel propios.
+
+1. **Preparar el checkout de staging.** Cargar sus secrets y configs, habilitar lectura de backups
+   y usar un `COMPOSE_PROJECT_NAME` distinto; ver [bloques 1–2](#1--prerrequisitos).
+2. **Levantar edge y sembrar los datos.** Usar su certificado y Tunnel, restaurar desde producción y
+   sincronizar las ramas `-stag`; ver [bloques 3–5](#3--edge).
+3. **Levantar y validar Odoo.** Mantener bloqueado el correo saliente, revisar acceso y adjuntos,
+   y confirmar que staging no escribe backups; ver [bloques 6–9](#6--odoo).
+
 | Bloque | Acá | |
 |---|---|---|
 | 1 · Prerrequisitos | solo el Tunnel propio | ✓ |
@@ -32,11 +43,11 @@ Los tres ausentes son exclusivos de producción, y el `53` en `network_mode: hos
 
 | Prerrequisito | Runbook | Te deja |
 |---|---|---|
-| Tunnel de Cloudflare **propio** | [crear-tunnel-cloudflare](crear-tunnel-cloudflare.md) | `secrets/cloudflare_tunnel_token` |
+| Tunnel de Cloudflare **propio** | [crear-tunnel-cloudflare](../credenciales/crear-tunnel-cloudflare.md) | `secrets/cloudflare_tunnel_token` |
 
 No es el de producción: **el token es lo que distingue a los dos stacks**. Mismos campos, con el hostname de staging en Subdomain y en **Origin Server Name**, y `https://nginx:443` como Service.
 
-Todo lo demás ya está: la versión de Docker Engine/Compose y su arranque automático ([configurar-docker-host](configurar-docker-host.md)), y la rotación de logs del daemon —aplicada antes del primer contenedor de producción, así que cualquier contenedor nuevo, incluidos los de este stack, ya nace con ella—. No hay nada que instalar o reconfigurar a nivel de sistema operativo.
+Todo lo demás ya está: la versión de Docker Engine/Compose y su arranque automático ([configurar-docker-host](../operacion/configurar-docker-host.md)), y la rotación de logs del daemon —aplicada antes del primer contenedor de producción, así que cualquier contenedor nuevo, incluidos los de este stack, ya nace con ella—. No hay nada que instalar o reconfigurar a nivel de sistema operativo.
 
 ---
 
@@ -153,6 +164,8 @@ make restore
 ```
 
 `restore` trae el filestore y la base del último snapshot de producción, en ese orden: primero el filestore, después la base. Al revés dejaría filas apuntando a adjuntos que no existen, que es destructivo y silencioso.
+
+Para volver a sembrar este checkout después del levantamiento inicial o hacer el simulacro semestral, seguí [restore-staging](../backup-restore/restore-staging.md).
 
 No hace falta reaplicar ninguna contraseña después: el dump es **lógico**, así que trae los datos y no los roles del cluster de origen. El rol `odoo` de este checkout conserva la clave que `secrets-init` le generó.
 

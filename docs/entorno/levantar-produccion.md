@@ -10,6 +10,17 @@ Los tres entornos se levantan con los **mismos bloques y los mismos comandos**. 
 
 Los once stacks resueltos, cada uno verificado, con el certificado real, los backups probados una vez de punta a punta y las alertas llegando por mail. El deploy termina en el primer dato que carga un usuario — todo lo anterior es descartable.
 
+## Flujo rápido
+
+Recorrido desde el host vacío hasta el primer dato real, respetando el orden de dependencias.
+
+1. **Preparar cuentas, host y checkout.** Resolver los prerrequisitos y cargar `.env`, secrets y
+   configs; ver [bloques 1–2](#1--prerrequisitos).
+2. **Levantar las capas en orden.** Resolver edge, base, addons y Odoo; ver
+   [bloques 3–6](#3--edge). El certificado precede al proxy y los addons preceden a Odoo.
+3. **Activar protección y monitoreo.** Comprobar backups, alertas y envío de correo antes de
+   recibir datos; ver [Backup](#7--backup), [Monitoring](#8--monitoring) y [Cierre](#9--cierre).
+
 | Bloque | Acá | |
 |---|---|---|
 | 1 · Prerrequisitos | cuentas de terceros y el host listo | ✓ |
@@ -34,16 +45,16 @@ El orden no es negociable: cada bloque depende de que el anterior haya cerrado, 
 
 | Prerrequisito | Runbook | Te deja |
 |---|---|---|
-| Zona de Cloudflare + token de API | [crear-zona-cloudflare](crear-zona-cloudflare.md) | `secrets/cloudflare_api_token` |
-| Tunnel de Cloudflare | [crear-tunnel-cloudflare](crear-tunnel-cloudflare.md) | `secrets/cloudflare_tunnel_token` |
-| ZeptoMail | [configurar-zeptomail](configurar-zeptomail.md) | `secrets/zeptomail_smtp_password` · `SMTP_USER` · `SMTP_HOST` · `ALERT_EMAIL_FROM` · `ALERT_EMAIL_TO` |
-| Bucket de R2 + credenciales | [crear-bucket-r2](crear-bucket-r2.md) | `secrets/restic_r2_credentials` · `secrets/restic_password` · el bucket/endpoint van a `stacks/backup/config/r2.env` (bloque 2), no a `.env` |
-| Token de git de solo lectura | [crear-token-git-lectura](crear-token-git-lectura.md) | `~/.git-credentials` del servidor |
-| Docker Engine y Compose, habilitados al arranque | [configurar-docker-host](configurar-docker-host.md) | El host listo para correr el stack |
+| Zona de Cloudflare + token de API | [crear-zona-cloudflare](../credenciales/crear-zona-cloudflare.md) | `secrets/cloudflare_api_token` |
+| Tunnel de Cloudflare | [crear-tunnel-cloudflare](../credenciales/crear-tunnel-cloudflare.md) | `secrets/cloudflare_tunnel_token` |
+| ZeptoMail | [configurar-zeptomail](../credenciales/configurar-zeptomail.md) | `secrets/zeptomail_smtp_password` · `SMTP_USER` · `SMTP_HOST` · `ALERT_EMAIL_FROM` · `ALERT_EMAIL_TO` |
+| Bucket de R2 + credenciales | [crear-bucket-r2](../backup-restore/crear-bucket-r2.md) | `secrets/restic_r2_credentials` · `secrets/restic_password` · el bucket/endpoint van a `stacks/backup/config/r2.env` (bloque 2), no a `.env` |
+| Token de git de solo lectura | [crear-token-git-lectura](../credenciales/crear-token-git-lectura.md) | `~/.git-credentials` del servidor |
+| Docker Engine y Compose, habilitados al arranque | [configurar-docker-host](../operacion/configurar-docker-host.md) | El host listo para correr el stack |
 
 Los cinco secrets con `CAMBIAR` del bloque 2 salen todos de esta tabla. `make host-verify` confirma la última fila y que cada secret tenga un valor cargado, pero no que ese valor sirva: la zona y ZeptoMail se prueban contra el tercero en su propio runbook, y el token del Tunnel y la clave de R2 recién en los bloques 3 y 4, la primera vez que algo los usa.
 
-Dos cosas que parecen prerrequisitos y no lo son, porque necesitan el repositorio clonado: la **rotación de logs del daemon**, que es `sudo make host-init` en el bloque 2 —antes del primer contenedor—, y el **DNS/DHCP de la LAN**, que va en el bloque 3 ([configurar-dhcp-dns-lan](configurar-dhcp-dns-lan.md)). De la segunda conviene traer decidida la IP LAN que va a reservar el router.
+Dos cosas que parecen prerrequisitos y no lo son, porque necesitan el repositorio clonado: la **rotación de logs del daemon**, que es `sudo make host-init` en el bloque 2 —antes del primer contenedor—, y el **DNS/DHCP de la LAN**, que va en el bloque 3 ([configurar-dhcp-dns-lan](../operacion/configurar-dhcp-dns-lan.md)). De la segunda conviene traer decidida la IP LAN que va a reservar el router.
 
 ---
 
@@ -128,7 +139,7 @@ Cubre versión de Compose, arranque automático de Docker, la rotación de logs 
 
 **Objetivo** — el certificado emitido, nginx sirviendo con él, el Tunnel conectado y `dnsmasq` resolviendo el hostname a la IP local para la LAN.
 
-**A mano** — el Tunnel y su Public Hostname ya quedaron configurados en [crear-tunnel-cloudflare](crear-tunnel-cloudflare.md); `server-tls.conf` y `dnsmasq.conf` ya los bootstrapeaste y editaste en el bloque 2. `00-http.conf` y `odoo.locations` ya traen valores razonables (rate-limit, CIDR de Docker); tocalos solo si tu LAN cae en `172.16.0.0/12`.
+**A mano** — el Tunnel y su Public Hostname ya quedaron configurados en [crear-tunnel-cloudflare](../credenciales/crear-tunnel-cloudflare.md); `server-tls.conf` y `dnsmasq.conf` ya los bootstrapeaste y editaste en el bloque 2. `00-http.conf` y `odoo.locations` ya traen valores razonables (rate-limit, CIDR de Docker); tocalos solo si tu LAN cae en `172.16.0.0/12`.
 
 ```bash
 make cert-issue && make nginx-up
@@ -338,7 +349,7 @@ echo "la LAN le pregunta:"; dig +short "$HOST_PUB"
 for p in 5432 6432; do nc -z -w2 "$SRV_LAN" "$p" && echo "MAL: $p alcanzable" || echo "OK: $p inalcanzable"; done
 ```
 
-**El que importa es el segundo `dig`.** Si el primero da la IP local y el segundo devuelve una IP de Cloudflare, `dnsmasq` está sano y no lo usa nadie: quién resuelve para la LAN lo decide el DHCP del router, no este repositorio — ver [configurar-dhcp-dns-lan](configurar-dhcp-dns-lan.md). Los dos puertos de la base no tienen que existir hacia afuera.
+**El que importa es el segundo `dig`.** Si el primero da la IP local y el segundo devuelve una IP de Cloudflare, `dnsmasq` está sano y no lo usa nadie: quién resuelve para la LAN lo decide el DHCP del router, no este repositorio — ver [configurar-dhcp-dns-lan](../operacion/configurar-dhcp-dns-lan.md). Los dos puertos de la base no tienen que existir hacia afuera.
 
 ```bash
 SRV_PUB='ip-publica-del-servidor'; HOST_PUB='el-hostname-publico'
@@ -346,7 +357,7 @@ nc -z -w2 "$SRV_PUB" 443 && echo "MAL: el router está reenviando el 443" || ech
 curl -sI "https://$HOST_PUB/web/login" | grep -iE "^HTTP|^server:|^cf-ray:"
 ```
 
-El ingreso entra por el túnel, así que el 443 del router no tiene que estar reenviado. Y del `curl` tienen que salir **los tres headers**: solo Cloudflare agrega `server:` y `cf-ray:`, y un `200` sin ellos significa que el pedido nunca salió a internet. Corre desde afuera y no desde el servidor porque ahí `dnsmasq` resolvería al nginx local y daría `200` **aunque el Tunnel esté roto**. Si da 502, confirmá el Origin Server Name — ver [crear-tunnel-cloudflare](crear-tunnel-cloudflare.md).
+El ingreso entra por el túnel, así que el 443 del router no tiene que estar reenviado. Y del `curl` tienen que salir **los tres headers**: solo Cloudflare agrega `server:` y `cf-ray:`, y un `200` sin ellos significa que el pedido nunca salió a internet. Corre desde afuera y no desde el servidor porque ahí `dnsmasq` resolvería al nginx local y daría `200` **aunque el Tunnel esté roto**. Si da 502, confirmá el Origin Server Name — ver [crear-tunnel-cloudflare](../credenciales/crear-tunnel-cloudflare.md).
 
 ```bash
 SRV_ADMIN='ip-de-administracion-del-servidor'

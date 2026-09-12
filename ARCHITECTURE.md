@@ -969,7 +969,7 @@ razonable. Cuál es el RPO tolerable para un deployment concreto es del operador
 
 **El resolver de la LAN no lo decide este repositorio.** `dnsmasq` resuelve el hostname
 para quien le pregunte, pero quién le pregunta lo reparte el DHCP del router. Es un
-prerrequisito escrito en [`docs/entorno/configurar-dhcp-dns-lan.md`](docs/entorno/configurar-dhcp-dns-lan.md),
+prerrequisito escrito en [`docs/operacion/configurar-dhcp-dns-lan.md`](docs/operacion/configurar-dhcp-dns-lan.md),
 un `dig` sin `@` desde un equipo de la LAN, y un `omitir` explícito en el verify de
 dnsmasq que dice que desde el servidor no se puede verificar. **Sigue sin haber
 mecanismo**, porque no lo hay del lado del stack — lo que hay es que dejó de dar verde

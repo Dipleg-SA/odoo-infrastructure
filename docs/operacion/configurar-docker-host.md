@@ -31,7 +31,7 @@ docker compose version --short
 systemctl is-enabled docker
 ```
 
-El primero tiene que dar `2.20` o superior; el segundo, `enabled`. `make host-verify` (una vez clonado el repositorio, ver [levantar-produccion](levantar-produccion.md)) vuelve a chequear los dos junto con el resto de la config.
+El primero tiene que dar `2.20` o superior; el segundo, `enabled`. `make host-verify` (una vez clonado el repositorio, ver [levantar-produccion](../entorno/levantar-produccion.md)) vuelve a chequear los dos junto con el resto de la config.
 
 ---
 

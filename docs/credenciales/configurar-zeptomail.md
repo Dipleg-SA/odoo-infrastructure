@@ -39,4 +39,4 @@ Guardá `ZM_USER` (→ `SMTP_USER`), el remitente (→ `ALERT_EMAIL_FROM`), el t
 
 ---
 
-Para rotar la credencial más adelante, con los tres consumidores (Odoo, `failure-notify.sh`, Grafana): [rotar-password-zeptomail](../credenciales/rotar-password-zeptomail.md).
+Para rotar la credencial más adelante, con los tres consumidores (Odoo, `failure-notify.sh`, Grafana): [rotar-password-zeptomail](rotar-password-zeptomail.md).

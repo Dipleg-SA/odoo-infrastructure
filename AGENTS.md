@@ -75,7 +75,7 @@ para siempre. Vive en los comentarios de los dos archivos y en ningún chequeo.
 |---|---|
 | `PRINCIPLES.md` | las reglas, en imperativo, como restricciones y no como formas del árbol |
 | `ARCHITECTURE.md` | panorama de conjunto, relación con los repos de módulos, por qué esta herramienta y no otra, qué es un stack y qué declara cada quién, qué comparte cada entorno, y la estructura |
-| `docs/entorno/` · `docs/modulos/` · `docs/validacion/` · `docs/backup-restore/` · `docs/operacion/` · `docs/credenciales/` | manual de procedimientos: un archivo por procedimiento, genérico. Plantilla — Cuándo se usa · Objetivo · A mano · Comandos · Verificación |
+| `docs/entorno/` · `docs/modulos/` · `docs/backup-restore/` · `docs/operacion/` · `docs/credenciales/` | manual de procedimientos: un archivo por procedimiento, genérico. La validación de módulos vive en sus runbooks de gestión. Plantilla — Cuándo se usa · Objetivo · A mano · Comandos · Verificación |
 | `CONTRIBUTING.md` | cómo proponer un cambio: qué leer antes, idioma, verificación, convención de PR |
 | `SECURITY.md` | cómo reportar una vulnerabilidad, y qué está fuera de alcance |
 

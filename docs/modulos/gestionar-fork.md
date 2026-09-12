@@ -143,11 +143,13 @@ Traer y validar en el servidor de staging:
 make repo-sync
 make addons-deps
 make build   # solo si addons-deps agregó o cambió pines
-make addons-update MODULES=<módulos_afectados>
+make addons-update MODULES=<módulos_afectados>   # o addons-install si alguno es nuevo
+make addons-modules
+docker compose logs --since 5m odoo
 make verify
 ```
 
-Probá el flujo real de los módulos afectados antes de promover. Si alguno nunca estuvo instalado en staging, usá `make addons-install MODULES=<nombre_tecnico>` en vez de `addons-update`; el procedimiento completo está en [validar módulo en staging](../validacion/validar-modulo-staging.md).
+Revisá los logs de la actualización y probá en la UI de staging el flujo de cada módulo afectado, contra los datos restaurados de producción. Confirmá que no salió correo real: `ODOO_DISABLE_SMTP=1` lo bloquea. Si el cambio modifica registros existentes, comprobá también la migración. No promociones hasta que estas pruebas y `make verify` estén en verde.
 
 Si `repo-sync` avisa que el `merge --ff-only` no avanzó en línea recta (staging se reescribió con `--force`), nombra los dos comandos posibles: `git rebase origin/<rama>-stag` para integrar, o `git reset --hard origin/<rama>-stag` si los commits locales son descartables.
 
@@ -165,15 +167,23 @@ Aplicar en producción:
 make repo-sync
 make addons-deps
 make build   # solo si addons-deps agregó o cambió pines
-make addons-update MODULES=<módulos-afectados>
-make verify
+make addons-update MODULES=<módulos-afectados>   # o addons-install si alguno es nuevo
 ```
+
+Confirmá la versión instalada y revisá los logs recientes:
+
+```bash
+make addons-modules
+docker compose logs --since 10m odoo
+```
+
+Probá el flujo específico del cambio en la UI de producción con cuidado; si dispara correo, confirmá que llegó. La validación de producción es de confirmación, no de exploración. Si falla algo que pasó en staging, registrá el caso y ampliá esa prueba para la próxima actualización.
 
 ### Verificación
 
 ```bash
 make repo-status      # limpio, en la rama esperada, en cada checkout
-make addons-modules    # en producción, muestra la versión nueva
+make addons-modules   # en producción, muestra la versión nueva
 make verify
 ```
 

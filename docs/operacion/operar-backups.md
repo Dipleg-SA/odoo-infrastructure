@@ -4,7 +4,12 @@
 
 Necesitás subir, bajar, reiniciar o inspeccionar el contenedor `backup` (restic) sin tocar el resto del stack. **No es donde corrés un backup** — eso es [realizar-backup](../backup-restore/realizar-backup.md). Este runbook es solo el ciclo de vida del contenedor.
 
-Exclusiva de producción: `require-backups` en el Makefile falla si el stack no incluye esta capa — staging y development no la llevan.
+El backup recurrente es exclusivo de producción. Staging incluye el servicio `backup`
+solo bajo `profiles: [restore]`, para leer el repositorio con `make restore`; development
+no lo incluye. Los targets `make backup-up`/`restart` nombran explícitamente el servicio
+y pueden saltar el perfil inactivo de staging — **no los uses ahí**, donde solo se
+necesita el `run` puntual del restore. `make backup-run` y `make backup-integrity` sí
+fallan fuera de producción.
 
 ## Objetivo
 

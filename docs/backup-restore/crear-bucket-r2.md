@@ -12,7 +12,7 @@ Un bucket R2 nuevo y vacío, un token `Object Read & Write` acotado a él, y la 
 
 1. Cloudflare → R2 → crear un bucket nuevo y vacío.
 2. Token de API de R2, permiso `Object Read & Write`, acotado a ese bucket únicamente.
-3. Anotar el endpoint (sin esquema, ej. `<account-id>.r2.cloudflarestorage.com`) y el nombre del bucket — no van a `.env`: van a `stacks/backup/config/r2.env`, real por checkout, bootstrapeado desde su `.example` en [levantar-produccion](levantar-produccion.md).
+3. Anotar el endpoint (sin esquema, ej. `<account-id>.r2.cloudflarestorage.com`) y el nombre del bucket — no van a `.env`: van a `stacks/backup/config/r2.env`, real por checkout, bootstrapeado desde su `.example` en [levantar-produccion](../entorno/levantar-produccion.md).
 
 ## Comandos
 
@@ -29,7 +29,7 @@ Hex y no base64: los `/ + =` rompen a cualquier consumidor que arme una URI con 
 
 ## Verificación
 
-No hay forma de probar la clave de R2 todavía — se prueba por primera vez con `make backup-run` (ver [levantar-produccion](levantar-produccion.md)). Lo único a confirmar ahora:
+No hay forma de probar la clave de R2 todavía — se prueba por primera vez con `make backup-run` (ver [levantar-produccion](../entorno/levantar-produccion.md)). Lo único a confirmar ahora:
 
 - [ ] El bucket está vacío y es nuevo — no reusado de otro deployment
 - [ ] El token es `Object Read & Write`, acotado a este bucket, no a la cuenta entera

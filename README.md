@@ -47,11 +47,10 @@ make up         # levantar todo
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | ¿Qué es esto, cómo se relaciona con los repos de módulos, por qué esta herramienta y no otra, qué es un stack, y qué comparte cada entorno? |
 | [`PRINCIPLES.md`](PRINCIPLES.md) | ¿Qué reglas sigue este stack, y por qué? |
 | [`docs/entorno/`](docs/entorno/) | ¿Cómo levanto producción, staging o desarrollo? |
-| [`docs/modulos/`](docs/modulos/) | ¿Cómo creo o modifico un módulo? |
-| [`docs/validacion/`](docs/validacion/) | ¿Cómo confirmo que un cambio anduvo? |
-| [`docs/backup-restore/`](docs/backup-restore/) | ¿Cómo hago o recupero un backup? |
-| [`docs/operacion/`](docs/operacion/) | ¿Cómo opero una capa del stack en el día a día? |
-| [`docs/credenciales/`](docs/credenciales/) | ¿Cómo roto una credencial? |
+| [`docs/modulos/`](docs/modulos/) | ¿Cómo creo, modifico y valido módulos, forks o Enterprise? |
+| [`docs/backup-restore/`](docs/backup-restore/) | ¿Cómo hago un backup, restauro o migro datos? |
+| [`docs/operacion/`](docs/operacion/) | ¿Cómo configuro el host y opero las capas del stack? |
+| [`docs/credenciales/`](docs/credenciales/) | ¿Cómo preparo o roto credenciales e integraciones? |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | ¿Cómo propongo un cambio? |
 | [`SECURITY.md`](SECURITY.md) | ¿Cómo reporto una vulnerabilidad? |
 
