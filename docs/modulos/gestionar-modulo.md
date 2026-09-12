@@ -134,12 +134,16 @@ make build   # solo si addons-deps agregó o cambió pines
 make addons-install MODULES=<nombre_tecnico>
 ```
 
-### Verificación
+### Validar en desarrollo
 
 ```bash
-make addons-modules   # <nombre_tecnico> aparece instalado
-make repo-status     # el repo está en feat/<nombre-del-modulo>, limpio
+make addons-modules
+make repo-status
+make odoo-verify
+docker compose logs --since 5m odoo
 ```
+
+Confirmá que el módulo aparece instalado y que el repositorio está limpio en la rama de feature. En la UI local, recorré la acción que agrega o modifica el cambio; no alcanza con que cargue la vista. Si tocaste datos o vistas, recargá sin caché. Si agregaste una dependencia Python, `make addons-deps` tiene que terminar sin faltantes y la imagen debe haberse reconstruido cuando cambió algún pin.
 
 De acá en más, cualquier cambio a este módulo —incluida la primera vez que se instala en staging o en producción— sigue [Actualizar](#actualizar) más abajo.
 
@@ -172,6 +176,15 @@ make addons-update MODULES=<nombre_tecnico>
 make odoo-verify
 ```
 
+Revisá también la versión instalada y los logs de la corrida:
+
+```bash
+make addons-modules
+docker compose logs --since 5m odoo
+```
+
+Probá en la UI local el flujo específico del cambio. Si modificaste datos o vistas, recargá sin caché; si agregaste una dependencia Python, verificá `make addons-deps` y reconstruí la imagen cuando haya cambiado algún pin.
+
 **Integración a staging.** La rama de staging es descartable en todo momento — nunca contiene nada que no exista además en una `feat/*` o en producción:
 
 ```bash
@@ -189,7 +202,23 @@ make addons-deps
 make build   # solo si addons-deps agregó o cambió pines
 ```
 
-Después seguí [validar módulo en staging](../validacion/validar-modulo-staging.md): ahí corrés `make addons-install` o `make addons-update`, revisás la corrida y probás el flujo real contra los datos restaurados de producción. No promociones hasta que esa validación esté en verde.
+Instalá o actualizá el módulo según su estado en la base de staging:
+
+```bash
+make addons-install MODULES=<nombre_tecnico>  # primera vez en staging
+# o
+make addons-update MODULES=<nombre_tecnico>   # ya estaba instalado
+```
+
+Validá siempre en staging antes de promover, incluso si el cambio parece de bajo riesgo:
+
+```bash
+make addons-modules
+docker compose logs --since 5m odoo
+make verify
+```
+
+En la UI de staging, probá el flujo contra los datos restaurados de producción y revisá cualquier migración sobre registros existentes. Confirmá que no salió correo real: `ODOO_DISABLE_SMTP=1` lo bloquea. Si el cambio depende de correo, verificá que Odoo lo encole y falle al enviarlo. No promociones hasta que esta validación esté en verde.
 
 El servidor nunca mergea ni pushea, solo trae. Si `repo-sync` avisa que el `merge --ff-only` no avanzó (staging se reescribió con `--force`), nombra los dos comandos:
 
@@ -228,13 +257,19 @@ make addons-install MODULES=<nombre_tecnico>   # primera vez que este módulo se
 make addons-update MODULES=<nombre_tecnico>    # el módulo ya estaba instalado en producción
 ```
 
-### Verificación
+### Validar en producción
+
+La validación acá confirma el deploy; la prueba exploratoria ya se hizo en staging.
+Chequeá el módulo, los logs recientes y el estado de todas las capas:
 
 ```bash
 make repo-status      # limpio, en la rama esperada, en cada checkout
-make addons-modules    # en producción, versión nueva o módulo recién instalado
+make addons-modules   # versión nueva o módulo recién instalado
+docker compose logs --since 10m odoo
 make verify
 ```
+
+Probá el flujo del cambio en la UI con cuidado y usando, si hace falta, un registro dedicado. Si el cambio dispara correo, confirmá que llegó. Si algo falla en producción pero pasó staging, ampliá la prueba de staging antes del próximo deploy. Una reversión de código sigue este mismo recorrido; un problema de datos requiere [restaurar el backup](../backup-restore/restore-perdida-total.md).
 
 **Nota — qué corre en cada lado.** El servidor nunca hace `commit`/`merge`/`push`: solo `fetch`/`reset --hard`/`merge --ff-only` vía `repo-sync`, y las operaciones de módulos vía los `make` targets. Todo commit, merge y push pasa por tu máquina. Es deliberado: nada en el disco del servidor es irrecuperable — perder `addons/` entero se arregla con `make repo-sync`.
 

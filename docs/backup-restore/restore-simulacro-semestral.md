@@ -13,8 +13,10 @@ puede traer una sola de las dos mitades del estado.
 
 ## A mano
 
-Un checkout con `COMPOSE_PROJECT_NAME` **distinto** al de producción, y sus secrets de
-restic cargados con los del repositorio de origen.
+Un checkout de staging con `COMPOSE_PROJECT_NAME` **distinto** al de producción, el
+repositorio R2 de producción configurado y secrets de restic con permiso de solo
+lectura. Seguí [restore-staging](restore-staging.md), que prepara el restore sin
+activar timers de backup.
 
 Restaurar en una máquina distinta de la de origen es el simulacro más fuerte: prueba
 que el respaldo es portable y no depende en secreto de algo que solo existe en el
@@ -22,14 +24,8 @@ servidor que lo escribió.
 
 ## Comandos
 
-El procedimiento es el de [restore-perdida-total](restore-perdida-total.md), sin
-diferencias — lo que cambia es la intención, no los comandos.
-
-```bash
-make postgres-up
-make restore
-make odoo-up
-```
+El procedimiento completo está en [restore-staging](restore-staging.md). Usá el último
+snapshot salvo que el simulacro tenga como objetivo probar uno específico.
 
 ## Verificación
 

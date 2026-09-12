@@ -8,11 +8,26 @@ Traer la base y el filestore de un Odoo que no pertenece a este stack —otro se
 
 Una sola vez por deployment, al adoptar este stack sobre datos que ya existen. Por eso no hay target de `make`: un comando que se corre una vez y nunca más no gana nada envuelto.
 
-Para levantar un entorno vacío, ver [levantar-produccion](levantar-produccion.md). Para recuperar *este* stack de un incidente, [restore-perdida-total](../backup-restore/restore-perdida-total.md).
+Para levantar un entorno vacío, ver [levantar-produccion](../entorno/levantar-produccion.md). Para recuperar *este* stack de un incidente, [restore-perdida-total](restore-perdida-total.md).
 
 ## Objetivo
 
 La base y el filestore del deployment de origen sirviendo desde este stack, bajo el nombre de base que el stack exige, con los módulos al día y el backup propio corriendo al terminar.
+
+## Flujo rápido
+
+Ensayá primero en staging. La migración solo aplica si coincide la versión mayor de Odoo y los
+módulos no estándar de origen están disponibles en el checkout.
+
+1. **Confirmar compatibilidad y preparar el destino.** Revisar versión, módulos y consistencia de
+   base y filestore; ver [A mano](#a-mano).
+2. **Copiar base y filestore en el orden seguro.** Detener el origen, restaurar la base, copiar el
+   filestore y neutralizar solo si el destino no es producción; ver [Comandos](#comandos).
+3. **Levantar y actualizar los módulos.** Arrancar el stack y actualizar todos los módulos antes
+   de habilitar el uso; ver el paso 7 de [Comandos](#comandos).
+4. **Validar y cerrar.** Comprobar datos, adjuntos, módulos e integridad. Después crear un backup,
+   limpiar las copias temporales y conservar el origen como rollback; ver [Verificación](#verificación)
+   y [Al terminar](#al-terminar).
 
 ## A mano
 
@@ -149,7 +164,7 @@ Las cuatro. Cada una cubre una falla que las otras no ven.
 
 ### Al terminar
 
-1. **Backup full inmediato** (`make backup-run`, ver [realizar-backup](../backup-restore/realizar-backup.md)): el primer punto de partida limpio del stack nuevo es sobre los datos migrados, no sobre la base vacía que había antes.
+1. **Backup full inmediato** (`make backup-run`, ver [realizar-backup](realizar-backup.md)): el primer punto de partida limpio del stack nuevo es sobre los datos migrados, no sobre la base vacía que había antes.
 2. **Confirmar que la verificación de integridad corre:**
    ```bash
    make backup-integrity

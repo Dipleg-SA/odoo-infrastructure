@@ -40,8 +40,8 @@ read -rs CF_TOKEN && CF_RESP=$(printf 'header = "Authorization: Bearer %s"\nurl 
 
 El bloque 3 de arriba ya es la verificación: imprime el JSON crudo y, si matchea tu zona, un `OK` final. Sin `OK`: `1000` en el JSON = token mal copiado · `9109` = le falta `Zone:Read` · `"result":[]` = el token apunta a otra zona.
 
-Guardá el token — va a `secrets/cloudflare_api_token` cuando clones el repositorio (ver [levantar-produccion](levantar-produccion.md)).
+Guardá el token — va a `secrets/cloudflare_api_token` cuando clones el repositorio (ver [levantar-produccion](../entorno/levantar-produccion.md)).
 
 ---
 
-Para rotarlo más adelante, no crear uno nuevo: [rotar-token-cloudflare-api](../credenciales/rotar-token-cloudflare-api.md).
+Para rotarlo más adelante, no crear uno nuevo: [rotar-token-cloudflare-api](rotar-token-cloudflare-api.md).

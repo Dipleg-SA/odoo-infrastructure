@@ -2,7 +2,7 @@
 
 ## Cuándo se usa
 
-Después de levantar la capa `edge` en producción ([levantar-produccion](levantar-produccion.md), bloque 3 · Edge) — `dnsmasq` queda sano y resolviendo el hostname público a la IP local, pero nadie de la LAN lo consulta hasta que el router se lo indique por DHCP. Exclusivo de producción: `dnsmasq` corre solo ahí (`network_mode: host` sobre el `53`, sin segunda instancia posible — ver [compose.yaml](../../stacks/dnsmasq/compose.yaml)).
+Después de levantar la capa `edge` en producción ([levantar-produccion](../entorno/levantar-produccion.md), bloque 3 · Edge) — `dnsmasq` queda sano y resolviendo el hostname público a la IP local, pero nadie de la LAN lo consulta hasta que el router se lo indique por DHCP. Exclusivo de producción: `dnsmasq` corre solo ahí (`network_mode: host` sobre el `53`, sin segunda instancia posible — ver [compose.yaml](../../stacks/dnsmasq/compose.yaml)).
 
 ## Objetivo
 

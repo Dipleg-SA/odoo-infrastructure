@@ -4,7 +4,7 @@
 
 Antes de sincronizar addons — lo pide `repo-sync` para clonar los repos privados del manifiesto (los públicos no lo necesitan). **No es un secret de Compose**: vive en `~/.git-credentials` del host, nunca dentro de un contenedor, porque el clonado ocurre en el host y ningún contenedor lo consume.
 
-Se genera **una vez por máquina**, no por checkout: `credential.helper store` se configura `--global` y escribe en `~/.git-credentials`, así que producción y staging en el mismo servidor comparten uno solo. Hace falta uno nuevo en cada máquina de desarrollo (ver [levantar-desarrollo](levantar-desarrollo.md)) y en cada stack que viva en otro host.
+Se genera **una vez por máquina**, no por checkout: `credential.helper store` se configura `--global` y escribe en `~/.git-credentials`, así que producción y staging en el mismo servidor comparten uno solo. Hace falta uno nuevo en cada máquina de desarrollo (ver [levantar-desarrollo](../entorno/levantar-desarrollo.md)) y en cada stack que viva en otro host.
 
 ## Objetivo
 
@@ -31,7 +31,7 @@ read -rs GIT_TOKEN && printf 'https://%s:%s@%s\n' "$GIT_USER" "$GIT_TOKEN" "$GIT
 
 ## Verificación
 
-Todavía no hay manifiesto de addons que sincronizar en un checkout nuevo — la prueba real es `make repo-sync` una vez clonado el repositorio (ver [levantar-produccion](levantar-produccion.md) o [levantar-desarrollo](levantar-desarrollo.md)). Por ahora, alcanza con confirmar que el archivo quedó bien armado:
+Todavía no hay manifiesto de addons que sincronizar en un checkout nuevo — la prueba real es `make repo-sync` una vez clonado el repositorio (ver [levantar-produccion](../entorno/levantar-produccion.md) o [levantar-desarrollo](../entorno/levantar-desarrollo.md)). Por ahora, alcanza con confirmar que el archivo quedó bien armado:
 
 ```bash
 grep "$GIT_HOST" ~/.git-credentials | sed -E 's#:[^:@]+@#:***@#'
@@ -41,4 +41,4 @@ Tiene que mostrar la línea con tu usuario y el token enmascarado — nunca en t
 
 ---
 
-Para rotarlo más adelante, en cada checkout que lo usa: [rotar-token-git](../credenciales/rotar-token-git.md).
+Para rotarlo más adelante, en cada checkout que lo usa: [rotar-token-git](rotar-token-git.md).

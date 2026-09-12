@@ -8,6 +8,17 @@ La credencial SMTP de `secrets/zeptomail_smtp_password` venció, se filtró, o t
 
 Los tres consumidores usando la credencial nueva, verificado uno por uno — no alcanza con confirmar que el archivo cambió.
 
+## Flujo rápido
+
+Reemplazá la credencial y probá cada consumidor antes de cerrar la rotación.
+
+1. **Generar la credencial nueva y reemplazar el secret**; ver [A mano](#a-mano) y
+   [Comandos](#comandos).
+2. **Recrear Odoo y Grafana** para que lean el valor actualizado. El aviso de systemd lee el archivo
+   en cada ejecución.
+3. **Probar los cuatro caminos de correo** —SMTP directo, aviso de systemd, Grafana y Odoo— y
+   cerrar solo cuando todos funcionen; ver [Verificación](#verificación).
+
 ## A mano
 
 Generar el token nuevo en ZeptoMail → Mail Agents → el agente → SMTP & API. Confirmar el `Username` literal (`SMTP_USER` en `.env`, no cambia con la rotación salvo que también lo hayas modificado).

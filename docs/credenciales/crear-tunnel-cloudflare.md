@@ -22,7 +22,7 @@ Un Tunnel creado y con su ruta pública configurada —apuntando a `nginx:443` c
 
 **El campo Origin Server Name vacío no se ve vacío.** El dashboard le pone de placeholder la palabra `Null` en gris, que a simple vista se confunde con un valor ya cargado. Si no lo ves escrito en texto negro, no está seteado.
 
-Sin Origin Server Name, `cloudflared` cae al hostname del propio Service (`nginx`) para validar el certificado, que no es a quién se lo emitió Let's Encrypt, y el sitio entero da **502** — recién visible cuando Odoo ya sirve tráfico real (ver [levantar-produccion](levantar-produccion.md)). El error, en `docker compose logs cloudflared`, es inconfundible:
+Sin Origin Server Name, `cloudflared` cae al hostname del propio Service (`nginx`) para validar el certificado, que no es a quién se lo emitió Let's Encrypt, y el sitio entero da **502** — recién visible cuando Odoo ya sirve tráfico real (ver [levantar-produccion](../entorno/levantar-produccion.md)). El error, en `docker compose logs cloudflared`, es inconfundible:
 
 ```
 tls: failed to verify certificate: x509: certificate is valid for <tu PUBLIC_HOSTNAME>, not nginx
@@ -39,4 +39,4 @@ Lo único chequeable ahora es el campo que más se olvida:
 
 ---
 
-Para rotarlo más adelante: [rotar-token-cloudflare-tunnel](../credenciales/rotar-token-cloudflare-tunnel.md).
+Para rotarlo más adelante: [rotar-token-cloudflare-tunnel](rotar-token-cloudflare-tunnel.md).

@@ -91,10 +91,36 @@ make addons-update MODULES=<nombre_tecnico>    # el módulo ya estaba instalado
 
 ## Verificación
 
+### Desarrollo
+
 ```bash
 find addons/enterprise -name __manifest__.py -print
-make addons-modules   # confirma la versión instalada
+make addons-modules
+make odoo-verify
+docker compose logs --since 5m odoo
 ```
+
+Confirmá que el módulo figura instalado y probá en la UI local el flujo que agrega o modifica. Si tocaste vistas o datos, recargá sin caché. Si el ZIP agregó una dependencia Python, comprobá `make addons-deps` y reconstruí la imagen cuando haya cambiado algún pin.
+
+### Staging
+
+```bash
+make addons-modules
+docker compose logs --since 5m odoo
+make verify
+```
+
+Probá el flujo con los datos restaurados de producción y revisá los cambios sobre registros existentes. Confirmá que no salió correo real: staging fuerza `ODOO_DISABLE_SMTP=1`. No copies el ZIP a producción hasta completar esta validación.
+
+### Producción
+
+```bash
+make addons-modules
+docker compose logs --since 10m odoo
+make verify
+```
+
+Probá el flujo con cuidado y confirmá que llegó el correo si el cambio lo dispara. Esta comprobación es de confirmación; la prueba exploratoria ya se hizo en staging. Si falla algo que pasó allí, registrá el caso y ampliá la validación de staging para la próxima actualización.
 
 ---
 

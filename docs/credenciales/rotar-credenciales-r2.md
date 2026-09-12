@@ -11,6 +11,17 @@ formato de AWS, que es lo que restic parsea.
 
 El archivo actualizado, `backup` —su único consumidor— recreado con el valor nuevo, la clave vieja revocada en R2 solo después de confirmar que la nueva funciona.
 
+## Flujo rápido
+
+Mantené activa la clave anterior hasta confirmar que la nueva funciona.
+
+1. **Crear una clave nueva** para el mismo bucket y mantener activa la anterior; ver
+   [A mano](#a-mano).
+2. **Actualizar el secret y recrear `backup`** para que tome el archivo nuevo; ver
+   [Comandos](#comandos).
+3. **Probar integridad y cerrar la rotación.** Si la integridad pasa, revocar la clave anterior y
+   ejecutar un backup real; ver [Verificación](#verificación).
+
 ## A mano
 
 Crear el token nuevo en Cloudflare R2: `Object Read & Write`, acotado al mismo bucket. **No lo revoques todavía** — si el reemplazo falla a mitad de camino, necesitás poder volver atrás.

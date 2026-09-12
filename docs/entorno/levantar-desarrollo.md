@@ -10,6 +10,17 @@ Son los **mismos nueve bloques y los mismos comandos** que producción: eso lo d
 
 Odoo sirviendo por nginx en loopback, sin túnel, sin certificados, sin backups, y **sin ningún valor que pegar a mano**: los dos secrets se generan.
 
+## Flujo rápido
+
+Recorrido para dejar un checkout de desarrollo aislado y accesible desde la máquina local.
+
+1. **Preparar la máquina y el checkout.** Resolver Docker, clonar el repo y completar `.env` y
+   secrets; ver [bloques 1–2](#1--prerrequisitos).
+2. **Preparar el entorno de Odoo.** Levantar las capas de desarrollo, sincronizar addons y dejar
+   que Odoo inicialice la base; ver [bloques 3–6](#3--edge).
+3. **Converger y comprobar.** Revisar el stack, el login local y que los volúmenes no se compartan
+   con otro checkout; ver [Cierre](#9--cierre).
+
 | Bloque | Acá | |
 |---|---|---|
 | 1 · Prerrequisitos | Docker, y el token de git solo si tu manifiesto tiene repos privados | ✓ |
@@ -32,8 +43,8 @@ nginx está presente aunque no haya TLS — es lo que hace honesto al `proxy_mod
 
 | Prerrequisito | Runbook | Te deja |
 |---|---|---|
-| Docker Engine y Compose ≥ 2.20 | [configurar-docker-host](configurar-docker-host.md) | Siempre — solo la instalación; el arranque automático es cosa de un servidor |
-| Token de git de solo lectura | [crear-token-git-lectura](crear-token-git-lectura.md) | Si tu manifiesto de addons trae repos privados. Uno por máquina, no por checkout |
+| Docker Engine y Compose ≥ 2.20 | [configurar-docker-host](../operacion/configurar-docker-host.md) | Siempre — solo la instalación; el arranque automático es cosa de un servidor |
+| Token de git de solo lectura | [crear-token-git-lectura](../credenciales/crear-token-git-lectura.md) | Si tu manifiesto de addons trae repos privados. Uno por máquina, no por checkout |
 
 **Nada de Cloudflare, R2 ni ZeptoMail.** Development no tiene túnel, ni certificados, ni backups, ni correo saliente: sus dos secrets se generan solos. Es toda la diferencia con [levantar-produccion § 1](levantar-produccion.md#1--prerrequisitos), donde cuatro de esos valores salen de cuentas de terceros.
 
@@ -215,4 +226,4 @@ Tiene que haber un juego de volúmenes por nombre de proyecto —`development-sa
 - [ ] El login responde `200` en el puerto de este checkout
 - [ ] Los volúmenes llevan el nombre de este checkout y no los comparte otro
 
-De acá en más, el trabajo real sigue en [gestionar-modulo](../modulos/gestionar-modulo.md), y la validación de lo que hiciste en [validar-modulo-desarrollo](../validacion/validar-modulo-desarrollo.md).
+De acá en más, el trabajo y su validación siguen en [gestionar-modulo](../modulos/gestionar-modulo.md).
