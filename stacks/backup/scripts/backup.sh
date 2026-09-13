@@ -88,16 +88,25 @@ marcar_exito() {
 # Informativo: un fallo acá no aborta el backup — tolerante y best-effort.
 
 registrar_addons() {
-  local dir="state/meta" tmp
+  local dir="state/meta" tmp error detalle estado
   mkdir -p "$dir" 2>/dev/null || { ui_warn "no se pudo crear $dir" "backup sigue sin el registro de addons" >&2; return 0; }
   tmp=$(mktemp "$dir/.addons.XXXXXX" 2>/dev/null) || { ui_warn "no se pudo escribir el registro de addons" "" >&2; return 0; }
-  if scripts/addons.sh status 2>/dev/null | grep -E '^(enterprise|custom-addons|oca|third-party)[[:space:]]' > "$tmp"; then
-    chmod 644 "$tmp"
-    mv -f "$tmp" "$dir/addons.txt"
+  error=$(mktemp "$dir/.addons-error.XXXXXX" 2>/dev/null) || { ui_warn "no se pudo escribir el diagnóstico de addons" "" >&2; rm -f "$tmp"; return 0; }
+  if scripts/addons.sh status > "$tmp" 2> "$error"; then
+    if grep -E '^(enterprise|custom-addons|oca|third-party)[[:space:]]' "$tmp" > "$tmp.registro"; then
+      chmod 644 "$tmp.registro"
+      mv -f "$tmp.registro" "$dir/addons.txt"
+    else
+      ui_warn "no se pudo generar el registro de addons" "scripts/addons.sh status no informó worktrees" >&2
+      rm -f "$tmp.registro"
+    fi
   else
-    ui_warn "no se pudo generar el registro de addons" "" >&2
-    rm -f "$tmp"
+    estado=$?
+    detalle=$(tr '\n' ' ' < "$error")
+    ui_warn "no se pudo generar el registro de addons" \
+      "scripts/addons.sh status salió con $estado: ${detalle:-sin diagnóstico}" >&2
   fi
+  rm -f "$tmp" "$error"
   return 0
 }
 
