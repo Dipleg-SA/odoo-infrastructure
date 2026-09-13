@@ -117,6 +117,21 @@ limpiar_sobrantes() {
   done
 }
 
+# --- Units con prefijo legado ---
+# La ruta exacta permite advertir un renombre sin borrar units de otro checkout.
+
+avisar_units_ajenas() {
+  local archivo nombre
+  for archivo in "$DESTINO"/*.service; do
+    [ -e "$archivo" ] || continue
+    nombre=$(basename "$archivo" .service)
+    case "$nombre" in "$PROYECTO"-*) continue ;; esac
+    grep -qFx "WorkingDirectory=$PWD" "$archivo" || continue
+    ui_warn "unit de otro proyecto apunta a este checkout: $nombre.service" \
+      "no se modifica automáticamente; revisar si es un residuo antes de desactivarla" >&2
+  done
+}
+
 install() {
   local lista base
   lista=$(bases) || return 1
@@ -128,6 +143,7 @@ install() {
 
   mkdir -p "$DESTINO"
   limpiar_sobrantes "$lista"
+  avisar_units_ajenas
 
   if [ -z "$lista" ]; then
     ui_skip "este stack no lleva units (no respalda ni renueva certificados)"

@@ -242,6 +242,19 @@ contiene    "la ruta es la del checkout"   "WorkingDirectory=$ROOT" "$(cat "$ROO
 contiene    "el OnFailure apunta a la plantilla de ESTE stack" \
   "OnFailure=production-notify@%n.service" "$(cat "$ROOT/systemd/production-cert-renew.service")"
 
+# --- Unit con prefijo legado ---
+# Comparte checkout con producción y se conserva para revisión del operador.
+
+: > "$ROOT/systemd/odoo-backup-daily.timer"
+printf 'WorkingDirectory=%s\n' "$ROOT" > "$ROOT/systemd/odoo-backup-daily.service"
+reset_stub
+SALIDA=$(timers "$ROOT" install)
+contiene "avisa una unit heredada del mismo checkout" \
+  "unit de otro proyecto apunta a este checkout: odoo-backup-daily.service" "$SALIDA"
+no_contiene "no desactiva la unit heredada" "disable --now odoo-backup-daily.timer" "$(llamadas)"
+igual "y conserva sus archivos para revisión" "0" \
+  "$([ -f "$ROOT/systemd/odoo-backup-daily.service" ] && [ -f "$ROOT/systemd/odoo-backup-daily.timer" ]; echo $?)"
+
 # --- Staging: no respalda, pero sí renueva ---
 # El agujero que este target cierra: staging quedaba sin ninguna unit instalada.
 
