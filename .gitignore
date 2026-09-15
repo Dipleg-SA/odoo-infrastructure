@@ -8,6 +8,27 @@
 secrets/
 .env
 
+# --- Datos por runtime ---
+# Configuración, secretos y estado son privados; se conservan sus contratos de Compose.
+
+runtime/desarrollo/*
+!runtime/desarrollo/compose.yaml
+!runtime/desarrollo/compose.env.example
+runtime/staging/*
+!runtime/staging/compose.yaml
+!runtime/staging/compose.env.example
+runtime/produccion/*
+!runtime/produccion/compose.yaml
+!runtime/produccion/compose.env.example
+
+# --- Candidatos y control ---
+# Catálogo y composición son plantillas versionadas; clones, candidatos y estado son mutables.
+
+runtime/addons/*
+!runtime/addons/catalogo.txt.example
+runtime/control/*
+!runtime/control/compose.yaml
+
 # --- Workspace de VS Code ---
 # Lo genera 'make dev-workspace' desde este mismo .env; local a cada checkout.
 # El nombre sale de COMPOSE_PROJECT_NAME (production.code-workspace,

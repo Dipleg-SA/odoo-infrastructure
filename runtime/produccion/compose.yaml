@@ -1,0 +1,62 @@
+# Identidad propia del entorno
+# El nombre separa contenedores, redes y volúmenes de los otros runtimes.
+name: ${COMPOSE_PROJECT_NAME:?falta COMPOSE_PROJECT_NAME}
+
+# Recursos compartidos por los stacks de producción
+# Compose les agrega el nombre del proyecto para mantenerlos aislados.
+networks:
+  edge:
+  app:
+  observability:
+
+volumes:
+  letsencrypt:
+  dumps:
+
+# Secretos privados de producción
+# Los valores se inicializan con secrets-init y no se versionan.
+secrets:
+  cloudflare_api_token:
+    file: ${RUNTIME_SECRETS_DIR:?falta RUNTIME_SECRETS_DIR}/cloudflare_api_token
+  cloudflare_tunnel_token:
+    file: ${RUNTIME_SECRETS_DIR:?falta RUNTIME_SECRETS_DIR}/cloudflare_tunnel_token
+  postgres_password:
+    file: ${RUNTIME_SECRETS_DIR:?falta RUNTIME_SECRETS_DIR}/postgres_password
+  odoo_admin_password:
+    file: ${RUNTIME_SECRETS_DIR:?falta RUNTIME_SECRETS_DIR}/odoo_admin_password
+  zeptomail_smtp_password:
+    file: ${RUNTIME_SECRETS_DIR:?falta RUNTIME_SECRETS_DIR}/zeptomail_smtp_password
+  restic_password:
+    file: ${RUNTIME_SECRETS_DIR:?falta RUNTIME_SECRETS_DIR}/restic_password
+  restic_r2_credentials:
+    file: ${RUNTIME_SECRETS_DIR:?falta RUNTIME_SECRETS_DIR}/restic_r2_credentials
+  grafana_admin_password:
+    file: ${RUNTIME_SECRETS_DIR:?falta RUNTIME_SECRETS_DIR}/grafana_admin_password
+  postgres_exporter_password:
+    file: ${RUNTIME_SECRETS_DIR:?falta RUNTIME_SECRETS_DIR}/postgres_exporter_password
+
+# Stacks incluidos en producción
+# Incluye borde, datos, aplicación, backups y observabilidad del entorno.
+include:
+  - ../../stacks/nginx/compose.yaml
+  - ../../runtime/control/compose.yaml
+  - ../../stacks/certbot/compose.yaml
+  - ../../stacks/cloudflared/compose.yaml
+  - ../../stacks/dnsmasq/compose.yaml
+  - ../../stacks/postgres/compose.yaml
+  - ../../stacks/odoo/compose.yaml
+  - ../../stacks/backup/compose.yaml
+  - ../../stacks/prometheus/compose.yaml
+  - ../../stacks/loki/compose.yaml
+  - ../../stacks/grafana/compose.yaml
+  - ../../stacks/alloy/compose.yaml
+
+# Ajustes propios del entorno
+# El proxy enlaza la IP indicada o, por defecto, loopback.
+services:
+  nginx:
+    ports:
+      - "${LOCAL_IP:-127.0.0.1}:${HTTP_PORT:?falta HTTP_PORT}:80"
+      - "${LOCAL_IP:-127.0.0.1}:${HTTPS_PORT:?falta HTTPS_PORT}:443"
+    volumes:
+      - ../../stacks/nginx/config/addons-webhook.locations:/etc/nginx/conf.d/addons-webhook.locations:ro

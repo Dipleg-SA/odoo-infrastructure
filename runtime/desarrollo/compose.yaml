@@ -1,0 +1,43 @@
+# Identidad propia del entorno
+# El nombre separa contenedores, redes y volúmenes de los otros runtimes.
+name: ${COMPOSE_PROJECT_NAME:?falta COMPOSE_PROJECT_NAME}
+
+# Recursos compartidos por los stacks de desarrollo
+# Compose les agrega el nombre del proyecto para mantenerlos aislados.
+networks:
+  edge:
+  app:
+
+volumes:
+  letsencrypt:
+  dumps:
+
+# Secretos privados del entorno
+# Los valores se inicializan con secrets-init y no se versionan.
+secrets:
+  postgres_password:
+    file: ${RUNTIME_SECRETS_DIR:?falta RUNTIME_SECRETS_DIR}/postgres_password
+  odoo_admin_password:
+    file: ${RUNTIME_SECRETS_DIR:?falta RUNTIME_SECRETS_DIR}/odoo_admin_password
+
+# Stacks incluidos en desarrollo
+# Las rutas de cada stack se resuelven desde su propio compose.yaml.
+include:
+  - ../../stacks/nginx/compose.yaml
+  - ../../stacks/postgres/compose.yaml
+  - ../../stacks/odoo/compose.yaml
+
+# Ajustes propios del entorno
+# Desarrollo publica el proxy en loopback y desactiva correo saliente.
+services:
+  nginx:
+    ports:
+      - "127.0.0.1:${HTTP_PORT:?falta HTTP_PORT}:80"
+    volumes:
+      - ${RUNTIME_CONFIG_DIR:?falta RUNTIME_CONFIG_DIR}/nginx/server-plain.conf:/etc/nginx/conf.d/default.conf:ro
+  odoo:
+    environment:
+      ODOO_DISABLE_SMTP: "1"
+    secrets: !override
+      - postgres_password
+      - odoo_admin_password
