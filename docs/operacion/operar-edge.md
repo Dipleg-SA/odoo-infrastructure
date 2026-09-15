@@ -40,7 +40,6 @@ composición, como staging o development.
 make nginx-up && make cloudflared-up
 make nginx-down && make cloudflared-down
 make nginx-restart && make cloudflared-restart   # no recrea contenedores
-make nginx-verify
 ```
 
 Qué servicios de borde trae *este* stack lo dice su entrypoint: producción lleva `nginx`+`cloudflared`+`certbot` y, si el cliente tiene servidor local, `dnsmasq` con `COMPOSE_PROFILES=lan`; prueba lleva los tres primeros sin publicar puertos; y development solo `nginx` sin TLS, sin túnel ni certbot.
