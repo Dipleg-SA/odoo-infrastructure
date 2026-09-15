@@ -60,15 +60,15 @@
 
 ## Fase 7: Integración y verificación
 
-- [ ] T037 [integration] Actualizar `docs/modulos/especificacion-gestion-addons.md` para reflejar los contratos implementados y mantener la estructura objetivo como fuente de operación.
-- [ ] T038 [integration] Actualizar `docs/entorno/levantar-desarrollo.md`, `docs/entorno/levantar-staging.md`, `docs/entorno/levantar-produccion.md`, `docs/backup-restore/restore-staging.md`, `docs/modulos/gestionar-modulo.md`, `docs/operacion/operar-odoo.md` y `docs/operacion/operar-backups.md` con el entorno explícito, el descarte/resembrado y la operación manual de módulos.
-- [ ] T039 [integration] Crear `docs/modulos/gestionar-catalogo-addons.md`, `docs/modulos/construir-y-aplicar-imagen.md`, `docs/modulos/validar-promocion.md`, `docs/operacion/operar-webhook-addons.md` y `docs/credenciales/configurar-webhook-github.md`, incluyendo la limpieza manual antes de retirar un repositorio del catálogo.
-- [ ] T040 [integration] Ejecutar `make test`, `bash -n` sobre scripts modificados y `docker compose config` para `runtime/control/compose.yaml` y cada `runtime/<entorno>/compose.yaml`, corrigiendo cualquier contrato incumplido.
+- [x] T037 [integration] Actualizar `docs/modulos/especificacion-gestion-addons.md` para reflejar los contratos implementados y mantener la estructura objetivo como fuente de operación.
+- [x] T038 [integration] Actualizar `docs/entorno/levantar-desarrollo.md`, `docs/entorno/levantar-staging.md`, `docs/entorno/levantar-produccion.md`, `docs/backup-restore/restore-staging.md`, `docs/modulos/gestionar-modulo.md`, `docs/operacion/operar-odoo.md` y `docs/operacion/operar-backups.md` con el entorno explícito, el descarte/resembrado y la operación manual de módulos.
+- [x] T039 [integration] Crear `docs/modulos/gestionar-catalogo-addons.md`, `docs/modulos/construir-y-aplicar-imagen.md`, `docs/modulos/validar-promocion.md`, `docs/operacion/operar-webhook-addons.md` y `docs/credenciales/configurar-webhook-github.md`, incluyendo la limpieza manual antes de retirar un repositorio del catálogo.
+- [x] T040 [integration] Ejecutar `make test`, `bash -n` sobre scripts modificados y `docker compose config` para `runtime/control/compose.yaml` y cada `runtime/<entorno>/compose.yaml`, corrigiendo cualquier contrato incumplido.
 
 ## Verificación
 
-- [ ] VERIFY Todos los escenarios de aceptación de `spec.md` pasan.
-- [ ] VERIFY Se cumplen los requisitos no funcionales de `spec.md`: aislamiento del receptor, build atómico, metadatos de backup y detección del modelo anterior.
-- [ ] VERIFY Ningún principio MUST pertinente de `.specs/constitution.md` es vulnerado.
-- [ ] VERIFY No se crean archivos fuera de la estructura declarada en `plan.md`.
-- [ ] VERIFY No se agregan dependencias fuera de Compose, Git, Docker y la biblioteca estándar de Python declaradas en `plan.md`.
+- [x] VERIFY Todos los escenarios de aceptación de `spec.md` pasan.
+- [x] VERIFY Se cumplen los requisitos no funcionales de `spec.md`: aislamiento del receptor, build atómico, metadatos de backup y detección del modelo anterior.
+- [x] VERIFY Ningún principio MUST pertinente de `.specs/constitution.md` es vulnerado.
+- [x] VERIFY No se crean archivos fuera de la estructura declarada en `plan.md`.
+- [x] VERIFY No se agregan dependencias fuera de Compose, Git, Docker y la biblioteca estándar de Python declaradas en `plan.md`.
