@@ -1,230 +1,146 @@
 #!/usr/bin/env bash
-# Contrato de los tres entrypoints: qué stacks, qué secrets y qué publica cada uno.
-# No levanta nada — todo sale de `docker compose config`, que es la única fuente
-# que sabe qué resolvió cada stack después de los include:, !reset y !override.
+# Contrato de los tres runtimes
+# Resuelve las composiciones reales y comprueba aislamiento, perfiles y puertos.
 
 cd "$(dirname "$0")/.."
 . tests/lib.sh
 
-# --- Valores del deployment ---
-# De un fixture y no del .env del operador: --env-file gana sobre un .env presente,
-# así que el resultado no depende de en qué máquina se corra.
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
 
+# Acceso a la composición
+# Cada consulta usa la plantilla privada del runtime que corresponde.
 resuelto() {
-  local env="$1"; shift
-  docker compose --env-file "tests/fixtures/$env" "$@" config 2>/dev/null
+  local entorno="$1"; shift
+  docker compose --env-file "runtime/$entorno/compose.env.example" \
+    -f "runtime/$entorno/compose.yaml" "$@" config 2>/dev/null
 }
 
 servicios() {
-  local env="$1"; shift
-  docker compose --env-file "tests/fixtures/$env" "$@" config --services 2>/dev/null | sort | tr '\n' ' '
+  local entorno="$1"; shift
+  docker compose --env-file "runtime/$entorno/compose.env.example" \
+    -f "runtime/$entorno/compose.yaml" "$@" config --services 2>/dev/null | sort | tr '\n' ' '
 }
 
-# --- Extractores sobre la config resuelta ---
-# El bloque de un servicio va de su clave hasta la siguiente al mismo nivel, igual
-# que en verify.sh. Los dígitos importan: restic_r2_credentials no matchea [a-z_]+.
-# El corte incluye las claves de nivel 0: el último servicio alfabético no tiene
-# servicio siguiente y el bloque se desbordaría dentro de networks:.
-
+# Extractores
+# Aíslan servicios, puertos y nombres de recursos de la salida normalizada.
 contar_secrets() { sed -n '/^secrets:/,$p' | grep -cE '^  [a-z0-9_]+:$'; }
 bloque()         { sed -nE "/^  $1:$/,/^[a-z]|^  [a-z0-9_-]+:$/p"; }
 binds()          { grep -B1 -E 'target: (80|443)$' | sed -n 's/^ *host_ip: //p' | tr '\n' ' '; }
+recursos() {
+  awk '
+    /^networks:/ { seccion = 1; next }
+    /^volumes:/ { seccion = 2; next }
+    /^secrets:/ { seccion = 0; next }
+    seccion && /^    name:/ { sub(/^    name: /, ""); gsub(/"/, ""); print }
+  '
+}
 
-# =====================================================================
-titulo "development — envs/development.yaml"
-# =====================================================================
+# Development
+# El entorno local incluye solo proxy, datos y aplicación.
+DEV=$(resuelto desarrollo)
+igual "desarrollo resuelve sin error" "0" "$(docker compose --env-file runtime/desarrollo/compose.env.example -f runtime/desarrollo/compose.yaml config -q >/dev/null 2>&1; echo $?)"
+igual "desarrollo declara 2 secretos" "2" "$(printf '%s\n' "$DEV" | contar_secrets)"
+igual "desarrollo solo incluye nginx, odoo y postgres" "nginx odoo postgres " "$(servicios desarrollo)"
+no_contiene "desarrollo no incluye el receptor" "addons-webhook" "$(servicios desarrollo)"
+igual "desarrollo publica solo el 80 en loopback" "127.0.0.1 " "$(printf '%s\n' "$DEV" | bloque nginx | binds)"
+igual "desarrollo usa su puerto aislado" "8081 " \
+  "$(printf '%s\n' "$DEV" | bloque nginx | sed -n 's/^ *published: "//p' | tr -d '"' | tr '\n' ' ')"
+contiene "desarrollo monta su config sin TLS" "/runtime/desarrollo/config/nginx/server-plain.conf" "$(printf '%s\n' "$DEV" | bloque nginx)"
+no_contiene "desarrollo no monta config TLS" "server-tls.conf" "$DEV"
+no_contiene "desarrollo no incluye pgbouncer" "pgbouncer" "$DEV"
+contiene "la imagen postgres usa la identidad del runtime" "local/postgres:odoo-desarrollo" "$(printf '%s\n' "$DEV" | bloque postgres)"
+contiene "la imagen nginx usa la identidad del runtime" "local/nginx:odoo-desarrollo" "$(printf '%s\n' "$DEV" | bloque nginx)"
+contiene "desarrollo desactiva SMTP de Odoo" 'ODOO_DISABLE_SMTP: "1"' "$(printf '%s\n' "$DEV" | bloque odoo)"
 
-DEVN=$(resuelto env.development -f envs/development.yaml)
-
-igual "resuelve sin error" "0" "$(docker compose --env-file tests/fixtures/env.development -f envs/development.yaml config -q >/dev/null 2>&1; echo $?)"
-igual "declara 2 secrets" "2" "$(printf '%s\n' "$DEVN" | contar_secrets)"
-igual "solo proxy, datos y aplicación" "nginx odoo postgres " "$(servicios env.development -f envs/development.yaml)"
-
-# server-plain no escucha en el 443: publicarlo ataría un puerto para nada.
-igual "publica solo el 80, en loopback" "127.0.0.1 " "$(printf '%s\n' "$DEVN" | bloque nginx | binds)"
-
-# 8081 y no 8080: prueba puede convivir en el mismo host, y ese es suyo.
-igual "en un puerto que no le pisa a prueba" "8081 " \
-  "$(printf '%s\n' "$DEVN" | bloque nginx | sed -n 's/^ *published: "//p' | tr -d '"' | tr '\n' ' ')"
-
-contiene    "monta el config sin TLS" "server-plain.conf" "$(printf '%s\n' "$DEVN" | bloque nginx)"
-no_contiene "y ninguna con TLS" "server-tls" "$DEVN"
-
-# Sin pooler: la simplificación de esta etapa. Postgres y nginx sí buildean —
-# cada stack tiene su Dockerfile aunque no le sume nada a la imagen oficial—,
-# con el mismo tag por proyecto que ya usaba odoo.
-no_contiene "sin pgbouncer" "pgbouncer" "$DEVN"
-contiene "postgres construye con tag por proyecto" "local/postgres:test-development" "$(printf '%s\n' "$DEVN" | bloque postgres)"
-contiene "nginx construye con tag por proyecto" "local/nginx:test-development" "$(printf '%s\n' "$DEVN" | bloque nginx)"
-
-contiene "un odoo.conf clonado no alcanza para mandar correo" 'ODOO_DISABLE_SMTP: "1"' "$(printf '%s\n' "$DEVN" | bloque odoo)"
-
-# =====================================================================
-# =====================================================================
-titulo "producción — envs/production.yaml"
-# =====================================================================
-
-PRODN=$(resuelto env.production --profile cert -f envs/production.yaml)
-
-igual "resuelve sin error" "0" "$(docker compose --env-file tests/fixtures/env.production -f envs/production.yaml config -q >/dev/null 2>&1; echo $?)"
-igual "declara 9 secrets" "9" "$(printf '%s\n' "$PRODN" | contar_secrets)"
-igual "los diez stacks de producción" "alloy backup certbot cloudflared grafana loki nginx odoo postgres prometheus " \
-  "$(servicios env.production --profile cert -f envs/production.yaml)"
-
-# Es el caso base: nginx cae a su default de TLS y es el único que publica en la
-# LAN. Si esto cambia, algún entorno le está imponiendo su excepción.
-contiene "monta el config con TLS" "server-tls.conf" "$(printf '%s\n' "$PRODN" | bloque nginx)"
-igual "publica en la IP de la LAN, no en loopback" "10.0.0.2 10.0.0.2 " \
-  "$(printf '%s\n' "$PRODN" | bloque nginx | binds)"
-
-# certbot escribe el certificado que nginx lee: el volumen lo declara el entorno,
-# porque dos declaraciones divergentes del mismo recurso se fusionan en silencio.
-contiene "certbot escribe el volumen del certificado" "letsencrypt" "$(printf '%s\n' "$PRODN" | bloque certbot)"
-
-# --- El dump y el filestore, en el mismo snapshot ---
-# La consistencia deja de ser un procedimiento —respaldar en orden— y pasa a ser
-# una propiedad: postgres escribe el dump en un volumen que backup lee junto al
-# filestore. Si estos dos mounts se separan, el snapshot deja de ser restaurable
-# como unidad y nada más lo avisa.
-
-contiene "postgres escribe el dump en el volumen compartido" "dumps" "$(printf '%s\n' "$PRODN" | bloque postgres)"
-contiene "backup lo lee junto al filestore"                  "dumps" "$(printf '%s\n' "$PRODN" | bloque backup)"
-contiene "y el filestore va rw: el mismo contenedor restaura" "odoo-data" "$(printf '%s\n' "$PRODN" | bloque backup)"
-
-# --- Observabilidad: una sola UI publicada ---
-# Grafana es el único de los cuatro con puerto, y en loopback (nivel 2: se entra
-# por túnel SSH). Los otros tres se consultan por nombre dentro de su red — si
-# alguno gana un ports:, queda una UI sin auth propia expuesta y nada lo avisa.
-
-igual "grafana publica solo en loopback" "127.0.0.1 " \
-  "$(printf '%s\n' "$PRODN" | bloque grafana | grep -B1 'target: 3000' | sed -n 's/^ *host_ip: //p' | tr '\n' ' ')"
-
-for svc in prometheus loki alloy; do
-  igual "$svc no publica ningún puerto" "" \
-    "$(printf '%s\n' "$PRODN" | bloque "$svc" | sed -n 's/^ *published: //p' | tr '\n' ' ')"
+# Production
+# Certbot se activa de forma explícita y el proxy conserva el bind de la LAN.
+PROD=$(LOCAL_IP=192.0.2.10 COMPOSE_PROFILES=cert resuelto produccion)
+igual "producción resuelve sin error" "0" "$(LOCAL_IP=192.0.2.10 COMPOSE_PROFILES=cert docker compose --env-file runtime/produccion/compose.env.example -f runtime/produccion/compose.yaml config -q >/dev/null 2>&1; echo $?)"
+igual "producción declara 9 secretos" "9" "$(printf '%s\n' "$PROD" | contar_secrets)"
+igual "producción incluye sus once servicios" "addons-webhook alloy backup certbot cloudflared grafana loki nginx odoo postgres prometheus " \
+  "$(COMPOSE_PROFILES=cert servicios produccion)"
+contiene "producción monta la ruta versionada del receptor" \
+  "/stacks/nginx/config/addons-webhook.locations" "$(printf '%s\n' "$PROD" | bloque nginx)"
+contiene "la ruta pública apunta solo al endpoint GitHub" \
+  'proxy_pass http://$addons_webhook:8080/github' "$(cat stacks/nginx/config/addons-webhook.locations)"
+contiene "la ruta pública usa el path exacto" \
+  "location = /webhooks/addons" "$(cat stacks/nginx/config/addons-webhook.locations)"
+contiene "la ruta pública limita el método a POST" \
+  'if ($request_method != POST) { return 405; }' "$(cat stacks/nginx/config/addons-webhook.locations)"
+contiene "producción monta config TLS" "/runtime/produccion/config/nginx/server-tls.conf" "$(printf '%s\n' "$PROD" | bloque nginx)"
+igual "producción publica en la IP declarada" "192.0.2.10 192.0.2.10 " "$(printf '%s\n' "$PROD" | bloque nginx | binds)"
+contiene "certbot comparte el volumen del certificado" "letsencrypt" "$(printf '%s\n' "$PROD" | bloque certbot)"
+contiene "postgres escribe el dump compartido" "dumps" "$(printf '%s\n' "$PROD" | bloque postgres)"
+contiene "backup lee el dump junto al filestore" "dumps" "$(printf '%s\n' "$PROD" | bloque backup)"
+contiene "backup conserva el filestore para restaurar" "odoo-data" "$(printf '%s\n' "$PROD" | bloque backup)"
+igual "Grafana publica solo en loopback" "127.0.0.1 " \
+  "$(printf '%s\n' "$PROD" | bloque grafana | grep -B1 'target: 3000' | sed -n 's/^ *host_ip: //p' | tr '\n' ' ')"
+for servicio in prometheus loki alloy; do
+  igual "$servicio no publica puertos" "" "$(printf '%s\n' "$PROD" | bloque "$servicio" | sed -n 's/^ *published: //p' | tr '\n' ' ')"
 done
 
-# =====================================================================
-titulo "prueba — envs/staging.yaml"
-# =====================================================================
+# Staging
+# La prueba comparte la red edge, pero no publica servicios en la LAN ni respalda.
+STAGE=$(COMPOSE_PROFILES=cert,restore resuelto staging)
+igual "staging resuelve sin error" "0" "$(COMPOSE_PROFILES=cert,restore docker compose --env-file runtime/staging/compose.env.example -f runtime/staging/compose.yaml config -q >/dev/null 2>&1; echo $?)"
+igual "staging declara 7 secretos" "7" "$(printf '%s\n' "$STAGE" | contar_secrets)"
+igual "staging incluye solo sus cinco servicios por defecto" "cloudflared nginx odoo postgres " "$(servicios staging)"
+no_contiene "staging no incluye el receptor" "addons-webhook" "$(servicios staging)"
+contiene "staging monta la plantilla vacía del receptor" \
+  "/runtime/staging/config/nginx/addons-webhook.locations" "$(printf '%s\n' "$STAGE" | bloque nginx)"
+igual "staging publica en loopback" "127.0.0.1 127.0.0.1 " "$(printf '%s\n' "$STAGE" | bloque nginx | binds)"
+igual "staging usa los puertos reservados" "8080 8443 " \
+  "$(printf '%s\n' "$STAGE" | bloque nginx | sed -n 's/^ *published: "//p' | tr -d '"' | tr '\n' ' ')"
+contiene "staging conserva el secret de alertas" "zeptomail_smtp_password" "$(printf '%s\n' "$STAGE" | bloque odoo)"
+contiene "staging desactiva SMTP de Odoo" 'ODOO_DISABLE_SMTP: "1"' "$(printf '%s\n' "$STAGE" | bloque odoo)"
+no_contiene "staging no incluye dnsmasq aunque pida LAN" "dnsmasq" "$(COMPOSE_PROFILES=lan servicios staging)"
+no_contiene "backup no se activa por defecto en staging" "backup" "$(servicios staging)"
+no_contiene "backup queda fuera del perfil de certificado" "backup" "$(COMPOSE_PROFILES=cert servicios staging)"
+contiene "backup queda disponible con restore" "backup" "$(COMPOSE_PROFILES=restore servicios staging)"
+contiene "backup está activo por defecto en producción" "backup" "$(servicios produccion)"
 
-# Con los dos perfiles: Compose PODA los secrets de un servicio inactivo, así que
-# preguntar solo por --profile cert contaría 4 en vez de los 7 que declara el
-# entrypoint. Lo que se afirma acá es la declaración, no una activación puntual.
-STGN=$(resuelto env.staging --profile cert --profile restore -f envs/staging.yaml)
+# DNS y aislamiento
+# Solo producción declara dnsmasq, y cada runtime recibe recursos con nombre propio.
+no_contiene "producción no activa dnsmasq por defecto" "dnsmasq" "$(servicios produccion)"
+contiene "producción activa dnsmasq con el perfil LAN" "dnsmasq" "$(COMPOSE_PROFILES=lan servicios produccion)"
 
-igual "resuelve sin error" "0" "$(docker compose --env-file tests/fixtures/env.staging -f envs/staging.yaml config -q >/dev/null 2>&1; echo $?)"
-igual "declara 7 secrets" "7" "$(printf '%s\n' "$STGN" | contar_secrets)"
-igual "sus stacks, y solo esos" "certbot cloudflared nginx odoo postgres " \
-  "$(servicios env.staging --profile cert -f envs/staging.yaml)"
-
-# Loopback y no la LAN: el :80 y el :443 de LOCAL_IP los tiene producción, que
-# convive en el mismo servidor. El ingreso público no pasa por acá — entra por el
-# túnel, que alcanza a nginx por nombre dentro de la red edge.
-igual "publica en loopback, no en la LAN" "127.0.0.1 127.0.0.1 " \
-  "$(printf '%s\n' "$STGN" | bloque nginx | binds)"
-igual "y en los puertos que no usa producción" "8080 8443 " \
-  "$(printf '%s\n' "$STGN" | bloque nginx | sed -n 's/^ *published: "//p' | tr -d '"' | tr '\n' ' ')"
-
-# Se siembra con datos reales de clientes, y la protección real es esta: un
-# .env clonado de producción no alcanza para mandarles correo, porque
-# ODOO_DISABLE_SMTP vive en environment: acá, no en .env — smtp_activo() lo
-# cubre aparte. El secret SÍ entra al contenedor —failure-notify.sh lo necesita
-# para avisar si cert-renew falla, y sin que algún servicio lo referencie
-# Compose lo poda entero de `docker compose config`, así que secrets-init.sh
-# nunca creaba el archivo—; con smtp_server forzado vacío, tenerlo montado no
-# habilita nada: no hay a dónde conectar.
-contiene    "odoo recibe la credencial SMTP igual"                "zeptomail_smtp_password" "$(printf '%s\n' "$STGN" | bloque odoo)"
-contiene    "un odoo.conf clonado no alcanza para mandar correo" 'ODOO_DISABLE_SMTP: "1"'  "$(printf '%s\n' "$STGN" | bloque odoo)"
-
-# dnsmasq no se incluye, y no alcanzaba con no activarle el perfil: corre sobre el
-# 53 con el stack de red del host y un .env copiado de producción lo levantaría.
-no_contiene "dnsmasq no está ni con el perfil activo" "dnsmasq" \
-  "$(COMPOSE_PROFILES=lan servicios env.staging -f envs/staging.yaml)"
-
-# =====================================================================
-titulo "prueba restaura, pero NO respalda"
-# =====================================================================
-
-# El trío que sostiene la garantía, y es estructural: timers.sh deriva qué units
-# corresponden de la composición SIN perfiles. Con backup ahí, un up-timers en
-# prueba dejaría una corrida nocturna escribiendo en el repositorio de producción.
-
-no_contiene "backup fuera de la composición por defecto" "backup" \
-  "$(servicios env.staging -f envs/staging.yaml)"
-
-no_contiene "y fuera de la que consulta timers.sh" "backup" \
-  "$(servicios env.staging --profile cert -f envs/staging.yaml)"
-
-contiene "pero alcanzable para restaurar" "backup" \
-  "$(servicios env.staging --profile restore -f envs/staging.yaml)"
-
-# El contraste: en producción sí está por defecto, y por eso sus timers se instalan.
-contiene "en producción sí está por defecto" "backup" \
-  "$(servicios env.production -f envs/production.yaml)"
-
-# =====================================================================
-titulo "dnsmasq entra solo si el cliente tiene LAN"
-# =====================================================================
-
-# La única variación por cliente del diseño, y vive en el .env — no en un
-# entrypoint aparte. Sin la clave, un deploy en VPS no levanta un DNS que no usa.
-igual "sin COMPOSE_PROFILES no está" "alloy backup cloudflared grafana loki nginx odoo postgres prometheus " \
-  "$(servicios env.production -f envs/production.yaml)"
-
-igual "con COMPOSE_PROFILES=lan sí está" "alloy backup cloudflared dnsmasq grafana loki nginx odoo postgres prometheus " \
-  "$(COMPOSE_PROFILES=lan servicios env.production -f envs/production.yaml)"
-
-# =====================================================================
-titulo "reglas que cruzan los tres"
-# =====================================================================
-
-# El bind tiene que fallar cerrado: sin LOCAL_IP el ports: publicaba en 0.0.0.0,
-# que es exactamente lo que los principios prohíben.
-SIN_IP=$(mktemp)
-grep -v '^LOCAL_IP=' tests/fixtures/env.production > "$SIN_IP"
-SIN_LOCAL_IP=$(docker compose --env-file "$SIN_IP" -f envs/production.yaml config 2>/dev/null | bloque nginx | binds)
-rm -f "$SIN_IP"
-igual "sin LOCAL_IP el bind cae a loopback, no a 0.0.0.0" "127.0.0.1 127.0.0.1 " "$SIN_LOCAL_IP"
-
-# La identidad sale de .env en los tres, con un solo mecanismo que aprender: ni los
-# entrypoints ni los compose de stack declaran name:.
-igual "ningún compose declara name:" "0" \
-  "$(grep -rl '^name:' envs/ stacks/ 2>/dev/null | wc -l | tr -d ' ')"
-
-# El que atrapa un bind abierto es el conteo: un ports: sin IP no emite host_ip,
-# así que la ausencia de '0.0.0.0' sola no prueba nada — solo cubre el literal.
-# host_ip aparece únicamente dentro de un ports:, y el 0.0.0.0:2000 de las
-# métricas de cloudflared —que no publica nada— queda afuera.
-
-for caso in "producción:$PRODN" "prueba:$STGN" "development:$DEVN"; do
-  nombre="${caso%%:*}"; cfg="${caso#*:}"
-  no_contiene "$nombre no publica en 0.0.0.0" "host_ip: 0.0.0.0" "$cfg"
-  igual "$nombre nombra una IP en cada puerto publicado" \
-    "$(printf '%s\n' "$cfg" | grep -c 'published:')" \
-    "$(printf '%s\n' "$cfg" | grep -c 'host_ip:')"
+for entorno in desarrollo staging produccion; do
+  cfg=$(resuelto "$entorno")
+  printf '%s\n' "$cfg" | recursos | sort -u > "$TMP/$entorno.recursos"
+  esperado="odoo-$entorno"
+  contiene "$entorno tiene identidad Compose propia" "name: $esperado" "$cfg"
+  no_contiene "$entorno no tiene recursos sin prefijo" "name: edge" "$(printf '%s\n' "$cfg" | sed -n '/^networks:/,/^volumes:/p')"
+  igual "$entorno prefija cada red y volumen" "" "$(grep -v "^${esperado}_" "$TMP/$entorno.recursos" || true)"
 done
+igual "desarrollo no comparte recursos con staging" "" "$(comm -12 "$TMP/desarrollo.recursos" "$TMP/staging.recursos")"
+igual "desarrollo no comparte recursos con producción" "" "$(comm -12 "$TMP/desarrollo.recursos" "$TMP/produccion.recursos")"
+igual "staging no comparte recursos con producción" "" "$(comm -12 "$TMP/staging.recursos" "$TMP/produccion.recursos")"
 
-# =====================================================================
-titulo "las tres plantillas de .env"
-# =====================================================================
+# Selector legacy
+# Un COMPOSE_FILE raíz no puede cambiar la composición explícita elegida por ENTORNO.
+SELECTOR_ROOT="$TMP/checkout"
+mkdir -p "$SELECTOR_ROOT/runtime/desarrollo" "$SELECTOR_ROOT/scripts/lib"
+cp runtime/desarrollo/compose.yaml runtime/desarrollo/compose.env.example "$SELECTOR_ROOT/runtime/desarrollo/"
+mv "$SELECTOR_ROOT/runtime/desarrollo/compose.env.example" "$SELECTOR_ROOT/runtime/desarrollo/compose.env"
+ln -s "$PWD/stacks" "$SELECTOR_ROOT/stacks"
+cp scripts/lib/contexto.sh "$SELECTOR_ROOT/scripts/lib/contexto.sh"
+printf 'COMPOSE_FILE=runtime/produccion/compose.yaml\nCOMPOSE_PROJECT_NAME=legacy-root\n' > "$TMP/.env"
+LEGACY_SERVICIOS=$(cd "$TMP" && COMPOSE_FILE=runtime/produccion/compose.yaml ENTORNO=desarrollo \
+  "$SELECTOR_ROOT/scripts/lib/contexto.sh" compose config --services 2>/dev/null | sort | tr '\n' ' ')
+igual "el selector COMPOSE_FILE raíz no cambia desarrollo" "nginx odoo postgres " "$LEGACY_SERVICIOS"
 
-# Una plantilla por entorno es una copia por entorno: lo que puede pasar es que una
-# clave nueva entre en un compose de capa compartido y solo se sume a una. Compose
-# avisa por cada variable sin default que no esté declarada, así que ese warning
-# —vacío en las tres— es la prueba de que ninguna plantilla se quedó atrás.
-#
-# Las de `:?` no avisan: abortan con otro texto. Sin ese segundo patrón, una plantilla
-# a la que le falte un puerto pasaría el test con la salida de warnings vacía.
-
-for caso in "producción:production:envs/production.yaml" "prueba:staging:envs/staging.yaml" "development:development:envs/development.yaml"; do
-  nombre="${caso%%:*}"; resto="${caso#*:}"; plantilla="${resto%%:*}"; entrypoint="${resto#*:}"
-  igual "$nombre no deja variables sin declarar en su plantilla" "" \
-    "$(docker compose --env-file ".env.$plantilla.example" -f "$entrypoint" config -q 2>&1 | grep -iE 'is not set|is missing a value' | tr '\n' ' ')"
-  # El -f de arriba nunca ejerce el COMPOSE_FILE de la plantilla: sin esto, mover un
-  # compose y olvidar la plantilla pasa el test y falla en el servidor.
-  igual "$nombre apunta a su entrypoint desde la plantilla" "$entrypoint" \
-    "$(sed -n 's/^COMPOSE_FILE=//p' ".env.$plantilla.example")"
+# Ejemplos y archivos retirados
+# Las tres plantillas resuelven sin variables faltantes ni selectores de raíz.
+for entorno in desarrollo staging produccion; do
+  salida=$(docker compose --env-file "runtime/$entorno/compose.env.example" \
+    -f "runtime/$entorno/compose.yaml" config -q 2>&1)
+  no_contiene "$entorno no deja variables sin declarar" "is not set" "$salida"
+  no_contiene "$entorno no deja variables vacías requeridas" "is missing a value" "$salida"
+done
+for archivo in .env.development.example .env.staging.example .env.production.example \
+               envs/development.yaml envs/staging.yaml envs/production.yaml; do
+  igual "$archivo fue retirado" "0" "$([ ! -e "$archivo" ]; echo $?)"
 done
 
 resumen

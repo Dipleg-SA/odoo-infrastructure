@@ -1,0 +1,2 @@
+# Rutas del webhook por runtime
+# Desarrollo y staging no publican el receptor y conservan este archivo vacío.

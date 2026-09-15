@@ -18,22 +18,17 @@ services:
     networks:
       - edge
       - app
-    # --- Sin binds acá ---
-    # Qué se publica y en qué IP lo declara cada entrypoint: los puertos son del
-    # deployment, viven en su .env y ningún default sale versionado. cloudflared
-    # NO pasa por acá: llega por la red edge, por nombre de contenedor.
+    # Publicación declarada por runtime
+    # Cada entorno define sus puertos; cloudflared llega por la red edge.
 
-    # --- Config ---
-    # Archivos reales, gitignoreados, bootstrapeados con cp desde su .example —
-    # no plantillas: sin envsubst, sin NGINX_ENVSUBST_FILTER, valores editados
-    # a mano en el archivo mismo. Dos compartidos y uno que elige el modo:
-    # server-tls para producción y staging, server-plain para development, vía
-    # NGINX_MODE en .env.
+    # Configuración del runtime
+    # Los archivos con valores privados viven bajo runtime/<entorno>/config/nginx/.
 
     volumes:
-      - ./config/00-http.conf:/etc/nginx/conf.d/00-http.conf:ro
-      - ./config/odoo.locations:/etc/nginx/conf.d/odoo.locations:ro
-      - ./config/server-${NGINX_MODE:-tls}.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${RUNTIME_CONFIG_DIR:?falta RUNTIME_CONFIG_DIR}/nginx/00-http.conf:/etc/nginx/conf.d/00-http.conf:ro
+      - ${RUNTIME_CONFIG_DIR:?falta RUNTIME_CONFIG_DIR}/nginx/odoo.locations:/etc/nginx/conf.d/odoo.locations:ro
+      - ${RUNTIME_CONFIG_DIR:?falta RUNTIME_CONFIG_DIR}/nginx/addons-webhook.locations:/etc/nginx/conf.d/addons-webhook.locations:ro
+      - ${RUNTIME_CONFIG_DIR:?falta RUNTIME_CONFIG_DIR}/nginx/server-tls.conf:/etc/nginx/conf.d/default.conf:ro
       - letsencrypt:/etc/letsencrypt:ro
     healthcheck:
       test: ["CMD", "nginx", "-t"]
