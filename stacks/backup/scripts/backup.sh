@@ -16,8 +16,10 @@ if [ -n "${ENTORNO:-}" ] && [ -f scripts/lib/contexto.sh ]; then
   . scripts/lib/contexto.sh
   contexto_iniciar
   META_DIR="$RUNTIME_STATE_DIR/meta"
+  compose() { contexto_compose "$@"; }
 else
   META_DIR="state/meta"
+  compose() { docker compose "$@"; }
 fi
 
 if [ -f .env ]; then set -a; . ./.env; set +a; fi
@@ -73,15 +75,15 @@ else
   ui_warn "flock no disponible (macOS)" "corrida sin serializar" >&2
 fi
 
-res() { docker compose exec -T backup restic "$@"; }
-pg()  { docker compose exec -T postgres "$@"; }
+res() { compose exec -T backup restic "$@"; }
+pg()  { compose exec -T postgres "$@"; }
 
 # --- Marca de éxito ---
 # El exit code no es consultable desde Prometheus; esta marca sí. Escritura atómica:
 # el colector de textfile puede leer en cualquier momento y un archivo a medias lo rompe.
 
 marcar_exito() {
-  local dir="state/textfile" tmp
+  local dir="${RUNTIME_STATE_DIR:-state}/textfile" tmp
   mkdir -p "$dir"
   tmp=$(mktemp "$dir/.backup.XXXXXX")
   {
@@ -103,7 +105,7 @@ registrar_addons() {
   tmp=$(mktemp "$dir/.addons.XXXXXX" 2>/dev/null) || { ui_warn "no se pudo escribir el registro de addons" "" >&2; return 0; }
   error=$(mktemp "$dir/.addons-error.XXXXXX" 2>/dev/null) || { ui_warn "no se pudo escribir el diagnóstico de addons" "" >&2; rm -f "$tmp"; return 0; }
   if scripts/addons.sh status > "$tmp" 2> "$error"; then
-    if grep -E '^(enterprise|custom-addons|oca|third-party)[[:space:]]' "$tmp" > "$tmp.registro"; then
+    if grep -E '^(enterprise:|[[:alnum:]_.-]+[[:space:]]+(publicado|sin candidato)[[:space:]]+)' "$tmp" > "$tmp.registro"; then
       chmod 644 "$tmp.registro"
       mv -f "$tmp.registro" "$dir/addons.txt"
     else

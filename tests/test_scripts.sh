@@ -121,6 +121,32 @@ rm -f "$STUB_DIR/config"
 sale_con "sin composición legible aborta" 1 bash -c "cd '$ROOT' && ./scripts/secrets-init.sh"
 
 # =====================================================================
+titulo "secrets-init.sh — secretos del control plane"
+# =====================================================================
+
+ROOT_CONTROL=$(crear_root webhook secrets-init.sh)
+reset_stub
+cat > "$STUB_DIR/config" <<'EOF'
+secrets:
+  postgres_password:
+    file: /repo/secrets/postgres_password
+services:
+  addons-webhook:
+    volumes:
+      - source: /repo/runtime/control/secrets/addons_webhook_secret
+        target: /run/secrets/addons_webhook_secret
+EOF
+SALIDA=$( (cd "$ROOT_CONTROL" && ENTORNO=produccion ./scripts/secrets-init.sh 2>&1) )
+igual "crea el secret operativo de producción" "1" \
+  "$(find "$ROOT_CONTROL/runtime/produccion/secrets" -type f | wc -l | tr -d ' ')"
+igual "crea los cuatro secretos del control plane" "4" \
+  "$(find "$ROOT_CONTROL/runtime/control/secrets" -type f | wc -l | tr -d ' ')"
+igual "genera la firma del webhook" "0" \
+  "$(grep -qE '^[0-9a-f]{64}$' "$ROOT_CONTROL/runtime/control/secrets/addons_webhook_secret"; echo $?)"
+contiene "informa los marcadores Git del control plane" \
+  "runtime/control/secrets/git_readonly_key" "$SALIDA"
+
+# =====================================================================
 titulo "secrets-perms.sh --check"
 # =====================================================================
 
@@ -158,6 +184,22 @@ contiene "y nombra el GID esperado" "esperado 65532" "$SALIDA"
 
 rm -rf "$ROOT/runtime/desarrollo/secrets"
 sale_con "sin secrets/ aborta" 1 bash -c "cd '$ROOT' && ./scripts/secrets-perms.sh --check"
+
+# =====================================================================
+titulo "monitoring-role.sh — contexto y secreto del runtime"
+# =====================================================================
+
+ROOT_MON=$(crear_root monitoring)
+mkdir -p "$ROOT_MON/stacks/alloy/scripts" "$ROOT_MON/runtime/produccion/secrets"
+ROOT_MON="$(cd "$ROOT_MON" && pwd -P)"
+cp "$REPO_ROOT/stacks/alloy/scripts/monitoring-role.sh" "$ROOT_MON/stacks/alloy/scripts/"
+printf 'password-de-prueba\n' > "$ROOT_MON/runtime/produccion/secrets/postgres_exporter_password"
+chmod 640 "$ROOT_MON/runtime/produccion/secrets/postgres_exporter_password"
+reset_stub
+SALIDA=$( (cd "$ROOT_MON" && ENTORNO=produccion ./stacks/alloy/scripts/monitoring-role.sh 2>&1) )
+contiene "monitoring-role usa el secreto del runtime" "monitoring-role listo" "$SALIDA"
+contiene "monitoring-role usa la composición del entorno" \
+  "-f $ROOT_MON/runtime/produccion/compose.yaml" "$(llamadas)"
 
 # =====================================================================
 titulo "config-init.sh — qué stack está activo decide qué bootstrapea"

@@ -15,6 +15,8 @@ contexto_iniciar
 umask 077
 SECRETS_DIR="$RUNTIME_SECRETS_DIR"
 SECRETS_VISIBLE="runtime/$ENTORNO/secrets"
+CONTROL_DIR="$PWD/runtime/control/secrets"
+CONTROL_VISIBLE="runtime/control/secrets"
 mkdir -p "$SECRETS_DIR"
 
 MARK="CAMBIAR"
@@ -29,7 +31,12 @@ creados=()
 # configuracion() fusiona los perfiles en la variable, no con --profile: un
 # --profile explícito reemplaza a COMPOSE_PROFILES en vez de sumarse.
 
-DECLARADOS=$(configuracion | sed -n 's|^ *file: .*/secrets/\([a-z0-9_]*\)$|\1|p')
+CONFIGURACION=$(configuracion)
+DECLARADOS=$(printf '%s\n' "$CONFIGURACION" | sed -n 's|^ *file: .*/secrets/\([a-z0-9_]*\)$|\1|p')
+CONTROL_ACTIVO=0
+if printf '%s\n' "$CONFIGURACION" | grep -qE '^  addons-webhook:$'; then
+  CONTROL_ACTIVO=1
+fi
 
 if [ -z "$DECLARADOS" ]; then
   ui_bad "no se pudo leer los secrets de la composición" "revisar ENTORNO y runtime/$ENTORNO/compose.env" >&2
@@ -57,12 +64,35 @@ nuevo() {
   return 0
 }
 
+# Secretos del receptor de candidatos
+# El webhook usa runtime/control y no pertenece a un entorno operativo.
+nuevo_control() {
+  [ "$CONTROL_ACTIVO" -eq 1 ] || return 1
+  if [ -e "$CONTROL_DIR/$1" ]; then
+    ui_skip "skip (ya existe): $CONTROL_VISIBLE/$1"
+    return 1
+  fi
+  mkdir -p "$CONTROL_DIR"
+  cat > "$CONTROL_DIR/$1"
+  ui_ok "creado: $CONTROL_VISIBLE/$1"
+  return 0
+}
+
 # --- Generador ---
 # hex y no base64: los / + = de base64 rompen cualquier consumidor que arme una URI
 # con la credencial adentro (lo encontró el exporter de Postgres en su momento).
 # 32 bytes = 256 bits, misma entropía que antes.
 
 genpass() { openssl rand -hex 32 | tr -d '\n'; }
+
+# Bootstrap del control plane
+# La firma se deriva; Git y SSH quedan como marcadores para carga manual.
+if [ "$CONTROL_ACTIVO" -eq 1 ]; then
+  nuevo_control addons_webhook_secret < <(genpass) || true
+  for s in git_readonly_token git_readonly_key git_known_hosts; do
+    nuevo_control "$s" < <(printf '%s' "$MARK") || true
+  done
+fi
 
 # --- Password de Postgres ---
 # Lo lee el motor y lo lee Odoo: un solo valor, un solo archivo.
@@ -106,9 +136,14 @@ EOF
 
 ui_plan_end
 pendientes=$(grep -rl "$MARK" "$SECRETS_DIR/" 2>/dev/null | sed "s|$SECRETS_DIR/||" | sort || true)
-if [ -n "$pendientes" ]; then
+pendientes_control=""
+if [ "$CONTROL_ACTIVO" -eq 1 ]; then
+  pendientes_control=$(grep -rl "$MARK" "$CONTROL_DIR/" 2>/dev/null | sed "s|$CONTROL_DIR/||" | sort || true)
+fi
+if [ -n "$pendientes" ] || [ -n "$pendientes_control" ]; then
   ui_warn "Falta cargar el valor real en:" ""
-  printf '  %s\n' $pendientes
+  [ -z "$pendientes" ] || printf '  %s\n' $pendientes
+  [ -z "$pendientes_control" ] || sed 's|^|  runtime/control/secrets/|' <<<"$pendientes_control"
   echo
   echo "Después: sudo make secrets-perms && make secrets-check"
 else

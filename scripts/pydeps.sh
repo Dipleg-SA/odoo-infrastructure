@@ -10,7 +10,19 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 . scripts/lib/ui.sh
 
 REQUIREMENTS="${PYDEPS_REQUIREMENTS:-addons/requirements.txt}"
-SNAPSHOT_ROOT="${PYDEPS_SNAPSHOT_ROOT:-addons}"
+
+# Snapshot del runtime
+# Los comandos manuales leen candidatos del entorno; el build puede inyectar otra raíz.
+if [ -n "${PYDEPS_SNAPSHOT_ROOT:-}" ]; then
+  SNAPSHOT_ENTERPRISE_ROOT="$PYDEPS_SNAPSHOT_ROOT/enterprise"
+  SNAPSHOT_CUSTOM_ROOT="$PYDEPS_SNAPSHOT_ROOT/custom"
+elif [ -n "${ENTORNO:-}" ]; then
+  SNAPSHOT_ENTERPRISE_ROOT="runtime/addons/enterprise"
+  SNAPSHOT_CUSTOM_ROOT="runtime/addons/custom/$ENTORNO"
+else
+  SNAPSHOT_ENTERPRISE_ROOT="addons/enterprise"
+  SNAPSHOT_CUSTOM_ROOT="addons/custom"
+fi
 
 # --- Bootstrap desde la plantilla ---
 # No se versiona —es local al deployment, como addons.txt—, así que se copia una vez.
@@ -28,7 +40,7 @@ require_requirements() {
 manifest_files() {
   local root category
   local modernos=0
-  for root in "$SNAPSHOT_ROOT/enterprise" "$SNAPSHOT_ROOT/custom"; do
+  for root in "$SNAPSHOT_ENTERPRISE_ROOT" "$SNAPSHOT_CUSTOM_ROOT"; do
     [ -d "$root" ] || continue
     modernos=1
     find "$root" -name __manifest__.py -type f -print 2>/dev/null || true

@@ -42,6 +42,7 @@ pinear() { printf '%s\n' "$2" >> "$1/addons/requirements.txt"; }
 
 check()      { (cd "$1" && ./scripts/pydeps.sh check 2>&1); }
 check_code() { (cd "$1" && ./scripts/pydeps.sh check >/dev/null 2>&1; echo $?); }
+check_env_code() { (cd "$1" && ENTORNO="$2" ./scripts/pydeps.sh check >/dev/null 2>&1; echo $?); }
 sync_()      { (cd "$1" && PATH="$REPO_ROOT/tests/stubs:$PATH" STUB_DIR="$2" ./scripts/pydeps.sh sync 2>&1); }
 sync_code()  { (cd "$1" && PATH="$REPO_ROOT/tests/stubs:$PATH" STUB_DIR="$2" ./scripts/pydeps.sh sync >/dev/null 2>&1; echo $?); }
 
@@ -54,6 +55,18 @@ declarar_modulo "$ROOT" custom-addons mi_modulo
 
 igual "sale con 0" "0" "$(check_code "$ROOT")"
 contiene "y lo dice" "cubre lo que declaran" "$(check "$ROOT")"
+
+# =====================================================================
+titulo "check: manifiestos bajo runtime/addons"
+# =====================================================================
+
+ROOT=$(crear_checkout caso_runtime)
+mkdir -p "$ROOT/runtime/addons/custom/staging/ventas"
+printf "{'name': 'ventas', 'external_dependencies': {'python': ['httpx']}}\n" \
+  > "$ROOT/runtime/addons/custom/staging/ventas/__manifest__.py"
+pinear "$ROOT" "httpx==0.28.1"
+declarar_modulo "$ROOT" custom-addons legado paquete_que_no_debe_leerse
+igual "staging lee el candidato del runtime" "0" "$(check_env_code "$ROOT" staging)"
 
 # =====================================================================
 titulo "check: falta un pin"

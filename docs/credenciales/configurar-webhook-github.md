@@ -16,10 +16,14 @@ Generá un secreto aleatorio y guardalo en el archivo privado de firma del runti
 
 ```bash
 ENTORNO=produccion make secrets-init
-$EDITOR runtime/control/secrets/github_webhook_secret
+$EDITOR runtime/control/secrets/addons_webhook_secret
 sudo ENTORNO=produccion make secrets-perms
 ENTORNO=produccion make addons-webhook-verify
 ```
+
+El mismo bootstrap deja los archivos `git_readonly_token`, `git_readonly_key` y
+`git_known_hosts` bajo `runtime/control/secrets/`; cargá allí las credenciales de
+lectura del catálogo antes de ejecutar `secrets-check`.
 
 El receptor valida `X-Hub-Signature-256`, repositorio, rama y línea mayor antes de usar Git. El repositorio Enterprise no se registra como catálogo ni como webhook.
 

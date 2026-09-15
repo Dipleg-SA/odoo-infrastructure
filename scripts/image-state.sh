@@ -21,6 +21,16 @@ case "${1:-}" in
 esac
 
 STATE_FILE="$RUNTIME_STATE_DIR/images.json"
+IMAGE_TAG_PATTERN='^[a-z0-9][a-z0-9./_-]*:[A-Za-z0-9][A-Za-z0-9._-]*$'
+
+# Referencia de imagen válida
+# Evita que una etiqueta se convierta en sintaxis ejecutable al cargar compose.env.
+validar_tag() {
+  [[ "$1" =~ $IMAGE_TAG_PATTERN ]] || {
+    printf 'referencia de imagen inválida: %s\n' "$1" >&2
+    return 1
+  }
+}
 
 # Escritura atómica
 # Un archivo temporal y rename evitan estados JSON truncados ante un corte.
@@ -44,10 +54,18 @@ transition() {
   local action="$1" argument="${2:-}"
   ensure_state
   python3 - "$STATE_FILE" "$action" "$argument" <<'PY'
-import datetime, json, os, pathlib, sys, tempfile
+import datetime, json, os, pathlib, re, sys, tempfile
 state, action, argument = sys.argv[1:]
 path = pathlib.Path(state)
 data = json.loads(path.read_text(encoding="utf-8"))
+image_tag = re.compile(r"^[a-z0-9][a-z0-9./_-]*:[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+def validar_ranuras(value):
+    for key in ("Nueva", "Actual", "Anterior"):
+        slot = value.get(key)
+        if slot is not None and (not isinstance(slot, dict) or not isinstance(slot.get("tag"), str) or not image_tag.fullmatch(slot["tag"])):
+            raise SystemExit(f"{key} tiene una referencia de imagen inválida")
+
 for key, default in (("Nueva", None), ("Actual", None), ("Anterior", None), ("validation", None), ("rollback_blocked", False), ("module_operations", [])):
     data.setdefault(key, default)
 now = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -77,6 +95,7 @@ elif action == "restore-meta":
     data["Nueva"], data["rollback_blocked"] = None, False
     data["module_operations"] = []
 else: raise SystemExit("transición inválida")
+validar_ranuras(data)
 if action != "require-actual":
     fd, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=str(path.parent))
     with os.fdopen(fd, "w", encoding="utf-8") as output:
@@ -90,15 +109,17 @@ PY
 # La referencia que consume Compose queda escrita junto al runtime después de cada transición.
 sync_compose_image() {
   local tag="$1"
+  validar_tag "$tag"
   python3 - "$RUNTIME_ENV_FILE" "$tag" <<'PY'
-import pathlib, sys
+import pathlib, shlex, sys
 path, tag = pathlib.Path(sys.argv[1]), sys.argv[2]
+safe_tag = shlex.quote(tag)
 lines = path.read_text(encoding="utf-8").splitlines()
 for i, line in enumerate(lines):
     if line.startswith("ODOO_IMAGE="):
-        lines[i] = "ODOO_IMAGE=" + tag; break
+        lines[i] = "ODOO_IMAGE=" + safe_tag; break
 else:
-    lines.extend(["", "# Imagen Odoo", "# Referencia promovida por image-state.sh.", "ODOO_IMAGE=" + tag])
+    lines.extend(["", "# Imagen Odoo", "# Referencia promovida por image-state.sh.", "ODOO_IMAGE=" + safe_tag])
 path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 PY
 }
@@ -124,7 +145,7 @@ PY
     [ -n "${2:-}" ] || { printf 'uso: %s write-new <json|archivo>\n' "$(basename "$0")" >&2; exit 2; }
     ensure_state
     python3 - "$STATE_FILE" "$2" <<'PY' > "${STATE_FILE}.payload"
-import json, pathlib, sys
+import json, pathlib, re, sys
 state = pathlib.Path(sys.argv[1])
 candidate = sys.argv[2]
 try:
@@ -134,6 +155,8 @@ except (OSError, json.JSONDecodeError) as exc:
 required = {"tag", "digest", "odoo_version", "base_image", "infra_commit", "enterprise_tag", "enterprise_commit", "addons", "built_at"}
 if not isinstance(payload, dict) or not required.issubset(payload):
     raise SystemExit("procedencia incompleta")
+if not isinstance(payload.get("tag"), str) or not re.fullmatch(r"^[a-z0-9][a-z0-9./_-]*:[A-Za-z0-9][A-Za-z0-9._-]*$", payload["tag"]):
+    raise SystemExit("referencia de imagen inválida")
 if not isinstance(payload["addons"], dict):
     raise SystemExit("addons debe ser un mapa de dominios y commits")
 data = json.loads(state.read_text(encoding="utf-8"))
@@ -146,11 +169,12 @@ PY
   validate)
     ensure_state
     python3 - "$STATE_FILE" <<'PY'
-import json, sys
+import json, re, sys
 data = json.load(open(sys.argv[1], encoding="utf-8"))
+image_tag = re.compile(r"^[a-z0-9][a-z0-9./_-]*:[A-Za-z0-9][A-Za-z0-9._-]*$")
 for key in ("Nueva", "Actual", "Anterior"):
     value = data.get(key)
-    if value is not None and not isinstance(value, dict):
+    if value is not None and (not isinstance(value, dict) or not isinstance(value.get("tag"), str) or not image_tag.fullmatch(value["tag"])):
         raise SystemExit(f"{key} inválida")
 print("estado de imágenes válido")
 PY
