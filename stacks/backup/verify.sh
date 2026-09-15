@@ -11,7 +11,7 @@
 # one-off y esos dos chequeos fallarían por la razón equivocada.
 
 respalda() {
-  docker compose config --services 2>/dev/null | grep -qx backup
+  contexto_compose config --services 2>/dev/null | grep -qx backup
 }
 
 v_backup() {
@@ -59,10 +59,10 @@ v_backup() {
 
   if respalda; then
     expect "repo de restic con snapshots de este stack" "$COMPOSE_PROJECT_NAME" \
-      docker compose exec -T backup restic snapshots --latest 1
+      contexto_compose exec -T backup restic snapshots --latest 1
   else
     expect "repo de restic alcanzable, con algo que restaurar" "snapshots" \
-      docker compose run --rm --entrypoint restic -T backup snapshots --latest 1
+      contexto_compose run --rm --entrypoint restic -T backup snapshots --latest 1
   fi
 
   # --- Las dos mitades en el mismo snapshot ---
@@ -79,7 +79,7 @@ v_backup() {
     # --latest 1 devuelve el más nuevo DE CADA GRUPO. Se midió: un backup que se
     # olvidaba el dump pasaba igual, porque el snapshot viejo con el dump seguía
     # apareciendo en la respuesta y tapaba al nuevo.
-    rutas=$(docker compose exec -T backup restic snapshots latest --json 2>/dev/null)
+    rutas=$(contexto_compose exec -T backup restic snapshots latest --json 2>/dev/null)
     case "$rutas" in
       *'/data/dump'*)
         case "$rutas" in

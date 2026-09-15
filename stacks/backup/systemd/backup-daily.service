@@ -1,6 +1,7 @@
-# Plantilla: `sudo make timers-install` inyecta la ruta del checkout y el prefijo
-# del proyecto en el nombre. No se instala copiando este archivo a mano.
-# Corre como root: necesita acceso al socket de Docker.
+# Plantilla de unidad
+# timers.sh rellena ruta, entorno y nombre antes de instalarla.
+# Permisos de ejecución
+# Corre como root para acceder al socket Docker.
 
 [Unit]
 Description=Backup diario Odoo (dump + filestore en un snapshot, restic + prune)
@@ -11,4 +12,5 @@ After=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=CAMBIAR-en-deploy
+Environment=ENTORNO=CAMBIAR-entorno
 ExecStart=CAMBIAR-en-deploy/stacks/backup/scripts/backup.sh daily

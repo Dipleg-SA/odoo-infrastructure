@@ -5,16 +5,12 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
 . scripts/lib/ui.sh
+. scripts/lib/contexto.sh
+contexto_iniciar
 
-# --- Entorno ---
-# Como el resto de los scripts: los valores por deployment salen de .env, nunca
-# de la shell del operador, para que el timer de systemd vea exactamente lo mismo.
+: "${PUBLIC_HOSTNAME:?falta en runtime/$ENTORNO/compose.env}"
 
-if [ -f .env ]; then set -a; . ./.env; set +a; fi
-
-: "${PUBLIC_HOSTNAME:?falta en .env — sin hostname no hay certificado que emitir}"
-
-certbot() { docker compose --profile cert run --rm -T certbot "$@"; }
+certbot() { COMPOSE_PROFILES="${COMPOSE_PROFILES:+$COMPOSE_PROFILES,}cert" contexto_compose run --rm -T certbot "$@"; }
 
 # --- Métrica de vencimiento ---
 # Única fuente de la alerta de vencimiento. Mide lo que certbot tiene en disco,
@@ -22,7 +18,7 @@ certbot() { docker compose --profile cert run --rm -T certbot "$@"; }
 # reload de abajo y el chequeo contra el socket real de odoo-verify.
 
 escribir_metrica() {
-  local dir="state/textfile" tmp fin epoch
+  local dir="$RUNTIME_STATE_DIR/textfile" tmp fin epoch
   fin=$(certbot certificates 2>/dev/null | sed -n 's/.*Expiry Date: \([^ ]* [^ ]*\).*/\1/p' | head -1)
   [ -n "$fin" ] || { ui_warn "no se pudo leer la fecha de vencimiento" "sin métrica" >&2; return 0; }
   epoch=$(date -u -d "$fin" +%s 2>/dev/null || date -u -j -f '%Y-%m-%d %H:%M:%S' "$fin" +%s 2>/dev/null) || {
@@ -44,11 +40,11 @@ escribir_metrica() {
 # vence. Best-effort: si nginx no está arriba no hay nada que recargar.
 
 recargar_nginx() {
-  if [ -z "$(docker compose ps -q nginx 2>/dev/null)" ]; then
+  if [ -z "$(contexto_compose ps -q nginx 2>/dev/null)" ]; then
     ui_warn "nginx no está corriendo" "no hay nada que recargar" >&2
     return 0
   fi
-  docker compose exec -T nginx nginx -s reload
+  contexto_compose exec -T nginx nginx -s reload
 }
 
 cmd_issue() {

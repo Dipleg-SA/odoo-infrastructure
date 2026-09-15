@@ -5,13 +5,8 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 . scripts/lib/ui.sh
-
-# --- Valores por deployment ---
-# De .env, como verify.sh: el nombre de las units no puede depender de la shell.
-
-if [ -f .env ]; then
-  set -a; . ./.env; set +a
-fi
+. scripts/lib/contexto.sh
+contexto_iniciar || exit $?
 
 VERBO="${1:-}"
 DESTINO="${SYSTEMD_DIR:-/etc/systemd/system}"
@@ -35,7 +30,7 @@ ubicar() {
 
 PROYECTO="${COMPOSE_PROJECT_NAME:-}"
 if [ -z "$PROYECTO" ]; then
-  ui_bad "falta COMPOSE_PROJECT_NAME en .env" "sin él las units no tienen nombre propio" >&2
+  ui_bad "falta COMPOSE_PROJECT_NAME" "revisar runtime/$ENTORNO/compose.env" >&2
   exit 2
 fi
 
@@ -44,10 +39,10 @@ fi
 # 'backup' respalda y el que trae 'certbot' renueva. Development no trae ninguno.
 
 bases() {
-  local servicios
-  servicios=$(docker compose --profile cert config --services 2>/dev/null)
+  local servicios perfiles="${COMPOSE_PROFILES:-}"
+  servicios=$(COMPOSE_PROFILES="${perfiles:+$perfiles,}cert" contexto_compose config --services 2>/dev/null)
   if [ -z "$servicios" ]; then
-    ui_bad "no se pudo leer la composición" "revisar COMPOSE_FILE en .env" >&2
+    ui_bad "no se pudo leer la composición" "revisar ENTORNO y runtime/$ENTORNO/compose.env" >&2
     return 1
   fi
   printf '%s\n' "$servicios" | grep -qx backup  && printf 'backup-daily\nbackup-monthly\n'
@@ -78,6 +73,7 @@ instalar_archivo() {
     return 1
   fi
   sed -e "s|CAMBIAR-en-deploy|$PWD|g" \
+      -e "s|CAMBIAR-entorno|$ENTORNO|g" \
       -e "s|^OnFailure=|OnFailure=$PROYECTO-|" \
       "$origen" > "$destino" || return $?
   chmod 644 "$destino"

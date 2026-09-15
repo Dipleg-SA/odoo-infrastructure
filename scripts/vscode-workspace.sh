@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
-# --- Workspace de VS Code por checkout ---
-# Un folder por custom-addons/oca/third-party, uno para 'addons/' (enterprise +
-# addons.txt + requirements.txt) y la raíz de infra — generado desde .env, nunca a mano.
+# Workspace de VS Code por checkout
+# Un folder por categoría y la raíz de infra, generado desde runtime/compose.env.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 . scripts/lib/ui.sh
-
-if [ -f .env ]; then . ./.env; fi
-: "${COMPOSE_PROJECT_NAME:?declarar COMPOSE_PROJECT_NAME en .env}"
+. scripts/lib/contexto.sh
+contexto_iniciar
 
 ROOT="$(pwd)"
 OUT="$COMPOSE_PROJECT_NAME.code-workspace"

@@ -6,18 +6,19 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 . scripts/lib/ui.sh
+. scripts/lib/contexto.sh
+contexto_iniciar
 
 UNIT="${1:-desconocida}"
 
-# --- Config ---
-# El remitente/destinatario varían por deployment; la credencial es un secret.
+# Configuración SMTP
+# El runtime seleccionado aporta los campos de alerta y la credencial privada.
 
-set -a; . ./.env; set +a
-: "${ALERT_EMAIL_FROM:?falta en .env — sin remitente no hay aviso de fallo}"
-: "${ALERT_EMAIL_TO:?falta en .env — sin destinatario no hay aviso de fallo}"
-: "${SMTP_USER:?falta en .env — sin usuario SMTP no hay aviso de fallo}"
-: "${SMTP_HOST:?falta en .env — sin host SMTP no hay aviso de fallo}"
-SMTP_PASS="$(cat secrets/zeptomail_smtp_password)"
+: "${ALERT_EMAIL_FROM:?falta en runtime/$ENTORNO/compose.env}"
+: "${ALERT_EMAIL_TO:?falta en runtime/$ENTORNO/compose.env}"
+: "${SMTP_USER:?falta en runtime/$ENTORNO/compose.env}"
+: "${SMTP_HOST:?falta en runtime/$ENTORNO/compose.env}"
+SMTP_PASS="$(cat "$RUNTIME_SECRETS_DIR/zeptomail_smtp_password")"
 
 ui_plan_start "failure-notify: $UNIT"
 ui_step 1 "Envío del aviso de fallo por SMTP a $ALERT_EMAIL_TO."

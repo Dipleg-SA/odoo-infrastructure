@@ -7,12 +7,8 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 . scripts/lib/ui.sh
-
-if [ -f .env ]; then
-  set -a
-  . ./.env
-  set +a
-fi
+. scripts/lib/contexto.sh
+contexto_iniciar
 
 ACCION="${1:-}"
 MODULOS="${MODULES:-}"
@@ -86,7 +82,7 @@ liberar_lock() {
 }
 
 python_operacion() {
-  docker compose run --rm --name odoo-oneoff \
+  contexto_compose run --rm --name odoo-oneoff \
     -e "ODOO_OPERATION=$ACCION" \
     -e "ODOO_MODULES=$MODULOS" \
     -e "ODOO_PHASE=$1" \
@@ -161,7 +157,7 @@ levantar_odoo() {
     return "$estado_original"
   fi
 
-  if ui_run "levantar Odoo" docker compose up -d odoo; then
+  if ui_run "levantar Odoo" contexto_compose up -d odoo; then
     estado_up=0
   else
     estado_up=$?
@@ -199,7 +195,7 @@ trap limpiar EXIT
 
 ui_start "addons-$ACCION $MODULOS"
 ODOO_DETENIDO=1
-if ui_run "detener Odoo" docker compose stop odoo; then
+if ui_run "detener Odoo" contexto_compose stop odoo; then
   :
 else
   estado_detener=$?

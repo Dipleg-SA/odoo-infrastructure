@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
-# Crea el esqueleto de secrets/: genera los derivables y deja plantillas con el
-# marcador CAMBIAR para los que se pegan a mano. Idempotente — nunca pisa nada.
+# Secretos privados por runtime
+# Genera los derivables y deja marcadores solo para valores que carga el operador.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 . scripts/lib/ui.sh
+. scripts/lib/contexto.sh
 . scripts/lib/compose.sh
+contexto_iniciar
 
 # --- Umask ---
 # Lo que se cree acá nace 600; secrets-perms le pone 640 y el grupo consumidor.
 
 umask 077
-mkdir -p secrets
+SECRETS_DIR="$RUNTIME_SECRETS_DIR"
+SECRETS_VISIBLE="runtime/$ENTORNO/secrets"
+mkdir -p "$SECRETS_DIR"
 
 MARK="CAMBIAR"
 creados=()
@@ -28,29 +32,27 @@ creados=()
 DECLARADOS=$(configuracion | sed -n 's|^ *file: .*/secrets/\([a-z0-9_]*\)$|\1|p')
 
 if [ -z "$DECLARADOS" ]; then
-  ui_bad "no se pudo leer los secrets de la composición" "revisar COMPOSE_FILE en .env" >&2
+  ui_bad "no se pudo leer los secrets de la composición" "revisar ENTORNO y runtime/$ENTORNO/compose.env" >&2
   exit 1
 fi
 
-ENTORNO=$(sed -n 's|^COMPOSE_FILE=envs/\(.*\)\.yaml$|\1|p' .env 2>/dev/null)
-
 ui_plan_start "secrets-init"
-ui_step 1 "Creación de secretos${ENTORNO:+ para entorno $ENTORNO}. Si alguno existe, se omite la creación."
+ui_step 1 "Creación de secretos para entorno $ENTORNO. Si alguno existe, se omite la creación."
 
-# --- Helper ---
-# Escribe solo si el archivo no existe y este stack lo declara; stdin trae el contenido.
+# Escritura idempotente
+# Crea solo los secretos declarados por la composición seleccionada.
 
 nuevo() {
   if ! printf '%s\n' "$DECLARADOS" | grep -qx "$1"; then
-    ui_skip "omitido (este stack no lo declara): secrets/$1"
+    ui_skip "omitido (este runtime no lo declara): $SECRETS_VISIBLE/$1"
     return 1
   fi
-  if [ -e "secrets/$1" ]; then
-    ui_skip "skip (ya existe): secrets/$1"
+  if [ -e "$SECRETS_DIR/$1" ]; then
+    ui_skip "skip (ya existe): $SECRETS_VISIBLE/$1"
     return 1
   fi
-  cat > "secrets/$1"
-  ui_ok "creado: secrets/$1"
+  cat > "$SECRETS_DIR/$1"
+  ui_ok "creado: $SECRETS_VISIBLE/$1"
   creados+=("$1")
   return 0
 }
@@ -103,7 +105,7 @@ EOF
 # Solo lo que quedó con marcador necesita intervención antes de secrets-perms.
 
 ui_plan_end
-pendientes=$(grep -rl "$MARK" secrets/ 2>/dev/null | sed 's|secrets/||' | sort || true)
+pendientes=$(grep -rl "$MARK" "$SECRETS_DIR/" 2>/dev/null | sed "s|$SECRETS_DIR/||" | sort || true)
 if [ -n "$pendientes" ]; then
   ui_warn "Falta cargar el valor real en:" ""
   printf '  %s\n' $pendientes

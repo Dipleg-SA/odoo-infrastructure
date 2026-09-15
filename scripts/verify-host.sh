@@ -9,6 +9,21 @@
 
 . "$(dirname "${BASH_SOURCE[0]}")/lib/verify.sh"
 
+# --- Rotación de logs según el sistema ---
+# El chequeo del archivo del daemon solo aplica al Engine Linux.
+
+verificar_rotacion_daemon() {
+  local sistema="${1:-$(uname -s)}"
+  if [ "$sistema" != "Linux" ]; then
+    omitir "rotación de logs del daemon" "el chequeo de /etc/docker/daemon.json solo aplica a Linux"
+  elif rotacion_aplicada; then
+    ok "rotación de logs del daemon aplicada"
+  else
+    bad "rotación de logs del daemon aplicada" \
+        "sin max-size en ${DAEMON_JSON:-/etc/docker/daemon.json} — correr: sudo make host-init"
+  fi
+}
+
 v_host() {
   titulo "host"
 
@@ -38,45 +53,35 @@ v_host() {
   fi
 
   # --- Rotación de logs del daemon ---
-  # Default del daemon y no bloque por servicio: cubre todo contenedor presente y
-  # futuro. Es la red aparte contra un incidente de logging descontrolado.
+  # Límite global que cubre contenedores presentes y futuros.
 
-  if rotacion_aplicada; then
-    ok "rotación de logs del daemon aplicada"
-  else
-    bad "rotación de logs del daemon aplicada" \
-        "sin max-size en ${DAEMON_JSON:-/etc/docker/daemon.json} — correr: sudo make host-init"
-  fi
+  verificar_rotacion_daemon
 
-  # --- .env ---
-  # Compose interpola una variable vacía sin fallar; el síntoma aparece capas
-  # después. Ausente es peor que vacía: pasa el grep de abajo sin que nada la
-  # marque, así que se cruza además contra la plantilla del entorno.
+  # --- compose.env ---
+  # Las claves vacías o ausentes se comparan con la plantilla versionada.
 
   local vacias faltantes plantilla
-  vacias=$(grep -nE '^[A-Z0-9_]+=$' .env 2>/dev/null | cut -d: -f2 | tr '\n' ' ')
-  plantilla=".env.$(basename "${COMPOSE_FILE:-}" .yaml).example"
-  faltantes=$(claves_ausentes "$plantilla" .env)
-  if [ ! -f .env ]; then bad ".env presente" "no existe — cp .env.<entorno>.example .env"
+  vacias=$(grep -nE '^[A-Z0-9_]+=$' "$RUNTIME_ENV_FILE" 2>/dev/null | cut -d: -f2 | tr '\n' ' ')
+  plantilla="$RUNTIME_DIR/compose.env.example"
+  faltantes=$(claves_ausentes "$plantilla" "$RUNTIME_ENV_FILE")
+  if [ ! -f "$RUNTIME_ENV_FILE" ]; then bad "runtime/$ENTORNO/compose.env presente" "copiar compose.env.example y completar los valores"
   elif [ -n "$vacias" ] || [ -n "$faltantes" ]; then
-    bad ".env sin claves vacías ni ausentes" "vacías: ${vacias:-ninguna} · ausentes: ${faltantes:-ninguna} (contra $plantilla)"
-  else ok ".env sin claves vacías ni ausentes"; fi
+    bad "runtime/$ENTORNO/compose.env completo" "vacías: ${vacias:-ninguna} · ausentes: ${faltantes:-ninguna} (contra compose.env.example)"
+  else ok "runtime/$ENTORNO/compose.env sin claves vacías ni ausentes"; fi
 
   # --- Identidad del stack ---
-  # Un nombre vacío es una composición que no resuelve, no un nombre que falta: sin
-  # COMPOSE_PROJECT_NAME el proyecto sale del directorio del compose, siempre igual
-  # en toda máquina, y dos checkouts comparten volúmenes en silencio.
+  # Un nombre vacío hace que Compose rechace la identidad del proyecto.
 
   local proyecto
-  proyecto=$(docker compose config 2>/dev/null | sed -n 's/^name: //p' | head -1)
+  proyecto=$(contexto_compose config 2>/dev/null | sed -n 's/^name: //p' | head -1)
   if [ -z "$proyecto" ]; then
     bad "la composición resuelve" \
-        "COMPOSE_FILE=${COMPOSE_FILE:-sin declarar} no resuelve — ningún target del Makefile va a andar"
-  elif grep -qE '^COMPOSE_PROJECT_NAME=.+' .env 2>/dev/null; then
-    ok "identidad declarada en .env (proyecto: $proyecto, stacks: ${COMPOSE_FILE:-sin declarar})"
+        "runtime/$ENTORNO/compose.yaml no resuelve — revisar runtime/$ENTORNO/compose.env"
+  elif grep -qE '^COMPOSE_PROJECT_NAME=.+' "$RUNTIME_ENV_FILE" 2>/dev/null; then
+    ok "identidad declarada en runtime/$ENTORNO/compose.env (proyecto: $proyecto)"
   else
-    aviso "identidad declarada en .env" \
-          "falta COMPOSE_PROJECT_NAME — el proyecto sale del directorio del compose: $proyecto"
+    aviso "identidad declarada en runtime/$ENTORNO/compose.env" \
+          "falta COMPOSE_PROJECT_NAME — Compose resolvió el proyecto como $proyecto"
   fi
 
   # --- Secrets ---

@@ -12,14 +12,22 @@ ROOT="$TMP/checkout"
 FAKEBIN="$ROOT/fakebin"
 mkdir -p "$ROOT/scripts/lib" "$FAKEBIN"
 cp scripts/odoo-report-config.sh "$ROOT/scripts/"
-cp scripts/lib/ui.sh "$ROOT/scripts/lib/"
+cp scripts/lib/ui.sh scripts/lib/contexto.sh "$ROOT/scripts/lib/"
 cp scripts/lib/odoo-report.sh "$ROOT/scripts/lib/"
 chmod +x "$ROOT/scripts/odoo-report-config.sh"
 
-cat > "$ROOT/.env" <<'EOF'
-COMPOSE_FILE=envs/development.yaml
+mkdir -p "$ROOT/runtime/desarrollo"
+cat > "$ROOT/runtime/desarrollo/compose.yaml" <<'EOF'
+name: prueba-reportes
+services: {}
+EOF
+cat > "$ROOT/runtime/desarrollo/compose.env" <<'EOF'
+COMPOSE_PROJECT_NAME=prueba-reportes
 HTTP_PORT=8081
 REPORT_URL=http://odoo:8069
+RUNTIME_CONFIG_DIR=../../runtime/desarrollo/config
+RUNTIME_SECRETS_DIR=../../runtime/desarrollo/secrets
+RUNTIME_STATE_DIR=../../runtime/desarrollo/state
 EOF
 
 cat > "$ROOT/params" <<'EOF'
@@ -34,18 +42,25 @@ set -euo pipefail
 printf '%s\n' "$*" >> "$DOCKER_CALLS"
 
 [ "${1:-}" = compose ] || exit 1
+shift
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --env-file|-f) shift 2 ;;
+    *) break ;;
+  esac
+done
 
-if [ "${2:-}" = ps ]; then
+case "${1:-}" in
+  ps)
   printf 'odoo-id\n'
   exit 0
-fi
+  ;;
+  restart) exit 0 ;;
+  exec) shift ;;
+  *) exit 1 ;;
+esac
 
-if [ "${2:-}" = restart ]; then
-  exit 0
-fi
-
-[ "${2:-}" = exec ] || exit 1
-case "${4:-}" in
+case "${2:-}" in
   odoo)
     printf '{"status":"pass"}\n'
     ;;
@@ -72,7 +87,7 @@ esac
 EOF
 chmod +x "$FAKEBIN/docker"
 
-SALIDA=$(cd "$ROOT" && PATH="$FAKEBIN:$PATH" DOCKER_CALLS="$ROOT/docker-calls" PARAMS_STATE="$ROOT/params" ./scripts/odoo-report-config.sh 2>&1)
+SALIDA=$(cd "$ROOT" && PATH="$FAKEBIN:$PATH" ENTORNO=desarrollo DOCKER_CALLS="$ROOT/docker-calls" PARAMS_STATE="$ROOT/params" ./scripts/odoo-report-config.sh 2>&1)
 
 titulo "odoo-report-config.sh — URLs separadas y escritura idempotente"
 contiene "usa la URL interna" "report.url = http://odoo:8069" "$SALIDA"
@@ -83,7 +98,7 @@ contiene "escribe en Postgres" "exec -T postgres psql" "$(cat "$ROOT/docker-call
 contiene "recarga los workers" "reiniciar Odoo para recargar los parámetros" "$SALIDA"
 
 : > "$ROOT/docker-calls"
-SALIDA_REPETIDA=$(cd "$ROOT" && PATH="$FAKEBIN:$PATH" DOCKER_CALLS="$ROOT/docker-calls" PARAMS_STATE="$ROOT/params" ./scripts/odoo-report-config.sh 2>&1)
+SALIDA_REPETIDA=$(cd "$ROOT" && PATH="$FAKEBIN:$PATH" ENTORNO=desarrollo DOCKER_CALLS="$ROOT/docker-calls" PARAMS_STATE="$ROOT/params" ./scripts/odoo-report-config.sh 2>&1)
 contiene "segunda ejecución conserva la configuración" "URLs de reportes ya configuradas" "$SALIDA_REPETIDA"
 no_contiene "segunda ejecución no reinicia Odoo" "reiniciar Odoo para recargar los parámetros" "$SALIDA_REPETIDA"
 

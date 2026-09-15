@@ -17,7 +17,7 @@ v_cloudflared() {
   if ! corriendo cloudflared; then
     omitir "cloudflared con >=2 conexiones" "$(motivo cloudflared)"
   else
-    conns=$(docker compose logs cloudflared 2>/dev/null | grep -c "Registered tunnel connection")
+    conns=$(contexto_compose logs cloudflared 2>/dev/null | grep -c "Registered tunnel connection")
     if [ "${conns:-0}" -ge 2 ]; then ok "cloudflared con $conns conexiones registradas"
     elif [ "${conns:-0}" -eq 1 ]; then aviso "cloudflared con >=2 conexiones" "solo 1 — degradado"
     else bad "cloudflared con >=2 conexiones" "0 — el Tunnel no conecta"; fi

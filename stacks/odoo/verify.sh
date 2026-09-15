@@ -40,7 +40,7 @@ v_odoo() {
     omitir "smtp_server cargado en el runtime conf" "$(motivo odoo)"
   else
     expect "smtp_server cargado en el runtime conf" "smtp_server = " \
-      docker compose exec -T odoo grep "^smtp_server = .\+" /tmp/odoo-runtime.conf
+      contexto_compose exec -T odoo grep "^smtp_server = .\+" /tmp/odoo-runtime.conf
   fi
 
   if ! corriendo odoo; then
@@ -48,24 +48,24 @@ v_odoo() {
     omitir "web.base.url congelado" "$(motivo odoo)"
     omitir "REPORT_URL accesible desde Odoo" "$(motivo odoo)"
   else
-    expect "report.url configurado" "$REPORT_URL" docker compose exec -T postgres psql -U odoo -d odoo -Atc \
+    expect "report.url configurado" "$REPORT_URL" contexto_compose exec -T postgres psql -U odoo -d odoo -Atc \
       "SELECT value FROM ir_config_parameter WHERE key = 'report.url'"
     if [ "$ODOO_REPORT_URLS_OK" -eq 1 ]; then
-      expect "web.base.url configurado" "$PUBLIC_BASE_URL" docker compose exec -T postgres psql -U odoo -d odoo -Atc \
+      expect "web.base.url configurado" "$PUBLIC_BASE_URL" contexto_compose exec -T postgres psql -U odoo -d odoo -Atc \
         "SELECT value FROM ir_config_parameter WHERE key = 'web.base.url'"
     else
       aviso "web.base.url configurado" "$ODOO_REPORT_URL_ERROR"
     fi
-    expect "web.base.url congelado" "True" docker compose exec -T postgres psql -U odoo -d odoo -Atc \
+    expect "web.base.url congelado" "True" contexto_compose exec -T postgres psql -U odoo -d odoo -Atc \
       "SELECT value FROM ir_config_parameter WHERE key = 'web.base.url.freeze'"
-    expect "REPORT_URL accesible desde Odoo" "200" docker compose exec -T odoo \
+    expect "REPORT_URL accesible desde Odoo" "200" contexto_compose exec -T odoo \
       curl -sS -o /dev/null -w '%{http_code}' "$REPORT_URL/web/health"
   fi
 
   if ! corriendo odoo; then
     omitir "odoo sirve en :8069" "$(motivo odoo)"
   else
-    expect "odoo sirve en :8069" "200" docker compose exec -T odoo \
+    expect "odoo sirve en :8069" "200" contexto_compose exec -T odoo \
       curl -sS -o /dev/null -w '%{http_code}' http://localhost:8069/web/login
   fi
 

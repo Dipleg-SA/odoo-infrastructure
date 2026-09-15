@@ -23,7 +23,7 @@ services:
     secrets:
       - grafana_admin_password
       - zeptomail_smtp_password
-    # --- SMTP y destinatario, desde .env ---
+    # SMTP y destinatario desde el runtime
     # GF_SMTP_* pisa grafana.ini —mecanismo nativo de Grafana, no envsubst—, y
     # ALERT_EMAIL_TO lo expande Grafana mismo en contact-points.yaml. Mismos
     # valores que ya usan odoo y failure-notify.sh: un lugar donde cargarlos,
@@ -38,9 +38,9 @@ services:
 
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./config/grafana.ini:/etc/grafana/grafana.ini:ro
-      - ./config/provisioning:/etc/grafana/provisioning:ro
-      - ./config/dashboards:/var/lib/grafana/dashboards:ro
+      - ${RUNTIME_CONFIG_DIR:?falta RUNTIME_CONFIG_DIR}/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ${RUNTIME_CONFIG_DIR:?falta RUNTIME_CONFIG_DIR}/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ${RUNTIME_CONFIG_DIR:?falta RUNTIME_CONFIG_DIR}/grafana/dashboards:/var/lib/grafana/dashboards:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/api/health || exit 1"]
     restart: unless-stopped
