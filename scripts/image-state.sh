@@ -7,6 +7,19 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 . scripts/lib/contexto.sh
 contexto_iniciar
 
+# Exclusión de transiciones
+# Promoción, rollback y publicación de Nueva comparten el lock del entorno.
+case "${1:-}" in
+  write-new|apply|rollback|validate-image|invalidate-rollback|restore-meta)
+    if [ "${IMAGE_STATE_LOCK_HELD:-0}" != "1" ] && [ "${CANDIDATE_LOCK_HELD:-0}" != "1" ] \
+        && [ -f scripts/lib/candidate-lock.sh ]; then
+      . scripts/lib/candidate-lock.sh
+      candidate_lock_run "$ENTORNO" -- env IMAGE_STATE_LOCK_HELD=1 "$0" "$@"
+      exit $?
+    fi
+    ;;
+esac
+
 STATE_FILE="$RUNTIME_STATE_DIR/images.json"
 
 # Escritura atómica
@@ -22,7 +35,72 @@ write_state() {
 # Estado inicial
 # Las tres ranuras existen desde el primer uso para que los lectores no adivinen.
 ensure_state() {
-  [ -f "$STATE_FILE" ] || write_state '{"Nueva":null,"Actual":null,"Anterior":null,"validation":null}'
+  [ -f "$STATE_FILE" ] || write_state '{"Nueva":null,"Actual":null,"Anterior":null,"validation":null,"rollback_blocked":false,"module_operations":[]}'
+}
+
+# Transiciones y validación
+# Python conserva las ranuras y reemplaza el archivo completo antes de informar éxito.
+transition() {
+  local action="$1" argument="${2:-}"
+  ensure_state
+  python3 - "$STATE_FILE" "$action" "$argument" <<'PY'
+import datetime, json, os, pathlib, sys, tempfile
+state, action, argument = sys.argv[1:]
+path = pathlib.Path(state)
+data = json.loads(path.read_text(encoding="utf-8"))
+for key, default in (("Nueva", None), ("Actual", None), ("Anterior", None), ("validation", None), ("rollback_blocked", False), ("module_operations", [])):
+    data.setdefault(key, default)
+now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+if action == "apply":
+    if data["Nueva"] is None: raise SystemExit("no hay Nueva para aplicar")
+    data["Anterior"], data["Actual"], data["Nueva"] = data["Actual"], data["Nueva"], None
+    data["validation"], data["rollback_blocked"] = None, False
+elif action == "rollback":
+    if data["Anterior"] is None: raise SystemExit("no hay Anterior para reactivar")
+    if data.get("rollback_blocked"): raise SystemExit("rollback de imagen bloqueado por una operación de módulos")
+    data["Nueva"], data["Actual"], data["Anterior"] = None, data["Anterior"], data["Actual"]
+    data["validation"] = {"result": "rollback", "note": argument, "at": now}
+elif action == "validate":
+    if data["Actual"] is None: raise SystemExit("no hay Actual para validar")
+    data["validation"] = {"result": "ok", "note": argument, "at": now}
+elif action == "invalidate":
+    if data["Actual"] is None: raise SystemExit("no hay Actual para registrar la operación")
+    data["rollback_blocked"] = True
+    data["module_operations"].append({"operation": argument, "at": now})
+elif action == "require-actual":
+    if data["Actual"] is None: raise SystemExit("no hay imagen Actual declarada")
+elif action == "restore-meta":
+    source = pathlib.Path(argument)
+    restored = json.loads(source.read_text(encoding="utf-8"))
+    for key in ("Actual", "Anterior", "validation"):
+        data[key] = restored.get(key)
+    data["Nueva"], data["rollback_blocked"] = None, False
+    data["module_operations"] = []
+else: raise SystemExit("transición inválida")
+if action != "require-actual":
+    fd, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=str(path.parent))
+    with os.fdopen(fd, "w", encoding="utf-8") as output:
+        json.dump(data, output, ensure_ascii=False, sort_keys=True); output.write("\n")
+    os.replace(temporary, path)
+print(json.dumps(data, ensure_ascii=False, sort_keys=True))
+PY
+}
+
+# Sincronización del selector de Compose
+# La referencia que consume Compose queda escrita junto al runtime después de cada transición.
+sync_compose_image() {
+  local tag="$1"
+  python3 - "$RUNTIME_ENV_FILE" "$tag" <<'PY'
+import pathlib, sys
+path, tag = pathlib.Path(sys.argv[1]), sys.argv[2]
+lines = path.read_text(encoding="utf-8").splitlines()
+for i, line in enumerate(lines):
+    if line.startswith("ODOO_IMAGE="):
+        lines[i] = "ODOO_IMAGE=" + tag; break
+else:
+    lines.extend(["", "# Imagen Odoo", "# Referencia promovida por image-state.sh.", "ODOO_IMAGE=" + tag])
+path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+PY
 }
 
 case "${1:-}" in
@@ -77,8 +155,38 @@ for key in ("Nueva", "Actual", "Anterior"):
 print("estado de imágenes válido")
 PY
     ;;
+  apply)
+    resultado=$(transition apply)
+    tag=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["Actual"]["tag"])' <<<"$resultado")
+    sync_compose_image "$tag"
+    printf 'Nueva promovida a Actual: %s\n' "$tag"
+    ;;
+  rollback)
+    resultado=$(transition rollback "${2:-}")
+    tag=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["Actual"]["tag"])' <<<"$resultado")
+    sync_compose_image "$tag"
+    printf 'Anterior reactivada como Actual: %s\n' "$tag"
+    ;;
+  validate-image)
+    transition validate "${2:-validación manual}" >/dev/null
+    printf 'validación registrada para Actual\n'
+    ;;
+  invalidate-rollback)
+    transition invalidate "${2:-operación de módulos}" >/dev/null
+    printf 'rollback de imagen bloqueado: operación de módulos registrada\n'
+    ;;
+  require-actual)
+    transition require-actual >/dev/null
+    ;;
+  restore-meta)
+    [ -n "${2:-}" ] || { printf 'uso: %s restore-meta <archivo>\n' "$(basename "$0")" >&2; exit 2; }
+    resultado=$(transition restore-meta "$2")
+    tag=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["Actual"]["tag"])' <<<"$resultado")
+    sync_compose_image "$tag"
+    printf 'procedencia restaurada; Actual: %s\n' "$tag"
+    ;;
   *)
-    printf 'uso: %s show|get <ranura>|write-new <json|archivo>|validate\n' "$(basename "$0")" >&2
+    printf 'uso: %s show|get <ranura>|write-new <json|archivo>|validate|apply|rollback|validate-image|invalidate-rollback|require-actual|restore-meta\n' "$(basename "$0")" >&2
     exit 2
     ;;
 esac

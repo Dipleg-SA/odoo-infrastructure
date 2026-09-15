@@ -69,5 +69,8 @@ EOF
 igual "un registro válido deja exitoso el backup" "0" "$(codigo_backup "$ROOT")"
 igual "guarda solo las filas de worktrees" "custom-addons ventas 19.0 abc123 limpio" \
   "$(cat "$ROOT/state/meta/addons.txt")"
+igual "guarda la procedencia de imágenes" "0" "$([ -s "$ROOT/state/meta/images.json" ] && grep -q '"Actual"' "$ROOT/state/meta/images.json"; echo $?)"
+contiene "restore reaplica la procedencia de imágenes" "restore-meta" "$(cat "$REPO_ROOT/stacks/backup/scripts/restore.sh")"
+contiene "backup monta metadatos del runtime" "RUNTIME_STATE_DIR" "$(cat "$REPO_ROOT/stacks/backup/compose.yaml")"
 
 resumen

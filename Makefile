@@ -10,7 +10,7 @@ CONTEXTO_COMPOSE := scripts/lib/contexto.sh compose
 
 include .make/main.mk
 
-.PHONY: help up down logs ps nuke reset build \
+.PHONY: help up down logs ps nuke reset build apply-image rollback-image validate-image \
         secrets-init secrets-perms secrets-check config-init dev-workspace \
         odoo-report-config \
         host-init host-verify up-timers down-timers notify-test monitoring-role \
@@ -29,7 +29,7 @@ RUNTIME_TARGETS := secrets-init secrets-perms secrets-check config-init dev-work
                    backup-run backup-integrity restore repo-sync repo-status \
                    addons-install addons-update addons-uninstall addons-modules addons-deps \
                    require-backups require-restore require-not-production verify \
-                   up down logs ps nuke reset build
+                   up down logs ps nuke reset build apply-image rollback-image validate-image
 RUNTIME_TARGETS += $(foreach s,$(STACKS),$(s)-up $(s)-down $(s)-restart $(s)-logs $(s)-ps $(s)-verify)
 RUNTIME_TARGETS += $(foreach s,$(STACKS_ONESHOT),$(s)-logs $(s)-ps $(s)-verify)
 $(RUNTIME_TARGETS): require-entorno
@@ -213,8 +213,21 @@ repo-status: ## Muestra el estado de los addons
 # Todo stack construye la suya, aunque el Dockerfile sea un FROM pineado y nada más.
 # El build de odoo no clona nada: los addons entran por bind-mount, no por capa.
 
-build: ## Construye las imágenes propias de este stack
-	@. scripts/lib/ui.sh; ui_run "build" $(CONTEXTO_COMPOSE) build
+build: ## Construye la imagen Odoo desde la fotografía del entorno
+	scripts/build-odoo-image.sh
+
+apply-image: ## Promueve Nueva a Actual y levanta Odoo con esa referencia
+	@servicios=$$($(CONTEXTO_COMPOSE) config --services 2>/dev/null) || exit $$?; \
+	if grep -qx backup <<< "$$servicios"; then $(MAKE) backup-run; fi
+	scripts/image-state.sh apply
+	@. scripts/lib/ui.sh; ui_run "aplicar imagen" $(CONTEXTO_COMPOSE) up -d odoo
+
+rollback-image: ## Reactiva Anterior y levanta Odoo con esa referencia
+	scripts/image-state.sh rollback
+	@. scripts/lib/ui.sh; ui_run "revertir imagen" $(CONTEXTO_COMPOSE) up -d odoo
+
+validate-image: ## Registra la validación manual de Actual
+	scripts/image-state.sh validate-image "$(NOTE)"
 
 # --- [STACK:addons] Dependencias Python ---
 # check es puro host (corre en 'make test'); sync necesita Docker para resolver

@@ -50,13 +50,13 @@
 
 ## Fase 6: US4 — Promover y revertir versiones de forma controlada (P1)
 
-- [ ] T030 [US4] Extender `scripts/image-state.sh` con las transiciones Nueva a Actual, Actual a Anterior, reactivación de Anterior y registro de validación.
-- [ ] T031 [US4] Actualizar `Makefile` y `.make/layouts.mk` para exponer `build`, `apply-image`, `rollback-image` y `validate-image` bajo el entorno explícito, sin automatizar operaciones de módulos.
-- [ ] T032 [US4] Adaptar `scripts/odoo-module-operation.sh` para exigir una imagen Actual y registrar si la operación invalida el rollback solo de imagen.
-- [ ] T033 [US4] Adaptar `stacks/backup/compose.yaml`, `stacks/backup/scripts/backup.sh`, `stacks/backup/scripts/restore.sh` y `stacks/backup/verify.sh` para guardar y restaurar junto al snapshot la procedencia de Actual y Anterior.
-- [ ] T034 [US4] Adaptar `stacks/odoo/compose.yaml` y `stacks/odoo/verify.sh` para que aplicar o revertir use exclusivamente la referencia Actual declarada en `runtime/<entorno>/state/images.json`.
-- [ ] T035 [TEST][US4] Actualizar `tests/test_backup.sh` y `tests/test_scripts.sh` para cubrir backup previo en producción, restauración con imagen declarada y bloqueo del rollback de imagen tras operaciones de módulos.
-- [ ] T036 [TEST][US4] Actualizar `tests/test_image_state.sh` para cubrir transiciones, conservación de Anterior y promoción serializada con el mismo tag y commit Enterprise.
+- [x] T030 [US4] Extender `scripts/image-state.sh` con las transiciones Nueva a Actual, Actual a Anterior, reactivación de Anterior y registro de validación.
+- [x] T031 [US4] Actualizar `Makefile` y `.make/layouts.mk` para exponer `build`, `apply-image`, `rollback-image` y `validate-image` bajo el entorno explícito, sin automatizar operaciones de módulos.
+- [x] T032 [US4] Adaptar `scripts/odoo-module-operation.sh` para exigir una imagen Actual y registrar si la operación invalida el rollback solo de imagen.
+- [x] T033 [US4] Adaptar `stacks/backup/compose.yaml`, `stacks/backup/scripts/backup.sh`, `stacks/backup/scripts/restore.sh` y `stacks/backup/verify.sh` para guardar y restaurar junto al snapshot la procedencia de Actual y Anterior.
+- [x] T034 [US4] Adaptar `stacks/odoo/compose.yaml` y `stacks/odoo/verify.sh` para que aplicar o revertir use exclusivamente la referencia Actual declarada en `runtime/<entorno>/state/images.json`.
+- [x] T035 [TEST][US4] Actualizar `tests/test_backup.sh` y `tests/test_scripts.sh` para cubrir backup previo en producción, restauración con imagen declarada y bloqueo del rollback de imagen tras operaciones de módulos.
+- [x] T036 [TEST][US4] Actualizar `tests/test_image_state.sh` para cubrir transiciones, conservación de Anterior y promoción serializada con el mismo tag y commit Enterprise.
 
 ## Fase 7: Integración y verificación
 

@@ -11,8 +11,8 @@ trap 'rm -rf "$TMP"' EXIT
 
 ROOT="$TMP/checkout"
 FAKEBIN="$ROOT/fakebin"
-mkdir -p "$ROOT/scripts/lib" "$FAKEBIN" "$ROOT/runtime/desarrollo"
-cp scripts/odoo-module-operation.sh "$ROOT/scripts/"
+mkdir -p "$ROOT/scripts/lib" "$FAKEBIN" "$ROOT/runtime/desarrollo/state"
+cp scripts/odoo-module-operation.sh scripts/image-state.sh "$ROOT/scripts/"
 cp scripts/lib/ui.sh scripts/lib/contexto.sh "$ROOT/scripts/lib/"
 chmod +x "$ROOT/scripts/odoo-module-operation.sh"
 
@@ -22,6 +22,9 @@ HTTP_PORT=8081
 EOF
 cat > "$ROOT/runtime/desarrollo/compose.yaml" <<'EOF'
 services: {}
+EOF
+cat > "$ROOT/runtime/desarrollo/state/images.json" <<'EOF'
+{"Nueva":null,"Actual":{"tag":"local/odoo:actual","digest":"sha256:actual"},"Anterior":null,"validation":null}
 EOF
 
 cat > "$FAKEBIN/docker" <<'EOF'
