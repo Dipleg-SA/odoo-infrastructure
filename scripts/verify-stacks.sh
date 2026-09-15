@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Orquestador de la verificación del árbol nuevo (stacks/ + envs/).
+# Orquestador de la verificación del runtime seleccionado.
 #
 # NO sabe qué se espera de ningún stack: eso vive en stacks/<nombre>/verify.sh,
 # que es su dueño único. Acá solo se decide QUÉ stacks hay que correr, y eso sale
@@ -12,7 +12,7 @@
 # Un stack que este entorno no lleva no es un fallo: se omite nombrándolo.
 
 correr_stack() {
-  local nombre="$1" archivo="stacks/$1/verify.sh"
+  local nombre="$1" archivo="stacks/$1/verify.sh" funcion
 
   if [ ! -f "$archivo" ]; then
     omitir "stack $nombre" "no tiene verify.sh todavía"
@@ -26,7 +26,8 @@ correr_stack() {
   # Sourceado, no ejecutado: así comparte los contadores y el resumen es uno solo.
   # shellcheck disable=SC1090
   . "$archivo"
-  "v_$nombre"
+  funcion="v_${nombre//-/_}"
+  "$funcion"
 }
 
 # --- Descubrimiento ---
@@ -63,7 +64,7 @@ case "${1:-all}" in
   *)
     if [ ! -f "stacks/$1/verify.sh" ]; then
       ui_bad "no hay stack '$1' en este árbol" \
-        "con COMPOSE_FILE en envs/, los stacks son: $(stacks_con_verify | tr '\n' ' ')" >&2
+        "los stacks disponibles son: $(stacks_con_verify | tr '\n' ' ')" >&2
       exit 2
     fi
     correr_stack "$1"

@@ -1,324 +1,420 @@
 #!/usr/bin/env bash
-# Addons por bind-mount. sync reconstruye/actualiza el árbol, status
-# imprime el estado de cada worktree. Sin dependencias fuera de git.
+# Candidatos de addons por runtime
+# Sincroniza snapshots de ramas fijas desde un catálogo de repositorios de dominio.
 set -euo pipefail
 shopt -s nullglob
 
 cd "$(dirname "$0")/.."
 . scripts/lib/ui.sh
+. scripts/lib/contexto.sh
+. scripts/lib/candidate-lock.sh
+contexto_iniciar
 
-# --- Entorno ---
-# El source va primero: si viniera después, una variable homónima en .env pisaría
-# las constantes de abajo y el script buscaría el manifiesto en otro lado.
+if [ "${CANDIDATE_LOCK_HELD:-0}" != "1" ]; then
+  candidate_lock_run "$ENTORNO" -- env CANDIDATE_LOCK_HELD=1 "$0" "$@"
+  exit $?
+fi
 
-if [ -f .env ]; then . ./.env; fi
+# Rutas y rama del entorno
+# El catálogo y los clones se comparten; cada entorno recibe su propio candidato.
+ROOT="$PWD"
+ADDONS_ROOT="$ROOT/runtime/addons"
+CATALOGO="$ADDONS_ROOT/catalogo.txt"
+BARE_DIR="$ADDONS_ROOT/.repos"
+CANDIDATE_ROOT="$ADDONS_ROOT/custom/$ENTORNO"
+VERSION="$(contexto_odoo_version | head -1)"
 
-MANIFEST="addons/addons.txt"
-BARE_DIR="addons/.repos"
-
-# --- Rama de los addons ---
-# Un árbol por checkout: qué entorno es este lo dice .env, no un subdirectorio.
-# El default sale del tag de la imagen, único lugar donde vive la versión de Odoo.
-
-VERSION="$(sed -n 's/^FROM odoo:\([0-9.]*\).*/\1/p' stacks/odoo/image/Dockerfile | head -1)"
-ADDONS_BRANCH="${ADDONS_BRANCH:-$VERSION}"
-
-if [ -z "$ADDONS_BRANCH" ]; then
-  echo "addons.sh: no se pudo leer la versión del tag FROM odoo: del Dockerfile" >&2
-  echo "addons.sh: declarar ADDONS_BRANCH en .env" >&2
+if [ -z "$VERSION" ]; then
+  printf 'addons.sh: no se pudo leer la línea de Odoo desde stacks/odoo/image/Dockerfile\n' >&2
   exit 1
 fi
 
+case "$ENTORNO" in
+  desarrollo) RAMA="${VERSION}-dev" ;;
+  staging) RAMA="${VERSION}-stag" ;;
+  produccion) RAMA="$VERSION" ;;
+esac
+
 FAILED=0
+DOMINIOS=()
+URLS=()
+DOMINIO_COUNT=0
+BARE_RESULT=""
 
-fail() { echo "addons.sh: $1" >&2; FAILED=1; }
-warn() { echo "addons.sh: aviso: $1" >&2; }
+fail() { printf 'addons.sh: %s\n' "$1" >&2; FAILED=1; }
+warn() { printf 'addons.sh: aviso: %s\n' "$1" >&2; }
 
-# --- Manifiesto ---
-# require_manifest corre en el shell principal — un exit dentro de manifest_entries
-# (consumida vía <(...)) solo mataría la subshell, en silencio, sin abortar el script.
+# Checkout único de Enterprise
+# Vive fuera del catálogo y solo se selecciona por un tag fechado de la línea.
+ENTERPRISE_ROOT="$ADDONS_ROOT/enterprise"
 
-require_manifest() {
-  if [ ! -f "$MANIFEST" ]; then
-    echo "addons.sh: no existe $MANIFEST" >&2
-    echo "addons.sh: cp $MANIFEST.example $MANIFEST — y completalo con tus repos" >&2
-    exit 1
-  fi
+enterprise_usage() {
+  printf 'uso: %s enterprise <sync|status|validate> [URL] [TAG]\n' "$(basename "$0")" >&2
+  printf 'o:   %s enterprise-sync [URL] [TAG]\n' "$(basename "$0")" >&2
 }
 
-manifest_entries() {
-  grep -vE '^[[:space:]]*(#|$)' "$MANIFEST" || true
-}
-
-module_name() { basename "$1" .git; }
-
-valid_category() {
-  case "$1" in
-    custom-addons|oca|third-party|enterprise) return 0 ;;
-    *) return 1 ;;
+enterprise_url_validar() {
+  local url="$1"
+  case "$url" in
+    https://*|ssh://*|git@*:*|file://*|/*|./*|../*) ;;
+    *) fail "URL de Enterprise no admitida: $url"; return 1 ;;
+  esac
+  case "$url" in
+    *\?*|*\#*) fail "la URL de Enterprise no puede incluir query ni fragmento: $url"; return 1 ;;
+    https://*@*|ssh://*@*)
+      [[ "$url" == ssh://git@* ]] || { fail "la URL de Enterprise no puede incluir credenciales: $url"; return 1; }
+      ;;
   esac
 }
 
-ROOT="$(pwd)"
+enterprise_tag_validar() {
+  local tag="$1"
+  if [[ ! "$tag" =~ ^${VERSION}-ee-[0-9]{4}-[0-9]{2}-[0-9]{2}([-.][A-Za-z0-9._-]+)?$ ]]; then
+    fail "el tag de Enterprise debe seguir ${VERSION}-ee-YYYY-MM-DD"
+    return 1
+  fi
+}
 
-# --- Clon bare por módulo ---
-# clone --bare no configura refspec de ramas remotas; sin esto origin/<rama> no existe.
-
-ensure_bare() {
-  local url="$1" bare="$2" err
-  if [ ! -d "$bare" ]; then
-    if ! err=$(git clone --bare -- "$url" "$bare" 2>&1); then
-      fail "$(module_name "$url"): clonado bare falló — $err"
+enterprise_checkout_validar() {
+  local url="$1" tag="$2" remoto commit tag_commit estado nuevo=0
+  if [ -L "$ENTERPRISE_ROOT" ]; then
+    fail "runtime/addons/enterprise no puede ser un enlace simbólico"
+    return 1
+  fi
+  if [ ! -d "$ENTERPRISE_ROOT/.git" ]; then
+    mkdir -p "$ADDONS_ROOT"
+    if ! git clone --no-checkout -- "$url" "$ENTERPRISE_ROOT"; then
+      rm -rf "$ENTERPRISE_ROOT"
+      fail "no se pudo clonar Enterprise"
       return 1
     fi
-    git -C "$bare" config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+    nuevo=1
   fi
+  remoto=$(git -C "$ENTERPRISE_ROOT" remote get-url origin 2>/dev/null) || {
+    fail "runtime/addons/enterprise no tiene un remoto origin"; return 1;
+  }
+  if [ "$remoto" != "$url" ]; then
+    fail "la URL de Enterprise difiere del remoto origin; revisar manualmente"
+    return 1
+  fi
+  estado=$(git -C "$ENTERPRISE_ROOT" status --porcelain 2>/dev/null || true)
+  if [ "$nuevo" -eq 0 ] && [ -n "$estado" ]; then
+    fail "el checkout de Enterprise tiene cambios locales; no se puede seleccionar el tag"
+    return 1
+  fi
+  if ! git -C "$ENTERPRISE_ROOT" fetch --no-tags origin \
+      "refs/tags/$tag:refs/tags/$tag" 2>&1; then
+    fail "no se pudo resolver el tag inmutable de Enterprise: $tag"
+    return 1
+  fi
+  tag_commit=$(git -C "$ENTERPRISE_ROOT" rev-parse --verify "$tag^{commit}" 2>/dev/null) || {
+    fail "el tag de Enterprise no apunta a un commit: $tag"; return 1;
+  }
+  [ "$(git -C "$ENTERPRISE_ROOT" cat-file -t "refs/tags/$tag" 2>/dev/null || true)" = tag ] || {
+    fail "el tag de Enterprise debe ser anotado e inmutable: $tag"; return 1;
+  }
+  git -C "$ENTERPRISE_ROOT" show-ref --tags --verify "refs/tags/$tag" >/dev/null 2>&1 || {
+    fail "el tag de Enterprise no existe como referencia de tag: $tag"; return 1;
+  }
+  if ! git -C "$ENTERPRISE_ROOT" checkout --detach --force "$tag" >/dev/null 2>&1; then
+    fail "no se pudo seleccionar el tag de Enterprise: $tag"
+    return 1
+  fi
+  if [ -n "$(git -C "$ENTERPRISE_ROOT" status --porcelain 2>/dev/null)" ]; then
+    fail "el checkout de Enterprise quedó sucio después de seleccionar el tag"
+    return 1
+  fi
+  ui_ok "Enterprise seleccionado — $tag ($tag_commit)"
+}
+
+enterprise_sync() {
+  local url="${1:-${ENTERPRISE_REPOSITORY:-}}" tag="${2:-${ENTERPRISE_TAG:-}}"
+  if [ -z "$url" ] || [ -z "$tag" ]; then
+    enterprise_usage
+    return 2
+  fi
+  enterprise_url_validar "$url" || return 1
+  enterprise_tag_validar "$tag" || return 1
+  enterprise_checkout_validar "$url" "$tag"
+}
+
+enterprise_validate() {
+  local tag="${1:-${ENTERPRISE_TAG:-}}" commit expected
+  if [ -z "$tag" ]; then
+    enterprise_usage
+    return 2
+  fi
+  enterprise_tag_validar "$tag" || return 1
+  [ -d "$ENTERPRISE_ROOT/.git" ] || { fail "falta runtime/addons/enterprise; ejecutar enterprise sync"; return 1; }
+  commit=$(git -C "$ENTERPRISE_ROOT" rev-parse --verify HEAD 2>/dev/null) || { fail "Enterprise no tiene HEAD resoluble"; return 1; }
+  expected=$(git -C "$ENTERPRISE_ROOT" rev-parse --verify "$tag^{commit}" 2>/dev/null) || { fail "el tag de Enterprise no existe localmente: $tag"; return 1; }
+  [ "$(git -C "$ENTERPRISE_ROOT" cat-file -t "refs/tags/$tag" 2>/dev/null || true)" = tag ] || { fail "el tag de Enterprise debe ser anotado e inmutable: $tag"; return 1; }
+  [ "$commit" = "$expected" ] || { fail "Enterprise no está seleccionado en el tag $tag"; return 1; }
+  [ -z "$(git -C "$ENTERPRISE_ROOT" status --porcelain 2>/dev/null)" ] || { fail "el checkout de Enterprise tiene cambios locales"; return 1; }
+  printf 'enterprise: %s · commit: %s\n' "$tag" "$commit"
+}
+
+enterprise_status() {
+  [ -d "$ENTERPRISE_ROOT/.git" ] || { printf 'enterprise: sin checkout\n'; return 1; }
+  local tag commit
+  tag=$(git -C "$ENTERPRISE_ROOT" describe --tags --exact-match HEAD 2>/dev/null || true)
+  commit=$(git -C "$ENTERPRISE_ROOT" rev-parse --verify HEAD 2>/dev/null || true)
+  printf 'enterprise: %s · commit: %s\n' "${tag:--}" "${commit:--}"
+}
+
+cmd_enterprise() {
+  local accion="${1:-}"; shift || true
+  case "$accion" in
+    sync) enterprise_sync "$@" ;;
+    validate) enterprise_validate "$@" ;;
+    status) enterprise_status "$@" ;;
+    *) enterprise_usage; return 2 ;;
+  esac
+}
+
+# Catálogo de dominio
+# Cada línea contiene una sola URL Git; el nombre se deriva del último segmento.
+require_catalogo() {
+  if [ ! -f "$CATALOGO" ]; then
+    printf 'addons.sh: no existe runtime/addons/catalogo.txt\n' >&2
+    printf 'addons.sh: copiar runtime/addons/catalogo.txt.example y completar las URL de repositorios\n' >&2
+    exit 1
+  fi
+}
+
+nombre_repositorio() {
+  local url="$1" ruta
+  ruta="${url%/}"
+  ruta="${ruta##*/}"
+  ruta="${ruta%.git}"
+  printf '%s' "$ruta"
+}
+
+catalogo_validar() {
+  local linea url extra dominio formato_invalido=0 existente
+  DOMINIOS=()
+  URLS=()
+  DOMINIO_COUNT=0
+
+  while IFS= read -r linea || [ -n "$linea" ]; do
+    linea="${linea#"${linea%%[![:space:]]*}"}"
+    [ -z "$linea" ] && continue
+    [[ "$linea" == \#* ]] && continue
+
+    read -r url extra <<< "$linea"
+    if [ -z "$url" ] || [ -n "${extra:-}" ]; then
+      fail "cada línea de runtime/addons/catalogo.txt debe contener una sola URL Git"
+      formato_invalido=1
+      continue
+    fi
+    case "$url" in
+      https://*|ssh://*|git@*:*|file://*|/*|./*|../*) ;;
+      *)
+        fail "URL Git no admitida en runtime/addons/catalogo.txt: $url"
+        formato_invalido=1
+        continue
+        ;;
+    esac
+    case "$url" in
+      *\?*|*\#*)
+        fail "la URL Git no puede incluir query ni fragmento: $url"
+        formato_invalido=1
+        continue
+        ;;
+      https://*@*|ssh://*@*)
+        [[ "$url" == ssh://git@* ]] || {
+          fail "la URL Git no puede incluir credenciales: $url"
+          formato_invalido=1
+          continue
+        }
+        ;;
+    esac
+
+    dominio=$(nombre_repositorio "$url")
+    if [[ ! "$dominio" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+      fail "nombre de dominio inválido derivado de la URL: $url"
+      formato_invalido=1
+      continue
+    fi
+    if [ "$dominio" = enterprise ]; then
+      fail "Enterprise se administra fuera de runtime/addons/catalogo.txt"
+      formato_invalido=1
+      continue
+    fi
+    for existente in "${DOMINIOS[@]-}"; do
+      [ -n "$existente" ] || continue
+      if [ "$existente" = "$dominio" ]; then
+        fail "el catálogo repite el dominio '$dominio'"
+        formato_invalido=1
+        break
+      fi
+    done
+    [ "$formato_invalido" -eq 0 ] || continue
+    DOMINIOS+=("$dominio")
+    URLS+=("$url")
+    DOMINIO_COUNT=$((DOMINIO_COUNT + 1))
+  done < "$CATALOGO"
+
+  if [ "$formato_invalido" -ne 0 ]; then
+    ui_bad "catálogo inválido" "no se clonó ni publicó ningún candidato" >&2
+    return 1
+  fi
+}
+
+# Clon bare compartido
+# El refspec explícito permite consultar las ramas de entorno como origin/<rama>.
+ensure_bare() {
+  local url="$1" dominio="$2" bare="$BARE_DIR/$dominio.git" err remoto
+  BARE_RESULT=""
+  if [ ! -d "$bare" ]; then
+    if ! err=$(git clone --bare -- "$url" "$bare" 2>&1); then
+      fail "$dominio: clonado bare falló — $err"
+      rm -rf "$bare"
+      return 1
+    fi
+  fi
+  if ! remoto=$(git -C "$bare" remote get-url origin 2>/dev/null); then
+    fail "$dominio: $bare no es un clon bare con remoto origin"
+    return 1
+  fi
+  if [ "$remoto" != "$url" ]; then
+    fail "$dominio: la URL del catálogo difiere del clon bare; revisar o retirar $bare manualmente"
+    return 1
+  fi
+  git -C "$bare" config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
   if ! err=$(git -C "$bare" fetch --prune origin 2>&1); then
-    fail "$(module_name "$url"): fetch de origin falló — $err"
+    fail "$dominio: fetch de origin falló — $err"
     return 1
   fi
-  if git -C "$bare" remote get-url upstream >/dev/null 2>&1; then
-    git -C "$bare" fetch --prune upstream >/dev/null 2>&1 || warn "$(module_name "$url"): fetch de upstream falló"
-  fi
-  return 0
+  BARE_RESULT="$bare"
 }
 
-# --- Worktree ---
-# Uno solo, en la rama que declara el checkout. Path absoluto: uno relativo se
-# resolvería contra el cwd del bare, no contra el repo.
-
-ensure_worktree() {
-  local bare="$1" tree="$2" name="$3" err
-  git -C "$bare" worktree prune
-  [ -d "$tree" ] && return 0
-  if ! err=$(git -C "$bare" worktree add "$tree" "$ADDONS_BRANCH" 2>&1); then
-    fail "$name: worktree en $ADDONS_BRANCH falló — $err"
+# Publicación de candidato
+# Exporta un commit completo y reemplaza el árbol solo después de extraerlo.
+publicar_candidato() {
+  local bare="$1" dominio="$2" commit="$3" candidato="$CANDIDATE_ROOT/$dominio"
+  local temporal anterior="" padre="$CANDIDATE_ROOT" respaldo err
+  mkdir -p "$padre"
+  if ! temporal=$(mktemp -d "$padre/.${dominio}.XXXXXX"); then
+    fail "$dominio: no se pudo crear el directorio temporal del candidato"
     return 1
   fi
+  if ! git -C "$bare" archive --format=tar "$commit" | tar -xf - -C "$temporal"; then
+    rm -rf "$temporal"
+    fail "$dominio: no se pudo exportar el commit $commit"
+    return 1
+  fi
+  printf '%s\n' "$commit" > "$temporal/.candidate-commit"
+
+  for respaldo in "$padre/.${dominio}.previous."*; do
+    [ -e "$respaldo" ] || continue
+    if [ ! -e "$candidato" ] && [ ! -L "$candidato" ]; then
+      mv "$respaldo" "$candidato" || { rm -rf "$temporal"; fail "$dominio: no se pudo recuperar el candidato previo"; return 1; }
+    else
+      rm -rf "$respaldo"
+    fi
+  done
+
+  if [ -e "$candidato" ] || [ -L "$candidato" ]; then
+    anterior="$padre/.${dominio}.previous.$$"
+    rm -rf "$anterior"
+    if ! mv "$candidato" "$anterior"; then
+      rm -rf "$temporal"
+      fail "$dominio: no se pudo apartar el candidato anterior"
+      return 1
+    fi
+  fi
+  if ! err=$(mv "$temporal" "$candidato" 2>&1); then
+    [ -z "$anterior" ] || mv "$anterior" "$candidato"
+    rm -rf "$temporal"
+    fail "$dominio: no se pudo publicar el candidato — $err"
+    return 1
+  fi
+  [ -z "$anterior" ] || rm -rf "$anterior"
   return 0
 }
 
-# --- Actualización ---
-# Solo avanza si el worktree está en la rama declarada: en un checkout de
-# desarrollo HEAD vive en una feat/*, y ahí sync no tiene nada que hacer.
-#
-# ff-only y nunca reset: tener commits locales sin pushear es el estado normal
-# de un checkout de desarrollo entre el commit y el push, y no es un error —
-# el ff-only contra un ancestro no hace nada y sale bien.
-
-update_worktree() {
-  local tree="$1" name="$2" err actual rel propios ajenos
-  actual=$(git -C "$tree" rev-parse --abbrev-ref HEAD)
-  rel="${tree#"$ROOT"/}"
-
-  if [ "$actual" != "$ADDONS_BRANCH" ]; then
-    warn "$name: el worktree está en '$actual', no en '$ADDONS_BRANCH' — no se actualiza"
-    return 0
-  fi
-  if [ -n "$(git -C "$tree" status --porcelain)" ]; then
-    fail "$name: hay cambios sin commitear, no se actualiza"
-    return 0
-  fi
-  if ! git -C "$tree" show-ref --verify -q "refs/remotes/origin/$ADDONS_BRANCH"; then
-    warn "$name: origin/$ADDONS_BRANCH no existe en el remoto todavía, el worktree sigue en su rama local"
-    return 0
-  fi
-  # --- Divergencia ---
-  # El ff-only solo falla si las dos ramas avanzaron desde un ancestro común, y un
-  # force-push del remoto se ve igual: el script cuenta de cada lado y no elige.
-
-  if ! err=$(git -C "$tree" merge --ff-only "origin/$ADDONS_BRANCH" 2>&1); then
-    propios=$(git -C "$tree" rev-list --count "origin/$ADDONS_BRANCH..HEAD" 2>/dev/null || echo '?')
-    ajenos=$(git -C "$tree" rev-list --count "HEAD..origin/$ADDONS_BRANCH" 2>/dev/null || echo '?')
-    fail "$name: divergió de origin/$ADDONS_BRANCH — $propios commit(s) locales, $ajenos en el remoto.
-            El sync no toca un worktree divergido. Integralo desde el worktree:
-              git -C $rel rebase origin/$ADDONS_BRANCH
-            Y solo si esos $propios commit(s) locales son descartables:
-              git -C $rel reset --hard origin/$ADDONS_BRANCH
-            Detalle: $err"
-    return 0
-  fi
-
-  # --- Commits locales sin pushear ---
-  # No es error, pero en un checkout de servidor el árbol dejó de coincidir con el
-  # remoto y un re-clone se lo comería: sale con 0 y avisa.
-
-  propios=$(git -C "$tree" rev-list --count "origin/$ADDONS_BRANCH..HEAD" 2>/dev/null || echo 0)
-  if [ "$propios" != "0" ]; then
-    warn "$name: $propios commit(s) locales sin pushear a origin/$ADDONS_BRANCH"
-  fi
-  return 0
-}
-
+# Sincronización de un dominio
+# Solo publica el commit de la rama fija que corresponde al runtime seleccionado.
 sync_repo() {
-  local url="$1" category="$2" name bare tree
-  name=$(module_name "$url")
-  bare="$BARE_DIR/$name.git"
-  tree="$ROOT/addons/$category/$name"
-
-  ensure_bare "$url" "$bare" || return
-  ensure_worktree "$bare" "$tree" "$name" || return
-  update_worktree "$tree" "$name"
+  local url="$1" dominio="$2" bare commit err
+  if [ "${CANDIDATE_REPO_LOCK_HELD:-0}" != "1" ]; then
+    candidate_lock_repo_run "$dominio" -- env CANDIDATE_REPO_LOCK_HELD=1 "$0" __sync-repo "$url" "$dominio"
+    return $?
+  fi
+  ensure_bare "$url" "$dominio" || return 1
+  bare="$BARE_RESULT"
+  if ! commit=$(git -C "$bare" rev-parse --verify "refs/remotes/origin/$RAMA^{commit}" 2>/dev/null); then
+    fail "$dominio: origin/$RAMA no existe, no se puede sincronizar"
+    return 1
+  fi
+  publicar_candidato "$bare" "$dominio" "$commit" || return 1
+  ui_ok "$dominio: candidato $ENTORNO actualizado a ${commit:0:12} desde origin/$RAMA"
 }
 
 cmd_sync() {
-  local url category invalid=0 viejo
-  ui_plan_start "repo sync"
-  ui_step 1 "Sincronización de los addons declarados en $MANIFEST sobre la rama $ADDONS_BRANCH."
-  require_manifest
-
-  # --- Manifiesto sin entradas ---
-  # Es el estado por defecto de un repo recién clonado. Sin al menos un repo no
-  # hay addons_path y el entrypoint de Odoo aborta una fase despues, asi que
-  # terminar en silencio con exit 0 seria mentir sobre lo que paso.
-
-  if [ -z "$(manifest_entries)" ]; then
-    echo "addons.sh: $MANIFEST no declara ningún repositorio — el árbol queda vacío" >&2
-    echo "addons.sh: agregá al menos una línea 'URL categoría' antes de levantar Odoo" >&2
-    exit 1
+  local indice=0
+  require_catalogo
+  if ! catalogo_validar; then exit 1; fi
+  ui_plan_start "repo-sync ($ENTORNO)"
+  ui_step 1 "Publicación de candidatos desde origin/$RAMA declarados en runtime/addons/catalogo.txt."
+  if [ "$DOMINIO_COUNT" -eq 0 ]; then
+    ui_skip "el catálogo no declara dominios; no hay candidatos para sincronizar"
+    ui_plan_end
+    return 0
   fi
-
-  # --- Árbol viejo por entorno ---
-  # Sus worktrees siguen registrados en el bare y retienen la rama, así que el
-  # add en la ruta nueva fallaría con "already checked out". Lo borra el operador.
-
-  for viejo in addons/production addons/staging addons/development; do
-    if [ -d "$viejo" ]; then
-      echo "addons.sh: existe $viejo, del layout por entorno anterior — retiene la rama y bloquea el árbol nuevo" >&2
-      echo "addons.sh: borralo (rm -rf addons/production addons/staging addons/development) y volvé a correr el sync" >&2
-      exit 1
-    fi
+  mkdir -p "$BARE_DIR" "$CANDIDATE_ROOT"
+  while [ "$indice" -lt "$DOMINIO_COUNT" ]; do
+    if ! sync_repo "${URLS[$indice]}" "${DOMINIOS[$indice]}"; then FAILED=1; fi
+    indice=$((indice + 1))
   done
-
-  # --- Validación previa: categoría inválida aborta antes de clonar nada ---
-
-  while read -r url category; do
-    if ! valid_category "$category"; then
-      echo "addons.sh: categoría inválida '$category' para $url en $MANIFEST" >&2
-      invalid=1
-    fi
-  done < <(manifest_entries)
-  if [ "$invalid" -ne 0 ]; then
-    echo "addons.sh: manifiesto inválido, no se clona nada" >&2
-    exit 1
-  fi
-
-  # --- Sync por repo: cada llamada guardada con || true, sync_repo ya acumula en FAILED ---
-
-  while read -r url category; do
-    sync_repo "$url" "$category" || true
-  done < <(manifest_entries)
-
   ui_plan_end
   if [ "$FAILED" -ne 0 ]; then
-    ui_bad "repo sync terminó con errores" "ver arriba" >&2
+    ui_bad "repo-sync terminó con errores" "los candidatos que fallaron conservan su versión anterior" >&2
     echo
     exit 1
   fi
-
-  ui_ok "repo sync listo — $(manifest_entries | wc -l | tr -d ' ') repositorio(s) sincronizado(s)"
+  ui_ok "repo-sync listo — $DOMINIO_COUNT candidato(s) de $ENTORNO sincronizado(s)"
   echo
 }
 
-# --- Estado de un worktree ---
-# Puro host: rama, commit corto, y si hay cambios sin commitear.
-
-print_row() {
-  local category="$1" name="$2" tree="$3" branch commit dirty
-  if [ ! -d "$tree" ]; then
-    printf '%-14s %-24s %s\n' "$category" "$name" "(sin worktree)"
-    return
-  fi
-  branch=$(git -C "$tree" rev-parse --abbrev-ref HEAD)
-  commit=$(git -C "$tree" rev-parse --short HEAD)
-  if [ -n "$(git -C "$tree" status --porcelain)" ]; then dirty="sucio"; else dirty="limpio"; fi
-  printf '%-14s %-24s %-20s %-9s %s\n' "$category" "$name" "$branch" "$commit" "$dirty"
-}
-
-# --- Huérfanos ---
-# Presentes en disco, ausentes del manifiesto; no se tocan, solo se listan.
-# El glob no alcanza a .repos/: los directorios ocultos no matchean sin dotglob.
-
-list_orphans() {
-  local known=" " url cat_dir repo_dir n
-  while read -r url _; do
-    known="$known $(module_name "$url") "
-  done < <(manifest_entries)
-
-  for cat_dir in addons/*/; do
-    [ -d "$cat_dir" ] || continue
-    for repo_dir in "$cat_dir"*/; do
-      [ -d "$repo_dir" ] || continue
-      n=$(basename "$repo_dir")
-      case "$known" in *" $n "*) continue ;; esac
-      echo "huérfano: $(basename "$cat_dir")/$n (no está en $MANIFEST)"
-    done
-  done
-}
-
-# --- Rama nueva de checkout de desarrollo ---
-# Cada checkout de development es su propia rama en cada repo; sync no la crea,
-# solo arma el worktree sobre la que ya exista. Sin esto, un ADDONS_BRANCH nuevo
-# en .env falla al primer 'repo-sync' porque origin/<rama> no existe todavía.
-
-cmd_branch() {
-  local base="${1:-$VERSION}" url category name bare err
-  require_manifest
-
-  if [ "$ADDONS_BRANCH" = "$base" ]; then
-    echo "addons.sh: ADDONS_BRANCH ('$ADDONS_BRANCH') es igual a la rama base — declará una rama de feature en .env primero" >&2
-    exit 1
-  fi
-
-  ui_plan_start "repo branch"
-  ui_step 1 "Creando '$ADDONS_BRANCH' desde 'origin/$base' en cada repo de $MANIFEST."
-
-  while read -r url category; do
-    name=$(module_name "$url")
-    bare="$BARE_DIR/$name.git"
-    ensure_bare "$url" "$bare" || continue
-    if git -C "$bare" show-ref --verify -q "refs/remotes/origin/$ADDONS_BRANCH"; then
-      warn "$name: origin/$ADDONS_BRANCH ya existe, no se toca"
-      continue
-    fi
-    if ! git -C "$bare" show-ref --verify -q "refs/remotes/origin/$base"; then
-      fail "$name: origin/$base no existe, no se puede ramificar"
-      continue
-    fi
-    if ! err=$(git -C "$bare" push origin "refs/remotes/origin/$base:refs/heads/$ADDONS_BRANCH" 2>&1); then
-      fail "$name: push de '$ADDONS_BRANCH' falló — $err"
-    fi
-  done < <(manifest_entries)
-
-  ui_plan_end
-  if [ "$FAILED" -ne 0 ]; then
-    ui_bad "repo branch terminó con errores" "ver arriba" >&2
-    echo
-    exit 1
-  fi
-
-  ui_ok "repo branch listo — '$ADDONS_BRANCH' creada en origin de cada repo"
-  echo
-}
-
+# Estado de candidatos
+# Muestra el commit publicado y señala dominios que ya no aparecen en el catálogo.
 cmd_status() {
-  local url category name
-  require_manifest
-
-  echo "rama declarada: $ADDONS_BRANCH"
-  echo
-
-  while read -r url category; do
-    name=$(module_name "$url")
-    print_row "$category" "$name" "addons/$category/$name"
-  done < <(manifest_entries)
-
-  list_orphans
+  local indice=0 dominio candidato commit conocidos=" " ruta nombre
+  require_catalogo
+  if ! catalogo_validar; then exit 1; fi
+  printf 'runtime: %s · rama: %s\n\n' "$ENTORNO" "$RAMA"
+  printf '%-24s %-16s %s\n' "dominio" "estado" "commit"
+  while [ "$indice" -lt "$DOMINIO_COUNT" ]; do
+    dominio="${DOMINIOS[$indice]}"
+    conocidos="$conocidos$dominio "
+    candidato="$CANDIDATE_ROOT/$dominio"
+    if [ -f "$candidato/.candidate-commit" ]; then
+      commit=$(cat "$candidato/.candidate-commit")
+      printf '%-24s %-16s %s\n' "$dominio" "publicado" "$commit"
+    else
+      printf '%-24s %-16s %s\n' "$dominio" "sin candidato" "-"
+    fi
+    indice=$((indice + 1))
+  done
+  for ruta in "$CANDIDATE_ROOT"/*; do
+    [ -d "$ruta" ] || [ -L "$ruta" ] || continue
+    nombre=$(basename "$ruta")
+    case "$conocidos" in
+      *" $nombre "*) ;;
+      *) printf 'huérfano: custom/%s/%s (no está en runtime/addons/catalogo.txt)\n' "$ENTORNO" "$nombre" ;;
+    esac
+  done
 }
 
 case "${1:-}" in
+  __sync-repo) shift; sync_repo "$@" ;;
   sync) shift; cmd_sync "$@" ;;
   status) shift; cmd_status "$@" ;;
-  branch) shift; cmd_branch "$@" ;;
-  *) echo "uso: $(basename "$0") sync|status|branch" >&2; exit 2 ;;
+  enterprise) shift; cmd_enterprise "$@" ;;
+  enterprise-sync) shift; enterprise_sync "$@" ;;
+  enterprise-status) shift; enterprise_status "$@" ;;
+  enterprise-validate) shift; enterprise_validate "$@" ;;
+  *) printf 'uso: %s sync|status|enterprise\n' "$(basename "$0")" >&2; exit 2 ;;
 esac

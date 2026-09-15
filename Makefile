@@ -4,19 +4,35 @@
 
 SHELL := bash
 
+# Despacho de Compose
+# Todos los verbos usan el contexto centralizado del runtime seleccionado.
+CONTEXTO_COMPOSE := scripts/lib/contexto.sh compose
+
 include .make/main.mk
 
-.PHONY: help up down logs ps nuke reset build \
+.PHONY: help up down logs ps nuke reset build apply-image rollback-image validate-image \
         secrets-init secrets-perms secrets-check config-init dev-workspace \
         odoo-report-config \
         host-init host-verify up-timers down-timers notify-test monitoring-role \
         cert-issue cert-renew \
         backup-run backup-integrity restore \
-        repo-sync repo-status repo-branch addons-install addons-update addons-uninstall addons-modules addons-deps \
-        require-modules require-backups require-restore require-root require-not-production test verify \
+        repo-sync repo-status addons-install addons-update addons-uninstall addons-modules addons-deps \
+        require-entorno require-modules require-backups require-restore require-root require-systemd require-not-production test verify \
         $(foreach s,$(STACKS),$(s)-up $(s)-down $(s)-restart $(s)-logs $(s)-ps $(s)-verify) \
         $(foreach s,$(STACKS_ONESHOT),$(s)-logs $(s)-ps $(s)-verify)
 .DEFAULT_GOAL := help
+
+# Selector de operaciones
+# Todos los comandos del runtime validan el entorno antes de ejecutar sus recetas.
+RUNTIME_TARGETS := secrets-init secrets-perms secrets-check config-init dev-workspace odoo-report-config \
+                   host-verify up-timers down-timers notify-test monitoring-role cert-issue cert-renew \
+                   backup-run backup-integrity restore repo-sync repo-status \
+                   addons-install addons-update addons-uninstall addons-modules addons-deps \
+                   require-backups require-restore require-not-production verify \
+                   up down logs ps nuke reset build apply-image rollback-image validate-image
+RUNTIME_TARGETS += $(foreach s,$(STACKS),$(s)-up $(s)-down $(s)-restart $(s)-logs $(s)-ps $(s)-verify)
+RUNTIME_TARGETS += $(foreach s,$(STACKS_ONESHOT),$(s)-logs $(s)-ps $(s)-verify)
+$(RUNTIME_TARGETS): require-entorno
 
 # --- Ayuda ---
 # Sin target, o 'make help': lista los comandos agrupados por sección. Lee las
@@ -55,11 +71,16 @@ odoo-report-config: ## Configura las URLs pública e interna de los reportes Odo
 	scripts/odoo-report-config.sh
 
 # --- [HOST] Workspace de VS Code ---
-# Un folder por tipo de addon + la raíz de infra, generado desde .env — para
+# Un folder por tipo de addon + la raíz de infra, generado desde el runtime — para
 # no mezclar edición de módulos con archivos de infraestructura en el mismo árbol.
 
 dev-workspace: ## Genera <entorno>.code-workspace: un folder por tipo de addon + infra
 	scripts/vscode-workspace.sh
+
+# Selector de runtime
+# Falla antes de Docker si falta el entorno, su composición o su archivo privado.
+require-entorno:
+	scripts/lib/contexto.sh validar
 
 # --- Config de sistema operativo ---
 # Lo único del repo que se instala FUERA del checkout, y por eso pide root: la
@@ -69,8 +90,14 @@ require-root:
 	@. scripts/lib/ui.sh; [ "$$(id -u)" -eq 0 ] || \
 	  { ui_bad "$(TARGET) necesita root" "sudo make $(TARGET)" >&2; exit 2; }
 
+# host-init escribe la configuración de Docker Engine y lo reinicia con systemctl.
+# Comprobar el sistema primero evita sugerir ese comando para Docker Desktop.
+require-systemd:
+	@. scripts/lib/ui.sh; { [ "$$(uname -s)" = Linux ] && command -v systemctl >/dev/null 2>&1; } || \
+	  { ui_bad "$(TARGET) requiere Linux con systemd" "Docker Desktop se configura desde Settings > Docker Engine" >&2; exit 2; }
+
 host-init: TARGET=host-init
-host-init: require-root ## Aplica la rotación de logs del daemon (requiere root)
+host-init: require-systemd require-root ## Aplica la rotación de logs del daemon en Linux (requiere root)
 	@. scripts/lib/ui.sh; \
 	  if [ -e /etc/docker/daemon.json ] && ! cmp -s host/daemon.json /etc/docker/daemon.json; then \
 	    MAX_SIZE=$$(grep -o '"max-size"[^,}]*' host/daemon.json); \
@@ -133,35 +160,37 @@ host-verify: ## Verifica los prerrequisitos del SO (systemd, rotación de logs, 
 # --- Ciclo de vida del stack completo ---
 
 up: ## Levanta el stack completo
-	@. scripts/ui/components.sh; ui_section "up: levantando el stack completo"; ui_run "up" docker compose up -d
+	@. scripts/ui/components.sh; ui_section "up: levantando el stack completo"; ui_run "up" $(CONTEXTO_COMPOSE) up -d
 	@$(MAKE) odoo-report-config
 
 down: ## Baja el stack completo
-	@. scripts/lib/ui.sh; ui_run "down" docker compose down
+	@. scripts/lib/ui.sh; ui_run "down" $(CONTEXTO_COMPOSE) down
 
 logs: ## Sigue los logs de todos los servicios
-	@. scripts/ui/components.sh; ui_section "logs: siguiendo todo el stack (Ctrl-C para salir)"; docker compose logs -f
+	@. scripts/ui/components.sh; ui_section "logs: siguiendo todo el stack (Ctrl-C para salir)"; $(CONTEXTO_COMPOSE) logs -f
 
 ps: ## Lista el estado de los contenedores
-	@. scripts/ui/components.sh; salida=$$(docker compose ps --format "{{.Name}}$$(printf '\t'){{.Status}}$$(printf '\t'){{.Ports}}") || exit $$?; printf '%s\n' "$$salida" | ui_ps_table
+	@. scripts/ui/components.sh; salida=$$($(CONTEXTO_COMPOSE) ps --format "{{.Name}}$$(printf '\t'){{.Status}}$$(printf '\t'){{.Ports}}") || exit $$?; printf '%s\n' "$$salida" | ui_ps_table
 
-# nuke: el más destructivo del Makefile — confirmación tipeando la palabra, no Y/N,
-# y nunca toca secrets/ ni .env. reset es lo mismo pero solo los volúmenes: containers,
-# imágenes y addons/ quedan como están, así que el up posterior no rebuildea nada.
+# nuke exige escribir su nombre y elimina volúmenes, imágenes propias, clones y estado generado.
+# reset exige confirmación y recrea solo volúmenes; ambos conservan configs y secretos.
 
-nuke: ## Borra TODO: containers/imágenes/volúmenes del stack + addons/ + state/
+nuke: ## Borra TODO: containers/imágenes/volúmenes del stack + clones + estado generado
 	@. scripts/lib/ui.sh; \
 	  ui_warn "esto borra los datos de este stack" \
-	    "volúmenes, imágenes propias, addons/ y state/ — secrets/ y .env NO se tocan"; \
+	    "volúmenes, imágenes propias y estado generado de runtime/ — configs y secretos quedan"; \
 	  ui_confirm nuke || exit 1; \
-	  ui_run "nuke" sh -c 'docker compose down -v --rmi local --remove-orphans && \
-	    rm -rf addons/.repos addons/*/*/ state/textfile/*.prom state/meta/*.txt'
+	  ui_run "nuke" env ENTORNO="$$ENTORNO" bash -c '$(CONTEXTO_COMPOSE) down -v --rmi local --remove-orphans && \
+	    rm -rf runtime/addons/.repos runtime/addons/custom/* runtime/addons/builds/* \
+	      runtime/$${ENTORNO}/state/* runtime/control/state/*'
 
 # Mismo indicador que require-backups, leído al revés: backup sin profiles: solo
-# está en producción (en staging tiene profiles: [restore]; en development no está).
+# está en producción (en staging tiene profiles: [restore]; en desarrollo no está).
 require-not-production:
-	@. scripts/lib/ui.sh; docker compose config --services 2>/dev/null | grep -qx backup && \
-	  { ui_bad "$(TARGET) no corre en producción" "este checkout tiene la capa de backups activa sin profiles: — es producción" >&2; exit 2; } || true
+	@. scripts/lib/ui.sh; servicios=$$($(CONTEXTO_COMPOSE) config --services 2>/dev/null) || exit $$?; \
+	  if grep -qx backup <<< "$$servicios"; then \
+	    ui_bad "$(TARGET) no corre en producción" "este runtime tiene la capa de backups activa sin profiles: — es producción" >&2; exit 2; \
+	  fi
 
 reset: TARGET=reset
 reset: require-not-production ## Borra los datos (volúmenes) y vuelve a levantar limpio — nunca en producción
@@ -169,32 +198,37 @@ reset: require-not-production ## Borra los datos (volúmenes) y vuelve a levanta
 	  ui_warn "esto borra los datos de este stack" \
 	    "volúmenes (base, filestore, dumps) — containers, imágenes y addons/ quedan igual"; \
 	  ui_confirm reset || exit 1; \
-	  ui_run "reset" sh -c 'docker compose down -v && docker compose up -d'
+	  ui_run "reset" bash -c '$(CONTEXTO_COMPOSE) down -v && $(CONTEXTO_COMPOSE) up -d'
 	@$(MAKE) odoo-report-config
 
-# --- [STACK:repo] Árbol de addons ---
-# sync clona/actualiza los árboles desde addons/addons.txt; puro host, sin contenedores.
+# Repositorios de dominio
+# Sync actualiza el clon bare y publica el candidato del entorno seleccionado.
 
-repo-sync: ## Clona/actualiza los addons desde addons/addons.txt
+repo-sync: ## Sincroniza los candidatos declarados en runtime/addons/catalogo.txt
 	scripts/addons.sh sync
 
 repo-status: ## Muestra el estado de los addons
 	@. scripts/lib/ui.sh; ui_run "repo-status" scripts/addons.sh status
 
-# --- [STACK:repo] Rama nueva de checkout de desarrollo ---
-# Antes del primer repo-sync de un checkout: crea ADDONS_BRANCH en origin de
-# cada repo, partiendo de la versión del Dockerfile. Falla si ya existe o si
-# ADDONS_BRANCH no se redeclaró en .env todavía.
-
-repo-branch: ## Crea ADDONS_BRANCH (rama de feature en .env) en origin de cada addon
-	scripts/addons.sh branch
-
 # --- Imágenes propias ---
 # Todo stack construye la suya, aunque el Dockerfile sea un FROM pineado y nada más.
 # El build de odoo no clona nada: los addons entran por bind-mount, no por capa.
 
-build: ## Construye las imágenes propias de este stack
-	@. scripts/lib/ui.sh; ui_run "build" docker compose build
+build: ## Construye la imagen Odoo desde la fotografía del entorno
+	scripts/build-odoo-image.sh
+
+apply-image: ## Promueve Nueva a Actual y levanta Odoo con esa referencia
+	@servicios=$$($(CONTEXTO_COMPOSE) config --services 2>/dev/null) || exit $$?; \
+	if grep -qx backup <<< "$$servicios"; then $(MAKE) backup-run; fi
+	scripts/image-state.sh apply
+	@. scripts/lib/ui.sh; ui_run "aplicar imagen" $(CONTEXTO_COMPOSE) up -d odoo
+
+rollback-image: ## Reactiva Anterior y levanta Odoo con esa referencia
+	scripts/image-state.sh rollback
+	@. scripts/lib/ui.sh; ui_run "revertir imagen" $(CONTEXTO_COMPOSE) up -d odoo
+
+validate-image: ## Registra la validación manual de Actual
+	scripts/image-state.sh validate-image "$(NOTE)"
 
 # --- [STACK:addons] Dependencias Python ---
 # check es puro host (corre en 'make test'); sync necesita Docker para resolver
@@ -238,7 +272,7 @@ addons-uninstall: require-modules ## Desinstala módulos — MODULES=nombre obli
 	scripts/odoo-module-operation.sh uninstall
 
 addons-modules: ## Lista los módulos instalados en la base
-	@salida=$$(docker compose exec -T postgres psql -U odoo -d odoo -A -F "$$(printf '\t')" --pset footer=off -c \
+	@salida=$$($(CONTEXTO_COMPOSE) exec -T postgres psql -U odoo -d odoo -A -F "$$(printf '\t')" --pset footer=off -c \
 	  "SELECT name, latest_version FROM ir_module_module WHERE state='installed' ORDER BY name") || exit $$?; \
 	  printf '%s\n' "$$salida" | column -t -s "$$(printf '\t')" \
 	  | awk 'NR==1 {print; n=length($$0); s=""; for(i=0;i<n;i++) s=s "-"; print s; next} {print}'
@@ -250,16 +284,17 @@ addons-modules: ## Lista los módulos instalados en la base
 # Le pregunta a la composición, no a una variable: qué capas trae cada stack ya
 # lo dice su entrypoint, y declararlo dos veces es una divergencia esperando.
 require-backups:
-	@. scripts/lib/ui.sh; docker compose config --services 2>/dev/null | grep -qx backup || \
-	  { ui_bad "este stack no incluye la capa de backups" "es exclusiva de producción — revisar COMPOSE_FILE en .env" >&2; exit 2; }
+	@. scripts/lib/ui.sh; servicios=$$($(CONTEXTO_COMPOSE) config --services 2>/dev/null) || exit $$?; \
+	  grep -qx backup <<< "$$servicios" || \
+	    { ui_bad "este runtime no incluye la capa de backups" "es exclusiva de producción" >&2; exit 2; }
 
 # Dos guardas y no una: respaldar es de producción, restaurar es de los dos entornos.
-# La diferencia sale de la composición, no de una lista — el entrypoint de prueba le
-# pone profiles: [restore] al servicio backup, así que queda fuera del default (y de
-# lo que ve timers.sh) pero sigue alcanzable para restaurar.
+# La diferencia sale de la composición, no de una lista — el entrypoint de staging le
+# pone profiles: [restore] al servicio backup, fuera del default y de lo que ve timers.sh.
 require-restore:
-	@. scripts/lib/ui.sh; docker compose --profile restore config --services 2>/dev/null | grep -qx backup || \
-	  { ui_bad "este stack no incluye la capa de restore" "revisar COMPOSE_FILE en .env" >&2; exit 2; }
+	@. scripts/lib/ui.sh; servicios=$$(scripts/lib/contexto.sh compose-perfiles restore config --services 2>/dev/null) || exit $$?; \
+	  grep -qx backup <<< "$$servicios" || \
+	    { ui_bad "este runtime no incluye la capa de restore" "restaurar requiere el perfil restore" >&2; exit 2; }
 
 backup-run: require-backups ## Corre el backup diario (dump + filestore en un snapshot)
 	stacks/backup/scripts/backup.sh daily

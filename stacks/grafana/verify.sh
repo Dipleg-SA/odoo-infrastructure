@@ -26,7 +26,7 @@ v_grafana() {
     omitir "las $esperadas reglas de alerting cargadas" "$(motivo grafana)"
   # El secret es 640 root:472 y el operador no está en ese grupo: desde el host es
   # ilegible siempre. Adentro sí, que corre 472:0 con el 472 como suplementario.
-  elif ! pass_gf=$(docker compose exec -T grafana cat /run/secrets/grafana_admin_password 2>/dev/null | tr -d '\r\n') || [ -z "$pass_gf" ]; then
+  elif ! pass_gf=$(contexto_compose exec -T grafana cat /run/secrets/grafana_admin_password 2>/dev/null | tr -d '\r\n') || [ -z "$pass_gf" ]; then
     omitir "las $esperadas reglas de alerting cargadas" "no se pudo leer el secret desde el contenedor"
   else
     codigo=$(curl -s -o /dev/null -w '%{http_code}' -m 10 -u "admin:$pass_gf" \
@@ -55,7 +55,7 @@ v_grafana() {
 
   if corriendo grafana; then
     vacio "SMTP y destinatario de alertas sin claves vacías en .env" \
-      docker compose exec -T grafana sh -c \
+      contexto_compose exec -T grafana sh -c \
         '[ -n "$GF_SMTP_USER" ] && [ "$GF_SMTP_HOST" != ":587" ] && [ -n "$GF_SMTP_FROM_ADDRESS" ] && [ -n "$ALERT_EMAIL_TO" ] || echo "alguna quedo vacia"'
   else
     omitir "SMTP y destinatario de alertas sin claves vacías en .env" "$(motivo grafana)"

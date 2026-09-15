@@ -12,7 +12,7 @@ Para levantar un entorno vacío, ver [levantar-produccion](../entorno/levantar-p
 
 ## Objetivo
 
-La base y el filestore del deployment de origen sirviendo desde este stack, bajo el nombre de base que el stack exige, con los módulos al día y el backup propio corriendo al terminar.
+La base y el filestore del deployment de origen sirviendo desde este stack, bajo el nombre de base que el stack exige y con los módulos al día. En producción, el cierre incluye el primer backup propio; staging se usa para ensayar y no escribe en el repositorio de backups.
 
 ## Flujo rápido
 
@@ -144,7 +144,7 @@ La actualización de todos los módulos no es opcional aunque el mayor coincida:
 
 ## Verificación
 
-Las cuatro. Cada una cubre una falla que las otras no ven.
+Comprobá primero la migración y después el estado del entorno:
 
 1. **El dato está.** Consultar en Odoo un registro conocido del origen y confirmar que aparece.
 2. **Un adjunto se descarga de verdad.** Abrir un documento con adjunto en la interfaz y **bajarlo**. No alcanza con que la fila exista en `ir_attachment`.
@@ -162,13 +162,18 @@ Las cuatro. Cada una cubre una falla que las otras no ven.
 
    **Si da `faltantes` > 0, antes de asumir que la migración lo rompió, comprobá si ya faltaba en el origen** — un `ir_attachment` puede quedar huérfano ahí por años sin que nadie lo note. Con el origen todavía accesible (paso 4 de *A mano*: no se apaga hasta cerrar esta verificación), cada hash de una línea `FALTA:` se busca directo en `<data_dir-origen>/filestore/<base-origen>/<hash>`: si tampoco está ahí, es un huérfano preexistente y no bloquea el cierre de la migración; documentalo y seguí. Si sí está en el origen y no en el destino, ahí la falla es de la copia — revisar el punto 3 de *A mano* antes de reintentar el paso 5.
 
-### Al terminar
-
-1. **Backup full inmediato** (`make backup-run`, ver [realizar-backup](realizar-backup.md)): el primer punto de partida limpio del stack nuevo es sobre los datos migrados, no sobre la base vacía que había antes.
-2. **Confirmar que la verificación de integridad corre:**
+5. **Crear y comprobar el backup de la migración, solo en producción:**
    ```bash
+   make backup-run
    make backup-integrity
    ```
-   Esperado: `backup check listo`.
-3. **Borrar el dump y la copia del filestore del host** — `/tmp/origen.dump` y `/tmp/filestore-origen` son una copia completa de la base de producción sin cifrar.
-4. **No apagar el deployment de origen todavía.** Es el único rollback que hay hasta que la verificación cierre, y sirve de archivo de consulta.
+   Omití estos dos comandos en staging: su credencial R2 es de solo lectura.
+6. **Verificar el deploy completo** después de levantar los servicios en el paso 7:
+   ```bash
+   make verify
+   ```
+
+### Al terminar
+
+1. **Borrar el dump y la copia del filestore del host** — `/tmp/origen.dump` y `/tmp/filestore-origen` son una copia completa de la base de producción sin cifrar.
+2. **No apagar el deployment de origen todavía.** Es el único rollback que hay hasta que la verificación cierre, y sirve de archivo de consulta.

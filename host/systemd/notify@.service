@@ -1,7 +1,7 @@
-# Plantilla: `sudo make timers-install` inyecta la ruta del checkout y el prefijo
-# del proyecto en el nombre. No se instala copiando este archivo a mano.
-# Unit plantilla: el OnFailure= de cada backup la instancia con su propio nombre
-# (%n), que llega acá como %i — así el mail dice cuál corrida falló.
+# Plantilla de unidad
+# timers.sh rellena ruta, entorno y nombre antes de instalarla.
+# Parámetro de aviso
+# OnFailure pasa el nombre de la unidad fallida mediante %i.
 
 [Unit]
 Description=Aviso de unit fallida (%i)
@@ -9,4 +9,5 @@ Description=Aviso de unit fallida (%i)
 [Service]
 Type=oneshot
 WorkingDirectory=CAMBIAR-en-deploy
+Environment=ENTORNO=CAMBIAR-entorno
 ExecStart=CAMBIAR-en-deploy/scripts/failure-notify.sh %i

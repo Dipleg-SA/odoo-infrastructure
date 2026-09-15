@@ -13,6 +13,8 @@ services:
     container_name: ${COMPOSE_PROJECT_NAME}-cloudflared
     networks:
       - edge
+    # Secreto del runtime
+    # El Compose padre resuelve la credencial desde runtime/<entorno>/secrets/.
     secrets:
       - cloudflare_tunnel_token
     environment:

@@ -38,7 +38,7 @@ v_alloy() {
   local comp rotos
   if ! corriendo alloy; then
     omitir "todos los componentes de Alloy sanos" "$(motivo alloy)"
-  elif ! comp=$(docker compose exec -T alloy bash -c \
+  elif ! comp=$(contexto_compose exec -T alloy bash -c \
        'exec 3<>/dev/tcp/127.0.0.1/12345 && printf "GET /api/v0/web/components HTTP/1.0\r\n\r\n" >&3 && cat <&3' 2>/dev/null); then
     bad "todos los componentes de Alloy sanos" "no se pudo consultar la API de componentes"
   else

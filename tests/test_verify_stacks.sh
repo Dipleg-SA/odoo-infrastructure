@@ -10,14 +10,22 @@ cd "$(dirname "$0")/.."
 . tests/lib.sh
 
 STUB_DIR=$(mktemp -d); export STUB_DIR
-trap 'rm -rf "$STUB_DIR"' EXIT
+RUNTIME_ENV_CREADO=0
+if [ ! -f runtime/desarrollo/compose.env ]; then
+  cp runtime/desarrollo/compose.env.example runtime/desarrollo/compose.env
+  RUNTIME_ENV_CREADO=1
+fi
+limpiar() {
+  rm -rf "$STUB_DIR"
+  [ "$RUNTIME_ENV_CREADO" -eq 0 ] || rm -f runtime/desarrollo/compose.env
+}
+trap limpiar EXIT
 
 # --- Arnés ---
-# Los stubs interceptan docker; COMPOSE_FILE en envs/ es lo que hace que el ruteo
-# de verify.sh entregue el trabajo al orquestador.
+# Los stubs interceptan Docker y ENTORNO selecciona el runtime del orquestador.
 
 orquestador() {
-  PATH="$PWD/tests/stubs:$PATH" COMPOSE_FILE="envs/development.yaml" \
+  PATH="$PWD/tests/stubs:$PATH" ENTORNO=desarrollo \
     scripts/verify-stacks.sh "$@" 2>&1
 }
 

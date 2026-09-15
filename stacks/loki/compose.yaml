@@ -15,7 +15,7 @@ services:
       - observability
     volumes:
       - loki-data:/loki
-      - ./config/loki.yaml:/etc/loki/loki.yaml:ro
+      - ${RUNTIME_CONFIG_DIR:?falta RUNTIME_CONFIG_DIR}/loki/loki.yaml:/etc/loki/loki.yaml:ro
     command: ["-config.file=/etc/loki/loki.yaml"]
     # Sin healthcheck: la imagen es distroless estricta (solo /usr/bin/loki), no hay
     # binario para ejecutar uno. El caso "vivo pero no sirve" lo cubre up == 0 en

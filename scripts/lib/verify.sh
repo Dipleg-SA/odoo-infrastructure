@@ -21,12 +21,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 [ -n "${VERIFY_LIB_CARGADA:-}" ] && return 0
 VERIFY_LIB_CARGADA=1
-# --- Valores por deployment ---
-# Los lee de .env solo, para que ninguna verificación dependa de la shell del operador.
-
-if [ -f .env ]; then
-  set -a; . ./.env; set +a
-fi
+contexto_iniciar || exit 2
 
 PUBLIC_HOSTNAME="${PUBLIC_HOSTNAME:-}"
 LOCAL_IP="${LOCAL_IP:-}"
@@ -87,7 +82,7 @@ declarado() {
 # Un chequeo de runtime contra un servicio apagado no puede concluir nada: dar ok
 # seria mentir y dar FALLA seria culpar al chequeo equivocado. Se omite.
 
-corriendo() { [ -n "$(docker compose ps -q "$1" 2>/dev/null)" ]; }
+corriendo() { [ -n "$(contexto_compose ps -q "$1" 2>/dev/null)" ]; }
 
 # --- Por qué se omite ---
 # Distingue las dos causas: una capa ausente es una decisión del entorno, un
@@ -107,7 +102,7 @@ log_limpio() {
   local nombre="$1" patron="$2" salvo="$3"; shift 3
   local salida
   if ! corriendo "$1"; then omitir "$nombre" "$(motivo "$1")"; return; fi
-  salida=$(docker compose logs --tail 500 --no-log-prefix "$@" 2>/dev/null | grep -iE "$patron")
+  salida=$(contexto_compose logs --tail 500 --no-log-prefix "$@" 2>/dev/null | grep -iE "$patron")
   [ -n "$salvo" ] && salida=$(printf '%s\n' "$salida" | grep -viE "$salvo")
   if [ -z "$salida" ]; then ok "$nombre"
   else bad "$nombre" "$(printf '%s' "$salida" | head -1)"; fi
@@ -119,7 +114,7 @@ log_limpio() {
 sano() {
   local svc="$1" estado
   if ! declarado "$svc"; then omitir "$svc levantado" "no está en este stack"; return 1; fi
-  estado=$(docker compose ps "$svc" --format '{{.Status}}' 2>/dev/null | head -1)
+  estado=$(contexto_compose ps "$svc" --format '{{.Status}}' 2>/dev/null | head -1)
   if [ -z "$estado" ]; then bad "$svc levantado" "no está corriendo"; return 1; fi
   case "$estado" in
     *"(healthy)"*)          ok "$svc healthy" ;;
@@ -139,7 +134,7 @@ sano() {
 
 publicado_en() {
   local salida
-  salida=$(docker compose port "$1" "$2" 2>/dev/null | head -1)
+  salida=$(contexto_compose port "$1" "$2" 2>/dev/null | head -1)
   case "$salida" in
     ''|invalid*|*:0) return 1 ;;
     *) printf '%s' "${salida%:*}"; return 0 ;;
@@ -147,18 +142,18 @@ publicado_en() {
 }
 
 # --- ¿El stack publica ESE puerto, y en qué IP? ---
-# No lo publican todos: staging borra el bloque entero y development deja solo el 80,
+# No lo publican todos: staging borra el bloque entero y desarrollo deja solo el 80,
 # porque server-plain no escucha en el 443. El $ ancla: "target: 80" matchea 8069.
 
-# La IP esperada sale de la composición resuelta y NO de repetir la cadena de defaults
-# del .env: development pisa el ports: con !override y su cadena no consulta LOCAL_IP.
+# La IP esperada sale de la composición resuelta y no repite defaults del runtime.
+# Desarrollo reemplaza ports con !override y no consulta LOCAL_IP.
 
 # Sin composición legible imprime '?' y devuelve 0, como declarado(): falla abierta
 # para que el chequeo reporte su propio fallo y no uno inventado sobre las capas.
 
 bind_declarado() {
   local bloque
-  bloque=$(docker compose config 2>/dev/null | sed -n "/^  $1:$/,/^  [a-z_-]*:$/p")
+  bloque=$(contexto_compose config 2>/dev/null | sed -n "/^  $1:$/,/^  [a-z_-]*:$/p")
   [ -z "$bloque" ] && { echo '?'; return 0; }
   printf '%s\n' "$bloque" | grep -qE "target: $2\$" || return 1
   printf '%s\n' "$bloque" | grep -B1 -E "target: $2\$" | sed -n 's/^ *host_ip: //p' | head -1 \
@@ -172,22 +167,22 @@ bind_declarado() {
 rotacion_aplicada() { grep -q '"max-size"' "${DAEMON_JSON:-/etc/docker/daemon.json}" 2>/dev/null; }
 
 # --- ¿Este stack sirve TLS? ---
-# Qué config monta nginx lo dice la composición, no .env: development la fija en
-# su entrypoint, así que su .env puede no traer NGINX_MODE y el modo se sabe igual.
+# Qué config monta nginx lo dice la composición, no una variable NGINX_MODE.
+# Desarrollo fija la plantilla sin TLS en su runtime.
 #
 # El nombre no lleva .template: los config de nginx son archivos reales,
 # bootstrapeados con cp desde su .example — ya no pasan por envsubst.
 
 modo_plain() {
-  docker compose config 2>/dev/null | grep -q 'source:.*/server-plain\.conf$'
+  contexto_compose config 2>/dev/null | grep -q 'source:.*/server-plain\.conf$'
 }
 
 # --- ¿Este stack manda correo? ---
-# Lo dice la composición, no .env: staging y development fuerzan ODOO_DISABLE_SMTP,
-# y con eso el entrypoint escribe smtp_server vacío pase lo que pase en odoo.conf.
+# Lo dice la composición, no una variable SMTP: staging y desarrollo fuerzan ODOO_DISABLE_SMTP.
+# El entrypoint escribe smtp_server vacío pase lo que pase en odoo.conf.
 
 smtp_activo() {
-  ! docker compose config 2>/dev/null | grep -q 'ODOO_DISABLE_SMTP: *"1"'
+  ! contexto_compose config 2>/dev/null | grep -q 'ODOO_DISABLE_SMTP: *"1"'
 }
 
 # --- Placeholder de un .example sin reemplazar ---
@@ -212,7 +207,7 @@ sin_placeholder() {
   else ok "$nombre"; fi
 }
 
-# --- Claves de un .env.example ausentes en el .env real ---
+# --- Claves de una plantilla ausentes en el archivo privado ---
 # Un grep de '^KEY=$' atrapa una clave presente y vacía, pero no una que
 # directamente nunca se escribió — ausente pasa sin que nada la marque, que es
 # lo que dejó producción con ALERT_EMAIL_FROM sin cargar meses sin que

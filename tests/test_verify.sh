@@ -9,7 +9,17 @@
 cd "$(dirname "$0")/.."
 
 STUB_DIR=$(mktemp -d); export STUB_DIR
-trap 'rm -rf "$STUB_DIR"' EXIT
+RUNTIME_ENV_CREADO=0
+if [ ! -f runtime/desarrollo/compose.env ]; then
+  cp runtime/desarrollo/compose.env.example runtime/desarrollo/compose.env
+  RUNTIME_ENV_CREADO=1
+fi
+limpiar() {
+  rm -rf "$STUB_DIR"
+  [ "$RUNTIME_ENV_CREADO" -eq 0 ] || rm -f runtime/desarrollo/compose.env
+}
+trap limpiar EXIT
+export ENTORNO=desarrollo
 PATH="$PWD/tests/stubs:$PATH"
 
 . scripts/lib/verify.sh
@@ -239,22 +249,23 @@ no_contiene "y no lo reporta como ok" "  ok" \
 titulo "claves_ausentes — una clave que nunca se escribió, no solo vacía"
 # =====================================================================
 
-# Escenario real: ALERT_EMAIL_FROM nunca se escribió en .env.production.example
-# (no 'ALERT_EMAIL_FROM=', directamente no estaba la línea), así que ningún grep de
-# '^KEY=$' lo atrapaba — host-verify daba verde y notify-test fallaba en el
-# servidor meses después, con el aviso de fallo que se supone que manda ese mismo
-# mecanismo.
+# Clave requerida
+# El runtime declara ALERT_EMAIL_FROM; host-verify debe detectar si el operador no la completó.
 
-printf 'COMPOSE_PROJECT_NAME=production\nPUBLIC_HOSTNAME=\nSMTP_HOST=\nSMTP_USER=\nALERT_EMAIL_FROM=\nALERT_EMAIL_TO=\n#COMPOSE_PROFILES=lan\n' \
-  > "$STUB_DIR/plantilla.example"
-
-printf 'COMPOSE_PROJECT_NAME=production\nPUBLIC_HOSTNAME=odoo.ejemplo.com\nSMTP_HOST=smtp.ejemplo.com\nSMTP_USER=apikey\nALERT_EMAIL_TO=ops@ejemplo.com\n' \
-  > "$STUB_DIR/env-incompleto"
+cp runtime/produccion/compose.env.example "$STUB_DIR/plantilla.example"
+sed \
+  -e 's/^LOCAL_IP=$/LOCAL_IP=203.0.113.10/' \
+  -e 's/^PUBLIC_HOSTNAME=$/PUBLIC_HOSTNAME=odoo.example.test/' \
+  -e 's/^SMTP_HOST=$/SMTP_HOST=smtp.example.test/' \
+  -e 's/^SMTP_USER=$/SMTP_USER=usuario/' \
+  -e 's/^ALERT_EMAIL_TO=$/ALERT_EMAIL_TO=ops@example.test/' \
+  "$STUB_DIR/plantilla.example" > "$STUB_DIR/env-completo"
+grep -v '^ALERT_EMAIL_FROM=' "$STUB_DIR/env-completo" > "$STUB_DIR/env-incompleto"
 
 igual "la clave nunca escrita se reporta" "ALERT_EMAIL_FROM" \
   "$(claves_ausentes "$STUB_DIR/plantilla.example" "$STUB_DIR/env-incompleto")"
 
-printf 'ALERT_EMAIL_FROM=alertas@ejemplo.com\n' >> "$STUB_DIR/env-incompleto"
+printf 'ALERT_EMAIL_FROM=alertas@example.test\n' >> "$STUB_DIR/env-incompleto"
 
 igual "completa la clave y no falta ninguna" "" \
   "$(claves_ausentes "$STUB_DIR/plantilla.example" "$STUB_DIR/env-incompleto")"
@@ -336,6 +347,19 @@ igual "y con claves propias del host pasa" "pasa"  "$(veredicto)"
 
 rm -f "$DAEMON_JSON"
 igual "sin archivo también falla"          "falla" "$(veredicto)"
+
+# =====================================================================
+titulo "rotacion_host — /etc/docker/daemon.json solo se chequea en Linux"
+# =====================================================================
+
+. scripts/verify-host.sh
+salida=$(verificar_rotacion_daemon Darwin 2>&1)
+contiene "macOS omite el chequeo de Linux" "solo aplica a Linux" "$salida"
+no_contiene "macOS no sugiere host-init" "sudo make host-init" "$salida"
+
+salida=$(verificar_rotacion_daemon Linux 2>&1)
+contiene "Linux sigue fallando si falta max-size" "FALLA   rotación de logs del daemon" "$salida"
+contiene "Linux conserva la corrección sugerida" "sudo make host-init" "$salida"
 
 # =====================================================================
 titulo "timer_activo — la unit sale de timers.sh, no de una lista de acá"

@@ -21,7 +21,6 @@ make prometheus-down && make loki-down && make grafana-down && make alloy-down
 docker compose restart prometheus loki grafana alloy   # no recrea contenedores
 docker compose logs -f prometheus loki grafana alloy
 docker compose ps prometheus loki grafana alloy
-make prometheus-verify
 ```
 
 `loki` es el único de los cuatro servicios sin `(healthy)` en `docker compose ps`, y es correcto: su imagen es distroless estricta, sin binario con el cual ejecutar un healthcheck. Su caída la cubre `up == 0` en Prometheus, que lo scrapea directo — por eso la topología es híbrida: Prometheus scrapea por pull todo lo que ya expone HTTP (`cloudflared`, Loki, Grafana, sí mismo y el propio Alloy), y Alloy solo empuja lo que ningún pull alcanza. Si todo se empujara por el agente, la muerte de Alloy no dispararía ninguna alerta.

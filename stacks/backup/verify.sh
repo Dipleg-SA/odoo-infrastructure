@@ -3,6 +3,7 @@
 # nombra el comando, los valores viven acá.
 
 . "$(dirname "${BASH_SOURCE[0]}")/../../scripts/lib/verify.sh"
+META_DIR="${RUNTIME_STATE_DIR:-state}/meta"
 
 # --- ¿Este entorno respalda, o solo restaura? ---
 # Se deriva de la composición, no de una lista: si backup está en la composición
@@ -11,7 +12,7 @@
 # one-off y esos dos chequeos fallarían por la razón equivocada.
 
 respalda() {
-  docker compose config --services 2>/dev/null | grep -qx backup
+  contexto_compose config --services 2>/dev/null | grep -qx backup
 }
 
 v_backup() {
@@ -59,10 +60,10 @@ v_backup() {
 
   if respalda; then
     expect "repo de restic con snapshots de este stack" "$COMPOSE_PROJECT_NAME" \
-      docker compose exec -T backup restic snapshots --latest 1
+      contexto_compose exec -T backup restic snapshots --latest 1
   else
     expect "repo de restic alcanzable, con algo que restaurar" "snapshots" \
-      docker compose run --rm --entrypoint restic -T backup snapshots --latest 1
+      contexto_compose run --rm --entrypoint restic -T backup snapshots --latest 1
   fi
 
   # --- Las dos mitades en el mismo snapshot ---
@@ -79,7 +80,7 @@ v_backup() {
     # --latest 1 devuelve el más nuevo DE CADA GRUPO. Se midió: un backup que se
     # olvidaba el dump pasaba igual, porque el snapshot viejo con el dump seguía
     # apareciendo en la respuesta y tapaba al nuevo.
-    rutas=$(docker compose exec -T backup restic snapshots latest --json 2>/dev/null)
+    rutas=$(contexto_compose exec -T backup restic snapshots latest --json 2>/dev/null)
     case "$rutas" in
       *'/data/dump'*)
         case "$rutas" in
@@ -96,8 +97,18 @@ v_backup() {
 
   if ! respalda; then
     omitir "registro de addons del snapshot presente" "este entorno no escribe snapshots"
-  elif [ -s state/meta/addons.txt ]; then ok "registro de addons del snapshot presente"
-  else aviso "registro de addons del snapshot presente" "state/meta/addons.txt vacío — lo escribe make backup-run"; fi
+  elif [ -s "$META_DIR/addons.txt" ]; then ok "registro de addons del snapshot presente"
+  else aviso "registro de addons del snapshot presente" "$META_DIR/addons.txt vacío — lo escribe make backup-run"; fi
+
+  # --- Procedencia de imágenes ---
+  # El snapshot debe poder reconstruir qué imagen estaba activa y cuál era la anterior.
+  if ! respalda; then
+    omitir "procedencia de imágenes del snapshot presente" "este entorno no escribe snapshots"
+  elif [ -s "$META_DIR/images.json" ] && grep -q '"Actual"' "$META_DIR/images.json"; then
+    ok "procedencia de imágenes del snapshot presente"
+  else
+    aviso "procedencia de imágenes del snapshot presente" "$META_DIR/images.json vacío — lo escribe make backup-run"
+  fi
 
   # --- Timers ---
   # El diario respalda y purga; el mensual verifica integridad del repositorio.

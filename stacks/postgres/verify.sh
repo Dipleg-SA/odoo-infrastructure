@@ -19,7 +19,7 @@ v_postgres() {
     omitir "postgres acepta conexiones" "$(motivo postgres)"
   else
     expect "postgres acepta conexiones" "accepting connections" \
-      docker compose exec -T postgres pg_isready
+      contexto_compose exec -T postgres pg_isready
   fi
 
   # --- Permisos del secret ---

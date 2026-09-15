@@ -20,8 +20,9 @@ Este procedimiento es para recuperar producción. Para sembrar staging, seguí
    secrets y addons; ver [A mano](#a-mano).
 2. **Restaurar las dos partes del estado.** Consultar el inventario de addons si hace falta,
    iniciar Postgres y restaurar filestore y base desde el mismo snapshot; ver [Comandos](#comandos).
-3. **Reponer código y levantar servicios.** Sincronizar addons, resolver dependencias, iniciar Odoo
-   y reactivar backups y timers; ver [Comandos](#comandos).
+3. **Reponer código y levantar servicios.** Sincronizar addons, resolver dependencias, reemitir el
+   certificado, preparar el monitoreo y arrancar el stack antes de reactivar backups y timers; ver
+   [Comandos](#comandos).
 4. **Confirmar la recuperación.** Ejecutar las verificaciones y descargar un adjunto desde la
    aplicación; ver [Verificación](#verificación).
 
@@ -66,9 +67,10 @@ make restore SNAPSHOT="$SNAPSHOT"
 make repo-sync                   # primero completar addons/addons.txt
 make addons-deps
 make build                       # solo si addons-deps agregó o cambió pines
-make backup-up
-make odoo-up
+make cert-issue                  # el volumen de certificados no está en el backup
+make monitoring-role             # el dump lógico no restaura roles de Postgres
 sudo make up-timers
+make up                          # levanta Edge, backup y observabilidad también
 make backup-run                  # crea un snapshot nuevo de la instancia recuperada
 ```
 
@@ -87,8 +89,6 @@ recurrente —el backup diario— siga corriendo sin privilegios.
 ## Verificación
 
 ```bash
-make backup-verify
-make odoo-verify
 make verify
 ```
 

@@ -10,6 +10,18 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
 . scripts/lib/ui.sh
 
+# Contexto del estado de imágenes
+# En un runtime real los metadatos viven bajo su state; el fallback mantiene el arnés aislado.
+if [ -n "${ENTORNO:-}" ] && [ -f scripts/lib/contexto.sh ]; then
+  . scripts/lib/contexto.sh
+  contexto_iniciar
+  META_DIR="$RUNTIME_STATE_DIR/meta"
+  compose() { contexto_compose "$@"; }
+else
+  META_DIR="state/meta"
+  compose() { docker compose "$@"; }
+fi
+
 if [ -f .env ]; then set -a; . ./.env; set +a; fi
 
 MODE="${1:-daily}"
@@ -63,15 +75,15 @@ else
   ui_warn "flock no disponible (macOS)" "corrida sin serializar" >&2
 fi
 
-res() { docker compose exec -T backup restic "$@"; }
-pg()  { docker compose exec -T postgres "$@"; }
+res() { compose exec -T backup restic "$@"; }
+pg()  { compose exec -T postgres "$@"; }
 
 # --- Marca de éxito ---
 # El exit code no es consultable desde Prometheus; esta marca sí. Escritura atómica:
 # el colector de textfile puede leer en cualquier momento y un archivo a medias lo rompe.
 
 marcar_exito() {
-  local dir="state/textfile" tmp
+  local dir="${RUNTIME_STATE_DIR:-state}/textfile" tmp
   mkdir -p "$dir"
   tmp=$(mktemp "$dir/.backup.XXXXXX")
   {
@@ -88,12 +100,12 @@ marcar_exito() {
 # Informativo: un fallo acá no aborta el backup — tolerante y best-effort.
 
 registrar_addons() {
-  local dir="state/meta" tmp error detalle estado
+  local dir="$META_DIR" tmp error detalle estado
   mkdir -p "$dir" 2>/dev/null || { ui_warn "no se pudo crear $dir" "backup sigue sin el registro de addons" >&2; return 0; }
   tmp=$(mktemp "$dir/.addons.XXXXXX" 2>/dev/null) || { ui_warn "no se pudo escribir el registro de addons" "" >&2; return 0; }
   error=$(mktemp "$dir/.addons-error.XXXXXX" 2>/dev/null) || { ui_warn "no se pudo escribir el diagnóstico de addons" "" >&2; rm -f "$tmp"; return 0; }
   if scripts/addons.sh status > "$tmp" 2> "$error"; then
-    if grep -E '^(enterprise|custom-addons|oca|third-party)[[:space:]]' "$tmp" > "$tmp.registro"; then
+    if grep -E '^(enterprise:|[[:alnum:]_.-]+[[:space:]]+(publicado|sin candidato)[[:space:]]+)' "$tmp" > "$tmp.registro"; then
       chmod 644 "$tmp.registro"
       mv -f "$tmp.registro" "$dir/addons.txt"
     else
@@ -108,6 +120,20 @@ registrar_addons() {
   fi
   rm -f "$tmp" "$error"
   return 0
+}
+
+# Registro de imágenes
+# Actual y Anterior deben entrar en el mismo snapshot que el dump y el filestore.
+registrar_imagenes() {
+  local tmp="$META_DIR/.images.$$.tmp"
+  mkdir -p "$META_DIR"
+  if [ -x scripts/image-state.sh ] && [ -n "${ENTORNO:-}" ]; then
+    scripts/image-state.sh show > "$tmp"
+  else
+    printf '%s\n' '{"Nueva":null,"Actual":null,"Anterior":null,"validation":null}' > "$tmp"
+  fi
+  chmod 644 "$tmp"
+  mv -f "$tmp" "$META_DIR/images.json"
 }
 
 # --- Dump de la base ---
@@ -144,6 +170,7 @@ case "$MODE" in
     validar_endpoint
     dump_base
     registrar_addons
+    registrar_imagenes
     res backup /data/odoo /data/dump /data/meta --exclude=/data/odoo/sessions
     res forget --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" \
                --keep-monthly "$KEEP_MONTHLY" --prune

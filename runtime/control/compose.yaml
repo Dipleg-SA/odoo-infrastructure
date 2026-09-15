@@ -1,0 +1,4 @@
+# Composición del receptor
+# Producción la incluye para compartir su red edge y rutas controladas.
+include:
+  - ../../stacks/addons-webhook/compose.yaml

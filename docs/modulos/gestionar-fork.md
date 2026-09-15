@@ -151,7 +151,7 @@ make verify
 
 Revisá los logs de la actualización y probá en la UI de staging el flujo de cada módulo afectado, contra los datos restaurados de producción. Confirmá que no salió correo real: `ODOO_DISABLE_SMTP=1` lo bloquea. Si el cambio modifica registros existentes, comprobá también la migración. No promociones hasta que estas pruebas y `make verify` estén en verde.
 
-Si `repo-sync` avisa que el `merge --ff-only` no avanzó en línea recta (staging se reescribió con `--force`), nombra los dos comandos posibles: `git rebase origin/<rama>-stag` para integrar, o `git reset --hard origin/<rama>-stag` si los commits locales son descartables.
+`repo-sync` deja el worktree exactamente en `origin/<rama>-stag`, incluso cuando staging se reescribió con `--force`. Descarta cambios, commits locales y archivos no seguidos, así que cualquier trabajo a conservar tiene que estar pusheado antes de sincronizar.
 
 Probá de verdad en staging. Recién validado, promover:
 

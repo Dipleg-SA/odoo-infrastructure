@@ -3,9 +3,8 @@
 # y por timer de systemd después. DNS-01 y no HTTP-01 para que la emisión no
 # dependa del ingreso — el certificado se emite aunque el borde esté roto.
 #
-# Stack propio y no un servicio adentro de nginx: tiene imagen, script, secret,
-# unit y verificación propios. El volumen letsencrypt lo declara el entorno,
-# porque lo comparte con nginx — certbot escribe, nginx lee.
+# Stack propio
+# El runtime declara su credencial y el volumen letsencrypt con identidad propia.
 services:
   certbot:
     build:
