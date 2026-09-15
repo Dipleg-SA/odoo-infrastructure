@@ -159,6 +159,7 @@ check("un evento distinto de push no cambia candidatos", send("19.0-dev", dev_sh
 check("una rama feat se ignora", send("feat/prueba", dev_sha, "feat-1")[0] == 202)
 check("una línea Odoo distinta se ignora", send("20.0-dev", dev_sha, "version-1")[0] == 202)
 check("un repositorio ausente del catálogo se ignora", send("19.0-dev", dev_sha, "unknown-1", url=temporary / "desconocido.git")[0] == 202)
+check("un evento del repositorio Enterprise se ignora", send("19.0-dev", dev_sha, "enterprise-1", url=temporary / "enterprise.git")[0] == 202 and not (candidates / "desarrollo" / "enterprise").exists())
 
 run("git", "-C", str(work), "checkout", "-q", "19.0-dev")
 with (work / "__manifest__.py").open("a") as output:

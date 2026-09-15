@@ -52,11 +52,14 @@ crear_checkout() {
 declarar() { printf '%s\n' "$2" >> "$1/runtime/addons/catalogo.txt"; }
 ejecutar() {
   local root="$1" entorno="$2" verbo="$3"
-  (cd "$root" && ENTORNO="$entorno" ./scripts/addons.sh "$verbo" 2>&1)
+  shift 3
+  (cd "$root" && ENTORNO="$entorno" ./scripts/addons.sh "$verbo" "$@" 2>&1)
 }
 codigo() {
   local salida retorno
-  salida=$(ejecutar "$1" "$2" "$3" 2>&1)
+  local root="$1" entorno="$2" verbo="$3"
+  shift 3
+  salida=$(ejecutar "$root" "$entorno" "$verbo" "$@" 2>&1)
   retorno=$?
   [ "$retorno" -eq 0 ] || printf '%s\n' "$salida" >&2
   printf '%s' "$retorno"
@@ -139,6 +142,32 @@ printf '%s\n' 'https://token@github.com/organizacion/dominio_privado.git' \
 igual "una URL con credenciales se rechaza" "1" "$(codigo "$ROOT_URL_INVALIDA" produccion sync)"
 igual "la URL con credenciales no clona repositorios" "1" \
   "$([ -d "$ROOT_URL_INVALIDA/runtime/addons/.repos" ]; echo $?)"
+
+# Enterprise fuera del catálogo
+# El checkout privado se selecciona por un tag anotado y nunca se materializa como candidato.
+git -C "$ADDON" tag -a 19.0-ee-2026-09-15 -m "Enterprise 19.0" 19.0
+ROOT_ENTERPRISE=$(crear_checkout caso-enterprise)
+igual "Enterprise se sincroniza fuera del catálogo" "0" \
+  "$(codigo "$ROOT_ENTERPRISE" produccion enterprise-sync "$ADDON" 19.0-ee-2026-09-15)"
+igual "Enterprise queda detached en el commit del tag" "$(git -C "$ADDON" rev-parse 19.0)" \
+  "$(git -C "$ROOT_ENTERPRISE/runtime/addons/enterprise" rev-parse HEAD)"
+contiene "Enterprise status muestra el tag seleccionado" "19.0-ee-2026-09-15" \
+  "$(ejecutar "$ROOT_ENTERPRISE" produccion enterprise-status)"
+igual "Enterprise pasa la validación de tag inmutable" "0" \
+  "$(codigo "$ROOT_ENTERPRISE" produccion enterprise-validate 19.0-ee-2026-09-15)"
+igual "Enterprise no crea un candidato de dominio" "0" \
+  "$([ ! -e "$ROOT_ENTERPRISE/runtime/addons/custom/produccion/enterprise" ]; echo $?)"
+igual "un tag Enterprise inexistente falla" "1" \
+  "$(codigo "$ROOT_ENTERPRISE" produccion enterprise-sync "$ADDON" 19.0-ee-2026-09-16)"
+git -C "$ADDON" tag 19.0-ee-2026-09-17 19.0
+ROOT_ENTERPRISE_LW=$(crear_checkout caso-enterprise-lightweight)
+igual "un tag Enterprise liviano no se acepta como inmutable" "1" \
+  "$(codigo "$ROOT_ENTERPRISE_LW" produccion enterprise-sync "$ADDON" 19.0-ee-2026-09-17)"
+printf '%s\n' 'https://github.com/organizacion/enterprise.git' > "$ROOT_ENTERPRISE/runtime/addons/catalogo.txt"
+igual "Enterprise no se admite dentro del catálogo" "1" \
+  "$(codigo "$ROOT_ENTERPRISE" produccion sync)"
+igual "el checkout Enterprise sucio no se pisa" "1" \
+  "$(touch "$ROOT_ENTERPRISE/runtime/addons/enterprise/edicion.local"; codigo "$ROOT_ENTERPRISE" produccion enterprise-sync "$ADDON" 19.0-ee-2026-09-15)"
 
 rm -f "$ROOT/runtime/addons/catalogo.txt"
 igual "sin catálogo real falla y no usa la plantilla" "1" "$(codigo "$ROOT" staging sync)"

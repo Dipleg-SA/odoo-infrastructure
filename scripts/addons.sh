@@ -44,6 +44,134 @@ BARE_RESULT=""
 fail() { printf 'addons.sh: %s\n' "$1" >&2; FAILED=1; }
 warn() { printf 'addons.sh: aviso: %s\n' "$1" >&2; }
 
+# Checkout único de Enterprise
+# Vive fuera del catálogo y solo se selecciona por un tag fechado de la línea.
+ENTERPRISE_ROOT="$ADDONS_ROOT/enterprise"
+
+enterprise_usage() {
+  printf 'uso: %s enterprise <sync|status|validate> [URL] [TAG]\n' "$(basename "$0")" >&2
+  printf 'o:   %s enterprise-sync [URL] [TAG]\n' "$(basename "$0")" >&2
+}
+
+enterprise_url_validar() {
+  local url="$1"
+  case "$url" in
+    https://*|ssh://*|git@*:*|file://*|/*|./*|../*) ;;
+    *) fail "URL de Enterprise no admitida: $url"; return 1 ;;
+  esac
+  case "$url" in
+    *\?*|*\#*) fail "la URL de Enterprise no puede incluir query ni fragmento: $url"; return 1 ;;
+    https://*@*|ssh://*@*)
+      [[ "$url" == ssh://git@* ]] || { fail "la URL de Enterprise no puede incluir credenciales: $url"; return 1; }
+      ;;
+  esac
+}
+
+enterprise_tag_validar() {
+  local tag="$1"
+  if [[ ! "$tag" =~ ^${VERSION}-ee-[0-9]{4}-[0-9]{2}-[0-9]{2}([-.][A-Za-z0-9._-]+)?$ ]]; then
+    fail "el tag de Enterprise debe seguir ${VERSION}-ee-YYYY-MM-DD"
+    return 1
+  fi
+}
+
+enterprise_checkout_validar() {
+  local url="$1" tag="$2" remoto commit tag_commit estado nuevo=0
+  if [ -L "$ENTERPRISE_ROOT" ]; then
+    fail "runtime/addons/enterprise no puede ser un enlace simbólico"
+    return 1
+  fi
+  if [ ! -d "$ENTERPRISE_ROOT/.git" ]; then
+    mkdir -p "$ADDONS_ROOT"
+    if ! git clone --no-checkout -- "$url" "$ENTERPRISE_ROOT"; then
+      rm -rf "$ENTERPRISE_ROOT"
+      fail "no se pudo clonar Enterprise"
+      return 1
+    fi
+    nuevo=1
+  fi
+  remoto=$(git -C "$ENTERPRISE_ROOT" remote get-url origin 2>/dev/null) || {
+    fail "runtime/addons/enterprise no tiene un remoto origin"; return 1;
+  }
+  if [ "$remoto" != "$url" ]; then
+    fail "la URL de Enterprise difiere del remoto origin; revisar manualmente"
+    return 1
+  fi
+  estado=$(git -C "$ENTERPRISE_ROOT" status --porcelain 2>/dev/null || true)
+  if [ "$nuevo" -eq 0 ] && [ -n "$estado" ]; then
+    fail "el checkout de Enterprise tiene cambios locales; no se puede seleccionar el tag"
+    return 1
+  fi
+  if ! git -C "$ENTERPRISE_ROOT" fetch --no-tags origin \
+      "refs/tags/$tag:refs/tags/$tag" 2>&1; then
+    fail "no se pudo resolver el tag inmutable de Enterprise: $tag"
+    return 1
+  fi
+  tag_commit=$(git -C "$ENTERPRISE_ROOT" rev-parse --verify "$tag^{commit}" 2>/dev/null) || {
+    fail "el tag de Enterprise no apunta a un commit: $tag"; return 1;
+  }
+  [ "$(git -C "$ENTERPRISE_ROOT" cat-file -t "refs/tags/$tag" 2>/dev/null || true)" = tag ] || {
+    fail "el tag de Enterprise debe ser anotado e inmutable: $tag"; return 1;
+  }
+  git -C "$ENTERPRISE_ROOT" show-ref --tags --verify "refs/tags/$tag" >/dev/null 2>&1 || {
+    fail "el tag de Enterprise no existe como referencia de tag: $tag"; return 1;
+  }
+  if ! git -C "$ENTERPRISE_ROOT" checkout --detach --force "$tag" >/dev/null 2>&1; then
+    fail "no se pudo seleccionar el tag de Enterprise: $tag"
+    return 1
+  fi
+  if [ -n "$(git -C "$ENTERPRISE_ROOT" status --porcelain 2>/dev/null)" ]; then
+    fail "el checkout de Enterprise quedó sucio después de seleccionar el tag"
+    return 1
+  fi
+  ui_ok "Enterprise seleccionado — $tag ($tag_commit)"
+}
+
+enterprise_sync() {
+  local url="${1:-${ENTERPRISE_REPOSITORY:-}}" tag="${2:-${ENTERPRISE_TAG:-}}"
+  if [ -z "$url" ] || [ -z "$tag" ]; then
+    enterprise_usage
+    return 2
+  fi
+  enterprise_url_validar "$url" || return 1
+  enterprise_tag_validar "$tag" || return 1
+  enterprise_checkout_validar "$url" "$tag"
+}
+
+enterprise_validate() {
+  local tag="${1:-${ENTERPRISE_TAG:-}}" commit expected
+  if [ -z "$tag" ]; then
+    enterprise_usage
+    return 2
+  fi
+  enterprise_tag_validar "$tag" || return 1
+  [ -d "$ENTERPRISE_ROOT/.git" ] || { fail "falta runtime/addons/enterprise; ejecutar enterprise sync"; return 1; }
+  commit=$(git -C "$ENTERPRISE_ROOT" rev-parse --verify HEAD 2>/dev/null) || { fail "Enterprise no tiene HEAD resoluble"; return 1; }
+  expected=$(git -C "$ENTERPRISE_ROOT" rev-parse --verify "$tag^{commit}" 2>/dev/null) || { fail "el tag de Enterprise no existe localmente: $tag"; return 1; }
+  [ "$(git -C "$ENTERPRISE_ROOT" cat-file -t "refs/tags/$tag" 2>/dev/null || true)" = tag ] || { fail "el tag de Enterprise debe ser anotado e inmutable: $tag"; return 1; }
+  [ "$commit" = "$expected" ] || { fail "Enterprise no está seleccionado en el tag $tag"; return 1; }
+  [ -z "$(git -C "$ENTERPRISE_ROOT" status --porcelain 2>/dev/null)" ] || { fail "el checkout de Enterprise tiene cambios locales"; return 1; }
+  printf 'enterprise: %s · commit: %s\n' "$tag" "$commit"
+}
+
+enterprise_status() {
+  [ -d "$ENTERPRISE_ROOT/.git" ] || { printf 'enterprise: sin checkout\n'; return 1; }
+  local tag commit
+  tag=$(git -C "$ENTERPRISE_ROOT" describe --tags --exact-match HEAD 2>/dev/null || true)
+  commit=$(git -C "$ENTERPRISE_ROOT" rev-parse --verify HEAD 2>/dev/null || true)
+  printf 'enterprise: %s · commit: %s\n' "${tag:--}" "${commit:--}"
+}
+
+cmd_enterprise() {
+  local accion="${1:-}"; shift || true
+  case "$accion" in
+    sync) enterprise_sync "$@" ;;
+    validate) enterprise_validate "$@" ;;
+    status) enterprise_status "$@" ;;
+    *) enterprise_usage; return 2 ;;
+  esac
+}
+
 # Catálogo de dominio
 # Cada línea contiene una sola URL Git; el nombre se deriva del último segmento.
 require_catalogo() {
@@ -105,6 +233,11 @@ catalogo_validar() {
     dominio=$(nombre_repositorio "$url")
     if [[ ! "$dominio" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
       fail "nombre de dominio inválido derivado de la URL: $url"
+      formato_invalido=1
+      continue
+    fi
+    if [ "$dominio" = enterprise ]; then
+      fail "Enterprise se administra fuera de runtime/addons/catalogo.txt"
       formato_invalido=1
       continue
     fi
@@ -279,5 +412,9 @@ case "${1:-}" in
   __sync-repo) shift; sync_repo "$@" ;;
   sync) shift; cmd_sync "$@" ;;
   status) shift; cmd_status "$@" ;;
-  *) printf 'uso: %s sync|status\n' "$(basename "$0")" >&2; exit 2 ;;
+  enterprise) shift; cmd_enterprise "$@" ;;
+  enterprise-sync) shift; enterprise_sync "$@" ;;
+  enterprise-status) shift; enterprise_status "$@" ;;
+  enterprise-validate) shift; enterprise_validate "$@" ;;
+  *) printf 'uso: %s sync|status|enterprise\n' "$(basename "$0")" >&2; exit 2 ;;
 esac

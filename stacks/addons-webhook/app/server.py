@@ -164,6 +164,8 @@ def read_catalog(path: Path) -> list[dict[str, str]]:
             domain = repository_domain(url)
         except ValueError as error:
             raise WebhookError(503, "el catálogo contiene una entrada inválida") from error
+        if domain == "enterprise":
+            raise WebhookError(503, "Enterprise se administra fuera del catálogo")
         if domain in domains:
             raise WebhookError(503, "el catálogo repite un dominio")
         domains.add(domain)
