@@ -9,7 +9,8 @@ shopt -s nullglob
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 . scripts/lib/ui.sh
 
-REQUIREMENTS="addons/requirements.txt"
+REQUIREMENTS="${PYDEPS_REQUIREMENTS:-addons/requirements.txt}"
+SNAPSHOT_ROOT="${PYDEPS_SNAPSHOT_ROOT:-addons}"
 
 # --- Bootstrap desde la plantilla ---
 # No se versiona —es local al deployment, como addons.txt—, así que se copia una vez.
@@ -25,10 +26,18 @@ require_requirements() {
 # Una fila por __manifest__.py bajo cada categoría; el layout lo fija entrypoint.sh.
 
 manifest_files() {
-  local category
-  for category in $(sed -n 's/^for category in \(.*\); do/\1/p' stacks/odoo/image/entrypoint.sh); do
-    find "addons/$category" -name __manifest__.py 2>/dev/null || true
+  local root category
+  local modernos=0
+  for root in "$SNAPSHOT_ROOT/enterprise" "$SNAPSHOT_ROOT/custom"; do
+    [ -d "$root" ] || continue
+    modernos=1
+    find "$root" -name __manifest__.py -type f -print 2>/dev/null || true
   done
+  if [ "$modernos" -eq 0 ]; then
+    for category in $(sed -n 's/^for category in \(.*\); do/\1/p' stacks/odoo/image/entrypoint.sh); do
+      find "addons/$category" -name __manifest__.py -type f -print 2>/dev/null || true
+    done
+  fi
 }
 
 # --- external_dependencies.python ---

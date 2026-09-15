@@ -52,6 +52,8 @@ no_contiene "desarrollo no incluye pgbouncer" "pgbouncer" "$DEV"
 contiene "la imagen postgres usa la identidad del runtime" "local/postgres:odoo-desarrollo" "$(printf '%s\n' "$DEV" | bloque postgres)"
 contiene "la imagen nginx usa la identidad del runtime" "local/nginx:odoo-desarrollo" "$(printf '%s\n' "$DEV" | bloque nginx)"
 contiene "desarrollo desactiva SMTP de Odoo" 'ODOO_DISABLE_SMTP: "1"' "$(printf '%s\n' "$DEV" | bloque odoo)"
+contiene "desarrollo usa una imagen Odoo explícita" "local/odoo:19.0-desarrollo-bootstrap" "$(printf '%s\n' "$DEV" | bloque odoo)"
+no_contiene "desarrollo no monta addons del host" "/mnt/extra-addons" "$(printf '%s\n' "$DEV" | bloque odoo)"
 
 # Production
 # Certbot se activa de forma explícita y el proxy conserva el bind de la LAN.
@@ -60,6 +62,8 @@ igual "producción resuelve sin error" "0" "$(LOCAL_IP=192.0.2.10 COMPOSE_PROFIL
 igual "producción declara 9 secretos" "9" "$(printf '%s\n' "$PROD" | contar_secrets)"
 igual "producción incluye sus once servicios" "addons-webhook alloy backup certbot cloudflared grafana loki nginx odoo postgres prometheus " \
   "$(COMPOSE_PROFILES=cert servicios produccion)"
+contiene "producción usa una imagen Odoo explícita" "local/odoo:19.0-produccion-bootstrap" "$(printf '%s\n' "$PROD" | bloque odoo)"
+no_contiene "producción no monta addons del host" "/mnt/extra-addons" "$(printf '%s\n' "$PROD" | bloque odoo)"
 contiene "producción monta la ruta versionada del receptor" \
   "/stacks/nginx/config/addons-webhook.locations" "$(printf '%s\n' "$PROD" | bloque nginx)"
 contiene "la ruta pública apunta solo al endpoint GitHub" \
@@ -94,6 +98,8 @@ igual "staging usa los puertos reservados" "8080 8443 " \
   "$(printf '%s\n' "$STAGE" | bloque nginx | sed -n 's/^ *published: "//p' | tr -d '"' | tr '\n' ' ')"
 contiene "staging conserva el secret de alertas" "zeptomail_smtp_password" "$(printf '%s\n' "$STAGE" | bloque odoo)"
 contiene "staging desactiva SMTP de Odoo" 'ODOO_DISABLE_SMTP: "1"' "$(printf '%s\n' "$STAGE" | bloque odoo)"
+contiene "staging usa una imagen Odoo explícita" "local/odoo:19.0-staging-bootstrap" "$(printf '%s\n' "$STAGE" | bloque odoo)"
+no_contiene "staging no monta addons del host" "/mnt/extra-addons" "$(printf '%s\n' "$STAGE" | bloque odoo)"
 no_contiene "staging no incluye dnsmasq aunque pida LAN" "dnsmasq" "$(COMPOSE_PROFILES=lan servicios staging)"
 no_contiene "backup no se activa por defecto en staging" "backup" "$(servicios staging)"
 no_contiene "backup queda fuera del perfil de certificado" "backup" "$(COMPOSE_PROFILES=cert servicios staging)"

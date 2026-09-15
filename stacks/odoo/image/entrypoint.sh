@@ -2,19 +2,19 @@
 set -e
 shopt -s nullglob
 
-ADDONS_BASE=/mnt/extra-addons
+ADDONS_BASE=/opt/odoo
 RUNTIME_CONF=/tmp/odoo-runtime.conf
 
-# --- addons_path por glob de categorías ---
-# Glob por categoría: evita listar cada repo a mano. enterprise va primero para
-# que sombree a custom-addons, oca y third-party si un nombre técnico se repite.
+# addons_path interno
+# Enterprise precede dominios propios y Community cierra la precedencia.
 
 paths=()
-for category in enterprise custom-addons oca third-party; do
-  for repo in "$ADDONS_BASE/$category"/*/; do
-    paths+=("${repo%/}")
-  done
+[ -d "$ADDONS_BASE/enterprise" ] && paths+=("$ADDONS_BASE/enterprise")
+for repo in "$ADDONS_BASE/custom"/*/; do
+  [ -d "$repo" ] && paths+=("${repo%/}")
 done
+COMMUNITY_ADDONS="${ODOO_COMMUNITY_ADDONS:-/usr/lib/python3/dist-packages/odoo/addons}"
+[ -d "$COMMUNITY_ADDONS" ] && paths+=("$COMMUNITY_ADDONS")
 ADDONS_PATH=$(IFS=,; echo "${paths[*]}")
 
 if [ "${#paths[@]}" -eq 0 ]; then
