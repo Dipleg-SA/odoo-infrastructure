@@ -35,11 +35,11 @@ El checkout de Enterprise pertenece a una única línea mayor y se selecciona po
 - Toda operación usa `ENTORNO=desarrollo|staging|produccion`; sin esa variable falla antes de Compose.
 - `scripts/addons.sh` sincroniza únicamente la rama derivada del entorno y publica el SHA completo en `.candidate-commit`.
 - El webhook valida firma, catálogo y rama; actualiza solo el candidato y usa el lock del entorno.
-- `scripts/build-odoo-image.sh` toma el mismo lock, exporta SHAs desde clones bare, copia Enterprise y dominios a la fotografía, resuelve dependencias y registra Nueva después de obtener digest.
+- `scripts/build-odoo-image.sh` toma el mismo lock, exporta SHAs desde clones bare, copia solo la edición seleccionada y los dominios a la fotografía, resuelve dependencias y registra Nueva después de obtener digest.
 - `stacks/odoo/compose.yaml` consume `ODOO_IMAGE` y no monta addons del host. El entrypoint usa Enterprise, dominios propios y Community, en ese orden.
 - `scripts/image-state.sh` conserva `Nueva`, `Actual`, `Anterior`, validación y procedencia. `apply` promueve; `rollback` reactiva Anterior si no hubo operaciones de módulos.
 - `scripts/odoo-module-operation.sh` exige Actual y registra que el rollback solo de imagen quedó bloqueado después de una operación exitosa.
-- El backup de producción guarda base, filestore, addons e imágenes Actual/Anterior en el mismo snapshot. Restore recupera esa procedencia.
+- El backup de producción guarda base, filestore, addons e imágenes Actual/Anterior en el mismo snapshot, incluyendo edición, tag y procedencia. Restore recupera esa información sin descargar código Enterprise por su cuenta.
 
 ## Flujo de promoción
 
@@ -48,15 +48,23 @@ feat/* → 19.0-dev → 19.0-stag → 19.0
 webhook → Candidato → build → Nueva → validación manual → Actual
 ```
 
-La promoción se ejecuta por entorno y de forma serializada. Desarrollo y staging se pueden descartar y volver a sembrar. Producción crea el backup previo mediante `apply-image`.
+La promoción se ejecuta por entorno y de forma serializada. Desarrollo y staging se pueden descartar y volver a sembrar. Producción crea el backup previo mediante `apply-image`. Si `ODOO_EDITION` cambia, el preflight consulta la base y la promoción conserva la edición anterior como frontera de recuperación.
 
-## Enterprise
+## Edición en candidatos y fotografías
+
+`ODOO_EDITION` y `TAG` seleccionan la variante antes de sincronizar, construir o promover. El candidato de dominio sigue la rama del entorno; la fotografía agrega `edition`, `edition_tag`, digest, commits y momento de build. Enterprise agrega su tag, commit e inventario de módulos; Community registra esos campos vacíos y no incorpora el checkout privado.
+
+Una transición entre ediciones no convierte módulos ni registros. El backup asociado conserva la base, el filestore y la fotografía activa para poder restaurar el estado anterior antes de cualquier operación funcional.
+
+## Enterprise y Community
 
 El operador crea un tag como `19.0-ee-YYYY-MM-DD` sobre el commit autorizado y lo selecciona con `ENTORNO=<entorno> scripts/addons.sh enterprise-sync <url> <tag>`. El mismo tag y commit Enterprise deben acompañar la promoción por los tres entornos.
 
+Community usa `TAG=19.0-ce-YYYY-MM-DD`, no exige checkout Enterprise y puede avanzar con los mismos candidatos de dominios. El retiro de Enterprise exige validar que la base no conserve módulos Enterprise instalados.
+
 ## Estados y reversión
 
-`images.json` registra para cada imagen tag, digest, línea Odoo, imagen base, commit de infraestructura, tag y commit Enterprise, commits de dominios y momento UTC. Sin operaciones de módulos, `rollback-image` reactiva Anterior. Después de operar módulos, se debe restaurar el backup asociado y recuperar sus metadatos.
+`images.json` registra para cada imagen edición, tag de edición, referencia interna, digest, línea Odoo, imagen base, commit de infraestructura, tag y commit Enterprise cuando corresponda, commits de dominios y momento UTC. El restore reaplica `Actual` y `Anterior` desde esa procedencia. Sin operaciones de módulos, `rollback-image` reactiva Anterior; después de operar módulos, se debe restaurar el backup asociado y recuperar sus metadatos.
 
 ## Fuera de alcance
 

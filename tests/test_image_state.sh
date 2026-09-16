@@ -68,8 +68,12 @@ historica.pop("enterprise_modules")
 data["Nueva"] = historica
 open(path, "w", encoding="utf-8").write(json.dumps(data) + "\n")
 PY
+ESTADO_HISTORICO=$(cat runtime/desarrollo/state/images.json)
+contiene "show infiere edición Enterprise histórica" '"edition": "enterprise"' "$($SCRIPT show)"
+contiene "show infiere tag Enterprise histórico" '"edition_tag": "19.0-ee-2026-09-14"' "$($SCRIPT show)"
 contiene "infiere edición Enterprise histórica" '"edition": "enterprise"' "$($SCRIPT get Nueva)"
 contiene "infiere tag Enterprise histórico" '"edition_tag": "19.0-ee-2026-09-14"' "$($SCRIPT get Nueva)"
+igual "lector histórico no reescribe el estado" "$ESTADO_HISTORICO" "$(cat runtime/desarrollo/state/images.json)"
 
 "$SCRIPT" invalidate-rollback "update:ventas" >/dev/null
 sale_con "bloquea rollback tras módulos" 1 "$SCRIPT" rollback

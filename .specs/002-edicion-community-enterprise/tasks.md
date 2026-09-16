@@ -59,19 +59,19 @@
 
 ## Phase 7: US7 — Restaurar y conservar compatibilidad histórica (P2)
 
-- [ ] T036 [TEST][US7] Agregar en `tests/test_image_state.sh` un estado Enterprise histórico sin `edition` y comprobar que se normaliza al leerlo sin exigir una reescritura manual de sus metadatos.
-- [ ] T037 [P][US7] Actualizar `docs/README.md` con el contrato único de `ODOO_EDITION` y `TAG`, incluyendo la migración de la documentación v2 a `docs/`.
-- [ ] T038 [P][US7] Actualizar `docs/modulos/especificacion-gestion-addons.md` para incluir la edición en la fotografía, candidatos, promoción y restauración.
-- [ ] T039 [P][US7] Actualizar `docs/backup-restore/migrar-deployment-externo.md` para seleccionar Community o Enterprise y conservar la procedencia correspondiente.
-- [ ] T040 [TEST][US7] Extender `tests/test_backup.sh` para ejecutar backup y restore de una fotografía Community nueva, conservar `edition` y `edition_tag` en `images.json` y comprobar que no se intenta recuperar código Enterprise.
+- [x] T036 [TEST][US7] Agregar en `tests/test_image_state.sh` un estado Enterprise histórico sin `edition` y comprobar que se normaliza al leerlo sin exigir una reescritura manual de sus metadatos.
+- [x] T037 [P][US7] Actualizar `docs/README.md` con el contrato único de `ODOO_EDITION` y `TAG`, incluyendo la migración de la documentación v2 a `docs/`.
+- [x] T038 [P][US7] Actualizar `docs/modulos/especificacion-gestion-addons.md` para incluir la edición en la fotografía, candidatos, promoción y restauración.
+- [x] T039 [P][US7] Actualizar `docs/backup-restore/migrar-deployment-externo.md` para seleccionar Community o Enterprise y conservar la procedencia correspondiente.
+- [x] T040 [TEST][US7] Extender `tests/test_backup.sh` para ejecutar backup y restore de una fotografía Community nueva, conservar `edition` y `edition_tag` en `images.json` y comprobar que no se intenta recuperar código Enterprise.
 
 ## Verification
 
-- [ ] VERIFY Ejecutar `make test` y comprobar todos los escenarios de aceptación de `spec.md`, incluidos ambos sentidos de transición.
-- [ ] VERIFY Ejecutar `bash -n` sobre `scripts/lib/contexto.sh`, `scripts/addons.sh`, `scripts/build-odoo-image.sh`, `scripts/image-state.sh`, `scripts/odoo-edition-check.sh`, `stacks/odoo/image/entrypoint.sh`, `stacks/odoo/verify.sh` y los scripts de test modificados.
-- [ ] VERIFY Ejecutar las pruebas de Compose y verificar que cada runtime resuelva la misma edición y tag configurados, sin activar perfiles adicionales.
-- [ ] VERIFY Comprobar con `docker compose config` que los cambios no incorporen Enterprise en Community y que el selector de imagen conserve la edición promovida.
-- [ ] VERIFY Confirmar que `images.json`, backups y restores conservan edición, tag, digest, procedencia y campos Enterprise según corresponda.
-- [ ] VERIFY Confirmar que ningún preflight modifica módulos, registros funcionales o datos de la base y que las operaciones de módulos siguen siendo manuales.
-- [ ] VERIFY Confirmar que no se modificaron archivos privados `runtime/*/compose.env`, checkout Enterprise ni secretos, y que no se agregaron dependencias fuera de `plan.md`.
-- [ ] VERIFY Confirmar que no se viola ningún principio `MUST` de `.specs/constitution.md` y que la documentación operativa permanece en español.
+- [x] VERIFY Ejecutar `make test` y comprobar todos los escenarios de aceptación de `spec.md`, incluidos ambos sentidos de transición.
+- [x] VERIFY Ejecutar `bash -n` sobre `scripts/lib/contexto.sh`, `scripts/addons.sh`, `scripts/build-odoo-image.sh`, `scripts/image-state.sh`, `scripts/odoo-edition-check.sh`, `stacks/odoo/image/entrypoint.sh`, `stacks/odoo/verify.sh` y los scripts de test modificados.
+- [x] VERIFY Ejecutar las pruebas de Compose y verificar que cada runtime resuelva la misma edición y tag configurados, sin activar perfiles adicionales.
+- [x] VERIFY Comprobar con `docker compose config` que los cambios no incorporen Enterprise en Community y que el selector de imagen conserve la edición promovida.
+- [x] VERIFY Confirmar que `images.json`, backups y restores conservan edición, tag, digest, procedencia y campos Enterprise según corresponda.
+- [x] VERIFY Confirmar que ningún preflight modifica módulos, registros funcionales o datos de la base y que las operaciones de módulos siguen siendo manuales.
+- [x] VERIFY Confirmar que no se modificaron archivos privados `runtime/*/compose.env`, checkout Enterprise ni secretos, y que no se agregaron dependencias fuera de `plan.md`.
+- [x] VERIFY Confirmar que no se viola ningún principio `MUST` de `.specs/constitution.md` y que la documentación operativa permanece en español.
