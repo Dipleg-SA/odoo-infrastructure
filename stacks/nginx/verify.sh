@@ -24,14 +24,14 @@ v_nginx() {
 
   if corriendo nginx; then
     vacio "sin el placeholder de server-tls.conf.example sin reemplazar" \
-      docker compose exec -T nginx sh -c \
+      contexto_compose exec -T nginx sh -c \
         "grep -rv '^[[:space:]]*#' /etc/nginx/conf.d/ | grep TU_DOMINIO"
 
     if modo_plain; then
       omitir "server_name es el hostname público" "modo plain: el server_name es el catch-all, no hay hostname que servir"
     elif [ -n "$PUBLIC_HOSTNAME" ]; then
       expect "server_name es el hostname público" "$PUBLIC_HOSTNAME" \
-        docker compose exec -T nginx grep -h server_name /etc/nginx/conf.d/default.conf
+        contexto_compose exec -T nginx grep -h server_name /etc/nginx/conf.d/default.conf
     else
       omitir "server_name es el hostname público" "falta PUBLIC_HOSTNAME en .env"
     fi
@@ -46,9 +46,9 @@ v_nginx() {
 
   if corriendo nginx; then
     vacio "proxy_pass va por variable, no por nombre fijo" \
-      docker compose exec -T nginx grep -E 'proxy_pass http://odoo' /etc/nginx/conf.d/odoo.locations
+      contexto_compose exec -T nginx grep -E 'proxy_pass http://odoo' /etc/nginx/conf.d/odoo.locations
     expect "resolver de Docker declarado" "127.0.0.11" \
-      docker compose exec -T nginx grep -h resolver /etc/nginx/conf.d/00-http.conf
+      contexto_compose exec -T nginx grep -h resolver /etc/nginx/conf.d/00-http.conf
   else
     omitir "proxy_pass va por variable, no por nombre fijo" "$(motivo nginx)"
     omitir "resolver de Docker declarado" "$(motivo nginx)"
@@ -60,7 +60,7 @@ v_nginx() {
 
   local rutas
   if corriendo nginx; then
-    rutas=$(docker compose exec -T nginx grep -c '^location' /etc/nginx/conf.d/odoo.locations 2>/dev/null | tr -d '\r ')
+    rutas=$(contexto_compose exec -T nginx grep -c '^location' /etc/nginx/conf.d/odoo.locations 2>/dev/null | tr -d '\r ')
     if [ "${rutas:-0}" -ge 3 ]; then ok "las 3 rutas de Odoo en nginx"
     else bad "las 3 rutas de Odoo en nginx" "hay ${rutas:-0} — la config montada está incompleta"; fi
   else
@@ -79,12 +79,12 @@ v_nginx() {
   elif ! corriendo odoo; then
     omitir "$via_proxy" "$(motivo odoo)"
   elif modo_plain; then
-    expect "$via_proxy" "200" docker compose exec -T odoo \
+    expect "$via_proxy" "200" contexto_compose exec -T odoo \
       curl -sS -o /dev/null -w '%{http_code}' http://nginx/web/login
   else
     # -k y Host: el certificado es del hostname público y acá se entra por el nombre
     # de servicio, que no es ninguno de sus SAN. Lo que se prueba es el ruteo, no el TLS.
-    expect "$via_proxy" "200" docker compose exec -T odoo \
+    expect "$via_proxy" "200" contexto_compose exec -T odoo \
       curl -skS -o /dev/null -w '%{http_code}' -H "Host: $PUBLIC_HOSTNAME" https://nginx/web/login
   fi
 

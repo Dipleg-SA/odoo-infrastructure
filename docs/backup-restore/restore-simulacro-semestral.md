@@ -11,6 +11,13 @@ Comprobar que el respaldo restaura de verdad. Un backup sin probar no es un back
 repositorio puede estar corrupto, la credencial puede haber vencido, o el snapshot
 puede traer una sola de las dos mitades del estado.
 
+## Flujo rápido
+
+1. Preparar staging con credenciales de solo lectura.
+2. Restaurar el último snapshot siguiendo `restore-staging`.
+3. Entrar a Odoo y abrir un registro con adjuntos.
+4. Ejecutar la verificación del backup y confirmar que un adjunto se descarga.
+
 ## A mano
 
 Un checkout de staging con `COMPOSE_PROJECT_NAME` **distinto** al de producción, el

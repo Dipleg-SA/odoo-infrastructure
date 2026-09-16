@@ -1,0 +1,85 @@
+# Receptor de candidatos
+# Atiende eventos desde edge y no publica puertos propios.
+services:
+  addons-webhook:
+    build:
+      context: .
+      dockerfile: image/Dockerfile
+    command:
+      - python
+      - /app/server.py
+    expose:
+      - "8080"
+    environment:
+      ADDONS_CATALOG: /etc/addons/catalogo.txt
+      ADDONS_BARE_DIR: /var/lib/addons/.repos
+      ADDONS_CANDIDATE_ROOT: /var/lib/addons/custom
+      ADDONS_STATE_DIR: /var/lib/addons-webhook
+      ADDONS_SECRET_FILE: /run/secrets/addons_webhook_secret
+      ADDONS_GIT_TOKEN_FILE: /run/secrets/git_readonly_token
+      ADDONS_GIT_SSH_KEY_FILE: /run/secrets/git_readonly_key
+      ADDONS_GIT_KNOWN_HOSTS_FILE: /run/secrets/git_known_hosts
+    volumes:
+      - type: bind
+        source: ../../runtime/control/secrets/addons_webhook_secret
+        target: /run/secrets/addons_webhook_secret
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../runtime/control/secrets/git_readonly_token
+        target: /run/secrets/git_readonly_token
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../runtime/control/secrets/git_readonly_key
+        target: /run/secrets/git_readonly_key
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../runtime/control/secrets/git_known_hosts
+        target: /run/secrets/git_known_hosts
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../runtime/control/state
+        target: /var/lib/addons-webhook
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../runtime/addons/catalogo.txt
+        target: /etc/addons/catalogo.txt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../runtime/addons/.repos
+        target: /var/lib/addons/.repos
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../runtime/addons/custom
+        target: /var/lib/addons/custom
+        bind:
+          create_host_path: false
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: "0.50"
+    restart: unless-stopped
+    networks:
+      - edge
+
+# Red compartida del runtime
+# La composición incluida se fusiona con la edge declarada por producción.
+networks:
+  edge:

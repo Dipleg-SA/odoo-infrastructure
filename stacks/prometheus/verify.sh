@@ -17,7 +17,7 @@ v_prometheus() {
   local salida caidos
   if ! corriendo prometheus; then
     omitir "todos los targets de Prometheus up" "$(motivo prometheus)"
-  elif ! salida=$(docker compose exec -T prometheus wget -qO- \
+  elif ! salida=$(contexto_compose exec -T prometheus wget -qO- \
        'http://127.0.0.1:9090/api/v1/targets?state=active' 2>/dev/null); then
     bad "todos los targets de Prometheus up" "no se pudo consultar la API de targets"
   else
@@ -41,7 +41,7 @@ v_prometheus() {
     omitir "las tres familias de métricas presentes" "$(motivo prometheus)"
   else
     for m in node_memory_MemAvailable_bytes container_memory_usage_bytes pg_up; do
-      if docker compose exec -T prometheus wget -qO- \
+      if contexto_compose exec -T prometheus wget -qO- \
            "http://127.0.0.1:9090/api/v1/query?query=count($m)" 2>/dev/null | grep -q '"value"'; then
         ok "métrica $m presente"
       else

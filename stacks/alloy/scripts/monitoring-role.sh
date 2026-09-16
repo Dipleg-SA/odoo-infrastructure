@@ -11,9 +11,12 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
 . scripts/lib/ui.sh
+. scripts/lib/contexto.sh
+contexto_iniciar
+SECRETS_VISIBLE="runtime/$ENTORNO/secrets"
 
-[ -s secrets/postgres_exporter_password ] || {
-  ui_bad "falta secrets/postgres_exporter_password" \
+[ -s "$RUNTIME_SECRETS_DIR/postgres_exporter_password" ] || {
+  ui_bad "falta $SECRETS_VISIBLE/postgres_exporter_password" \
     "sin él la clave se interpola vacía y el rol queda creado sin password — ¿este stack lleva observabilidad?" >&2
   exit 2
 }
@@ -21,8 +24,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
 ui_plan_start "monitoring-role"
 ui_step 1 "Creación (o rotación) del rol de solo lectura que Alloy usa para scrapear Postgres."
 printf "DROP ROLE IF EXISTS monitoring;\nCREATE ROLE monitoring LOGIN PASSWORD '%s';\nGRANT pg_monitor TO monitoring;\n" \
-  "$(cat secrets/postgres_exporter_password)" \
-  | docker compose exec -T -u postgres postgres psql -U odoo -d postgres -v ON_ERROR_STOP=1 -q
+  "$(cat "$RUNTIME_SECRETS_DIR/postgres_exporter_password")" \
+  | contexto_compose exec -T -u postgres postgres psql -U odoo -d postgres -v ON_ERROR_STOP=1 -q
 
 ui_plan_end
 ui_ok "monitoring-role listo"

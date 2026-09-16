@@ -11,16 +11,32 @@ TMP=$(mktemp -d)
 STUB_DIR="$TMP/stub"; mkdir -p "$STUB_DIR"; export STUB_DIR
 trap 'rm -rf "$TMP"' EXIT
 PATH="$REPO_ROOT/tests/stubs:$PATH"
+export ENTORNO=desarrollo
 
-# --- Checkout falso ---
-# Solo los directorios que el script toca; el .env, porque los tres leen de ahí.
+# nuke debe limpiar solo el runtime seleccionado: los clones bare y el control
+# son compartidos, y los candidatos/builds de los otros entornos no se pueden borrar.
+NUKE=$(make -n ENTORNO=desarrollo nuke 2>&1)
+contiene "nuke limita candidatos al entorno seleccionado" 'runtime/addons/custom/${ENTORNO}' "$NUKE"
+contiene "nuke limita builds al entorno seleccionado" 'runtime/addons/builds/${ENTORNO}' "$NUKE"
+no_contiene "nuke conserva los clones bare compartidos" "runtime/addons/.repos" "$NUKE"
+no_contiene "nuke conserva el estado del control plane" "runtime/control/state" "$NUKE"
+
+# Checkout falso
+# Cada entorno tiene su composición y variables privadas bajo runtime/.
 
 crear_root() {
-  local root="$TMP/$1"; shift
-  mkdir -p "$root/scripts/lib" "$root/state/textfile" "$root/secrets"
-  cp "$REPO_ROOT/scripts/lib/ui.sh" "$REPO_ROOT/scripts/lib/compose.sh" "$root/scripts/lib/"
+  local nombre="$1" root entorno; shift
+  root="$TMP/$nombre"
+  mkdir -p "$root/scripts/lib"
+  cp "$REPO_ROOT/scripts/lib/ui.sh" "$REPO_ROOT/scripts/lib/compose.sh" \
+    "$REPO_ROOT/scripts/lib/contexto.sh" "$root/scripts/lib/"
   for s in "$@"; do cp "$REPO_ROOT/scripts/$s" "$root/scripts/"; done
-  printf 'PUBLIC_HOSTNAME=odoo.example.test\n' > "$root/.env"
+  for entorno in desarrollo staging produccion; do
+    mkdir -p "$root/runtime/$entorno"
+    printf 'services: {}\n' > "$root/runtime/$entorno/compose.yaml"
+    printf 'COMPOSE_PROJECT_NAME=%s-%s\nPUBLIC_HOSTNAME=odoo.example.test\nODOO_EDITION=community\nTAG=19.0-ce-2026-09-16\n' \
+      "$nombre" "$entorno" > "$root/runtime/$entorno/compose.env"
+  done
   printf '%s' "$root"
 }
 
@@ -32,6 +48,7 @@ titulo "cert.sh — lo que le llega de verdad a certbot"
 # =====================================================================
 
 ROOT=$(crear_root cert)
+igual "el checkout falso no crea selector .env raíz" "0" "$([ ! -e "$ROOT/.env" ]; echo $?)"
 mkdir -p "$ROOT/stacks/certbot/scripts"
 cp "$REPO_ROOT/stacks/certbot/scripts/cert.sh" "$ROOT/stacks/certbot/scripts/"
 reset_stub
@@ -50,7 +67,7 @@ contiene "y recarga nginx después" "exec -T nginx nginx -s reload" "$(llamadas)
 # --- La métrica ---
 # Única fuente de la alerta de vencimiento desde que Traefik salió del repo.
 
-METRICA=$(cat "$ROOT/state/textfile/cert.prom" 2>/dev/null)
+METRICA=$(cat "$ROOT/runtime/desarrollo/state/textfile/cert.prom" 2>/dev/null)
 contiene "declara TYPE gauge"          "# TYPE odoo_cert_expiry_timestamp_seconds gauge" "$METRICA"
 contiene "etiqueta con el hostname"    'host="odoo.example.test"'                        "$METRICA"
 
@@ -88,21 +105,21 @@ secrets:
 EOF
 
 SALIDA=$( (cd "$ROOT" && ./scripts/secrets-init.sh 2>&1) )
-igual "crea exactamente los 2 declarados" "2" "$(ls "$ROOT/secrets" | wc -l | tr -d ' ')"
-contiene "y dice cuáles omite"            "omitido (este stack no lo declara): secrets/cloudflare_api_token" "$SALIDA"
+igual "crea exactamente los 2 declarados" "2" "$(ls "$ROOT/runtime/desarrollo/secrets" | wc -l | tr -d ' ')"
+contiene "y dice cuáles omite"            "omitido (este runtime no lo declara): runtime/desarrollo/secrets/cloudflare_api_token" "$SALIDA"
 contiene "sin dejar nada pendiente"       "Todos los secrets tienen valor" "$SALIDA"
 
 # hex y no base64: los / + = rompen a cualquier consumidor que arme una URI.
 igual "genera 64 hex" "0" \
-  "$(grep -qE '^[0-9a-f]{64}$' "$ROOT/secrets/postgres_password"; echo $?)"
+  "$(grep -qE '^[0-9a-f]{64}$' "$ROOT/runtime/desarrollo/secrets/postgres_password"; echo $?)"
 
 # --- Idempotencia ---
 # Se corre de nuevo en cada checkout que suma una capa: pisar un valor cargado
 # sería irrecuperable para los que no se generan.
 
-ANTES=$(cat "$ROOT/secrets/postgres_password")
+ANTES=$(cat "$ROOT/runtime/desarrollo/secrets/postgres_password")
 SALIDA=$( (cd "$ROOT" && ./scripts/secrets-init.sh 2>&1) )
-igual    "no pisa un valor ya cargado" "$ANTES" "$(cat "$ROOT/secrets/postgres_password")"
+igual    "no pisa un valor ya cargado" "$ANTES" "$(cat "$ROOT/runtime/desarrollo/secrets/postgres_password")"
 contiene "y lo dice"                   "skip (ya existe)" "$SALIDA"
 
 # --- Sin composición ---
@@ -112,26 +129,52 @@ rm -f "$STUB_DIR/config"
 sale_con "sin composición legible aborta" 1 bash -c "cd '$ROOT' && ./scripts/secrets-init.sh"
 
 # =====================================================================
+titulo "secrets-init.sh — secretos del control plane"
+# =====================================================================
+
+ROOT_CONTROL=$(crear_root webhook secrets-init.sh)
+reset_stub
+cat > "$STUB_DIR/config" <<'EOF'
+secrets:
+  postgres_password:
+    file: /repo/secrets/postgres_password
+services:
+  addons-webhook:
+    volumes:
+      - source: /repo/runtime/control/secrets/addons_webhook_secret
+        target: /run/secrets/addons_webhook_secret
+EOF
+SALIDA=$( (cd "$ROOT_CONTROL" && ENTORNO=produccion ./scripts/secrets-init.sh 2>&1) )
+igual "crea el secret operativo de producción" "1" \
+  "$(find "$ROOT_CONTROL/runtime/produccion/secrets" -type f | wc -l | tr -d ' ')"
+igual "crea los cuatro secretos del control plane" "4" \
+  "$(find "$ROOT_CONTROL/runtime/control/secrets" -type f | wc -l | tr -d ' ')"
+igual "genera la firma del webhook" "0" \
+  "$(grep -qE '^[0-9a-f]{64}$' "$ROOT_CONTROL/runtime/control/secrets/addons_webhook_secret"; echo $?)"
+contiene "informa los marcadores Git del control plane" \
+  "runtime/control/secrets/git_readonly_key" "$SALIDA"
+
+# =====================================================================
 titulo "secrets-perms.sh --check"
 # =====================================================================
 
 # postgres_exporter_password lo lee alloy, que corre como root: es el único sin GID
 # exigido, así que se puede probar el resto de la lógica sin ser root.
 
-printf 'valor\n' > "$ROOT/secrets/postgres_exporter_password"
-chmod 640 "$ROOT/secrets/postgres_exporter_password"
-rm -f "$ROOT/secrets/postgres_password" "$ROOT/secrets/odoo_admin_password"
+printf 'valor\n' > "$ROOT/runtime/desarrollo/secrets/postgres_exporter_password"
+chmod 640 "$ROOT/runtime/desarrollo/secrets/postgres_exporter_password"
+rm -f "$ROOT/runtime/desarrollo/secrets/postgres_password" "$ROOT/runtime/desarrollo/secrets/odoo_admin_password"
 
 sale_con "un secret en 640 pasa" 0 bash -c "cd '$ROOT' && ./scripts/secrets-perms.sh --check"
 
-chmod 600 "$ROOT/secrets/postgres_exporter_password"
+chmod 600 "$ROOT/runtime/desarrollo/secrets/postgres_exporter_password"
 SALIDA=$( (cd "$ROOT" && ./scripts/secrets-perms.sh --check 2>&1) )
 sale_con "un 600 no pasa" 1 bash -c "cd '$ROOT' && ./scripts/secrets-perms.sh --check"
 contiene "y nombra el modo que encontró" "permisos 600, esperado 640" "$SALIDA"
 
 # El marcador es lo que separa "el archivo existe" de "el valor está cargado".
-chmod 640 "$ROOT/secrets/postgres_exporter_password"
-printf 'CAMBIAR' > "$ROOT/secrets/postgres_exporter_password"
+chmod 640 "$ROOT/runtime/desarrollo/secrets/postgres_exporter_password"
+printf 'CAMBIAR' > "$ROOT/runtime/desarrollo/secrets/postgres_exporter_password"
 SALIDA=$( (cd "$ROOT" && ./scripts/secrets-perms.sh --check 2>&1) )
 sale_con "un marcador sin reemplazar no pasa" 1 bash -c "cd '$ROOT' && ./scripts/secrets-perms.sh --check"
 contiene "y lo nombra"                        "todavía tiene el marcador" "$SALIDA"
@@ -140,15 +183,31 @@ contiene "y lo nombra"                        "todavía tiene el marcador" "$SAL
 # Sin root no se puede poner el grupo esperado, pero sí probar que lo exige: el
 # archivo nace con el grupo del que corre el test, que nunca es el 65532 de cloudflared.
 
-printf 'valor\n' > "$ROOT/secrets/postgres_exporter_password"
-printf 'token\n' > "$ROOT/secrets/cloudflare_tunnel_token"
-chmod 640 "$ROOT/secrets/cloudflare_tunnel_token"
+printf 'valor\n' > "$ROOT/runtime/desarrollo/secrets/postgres_exporter_password"
+printf 'token\n' > "$ROOT/runtime/desarrollo/secrets/cloudflare_tunnel_token"
+chmod 640 "$ROOT/runtime/desarrollo/secrets/cloudflare_tunnel_token"
 SALIDA=$( (cd "$ROOT" && ./scripts/secrets-perms.sh --check 2>&1) )
 sale_con "un grupo que no es el del consumidor no pasa" 1 bash -c "cd '$ROOT' && ./scripts/secrets-perms.sh --check"
 contiene "y nombra el GID esperado" "esperado 65532" "$SALIDA"
 
-rm -rf "$ROOT/secrets"
+rm -rf "$ROOT/runtime/desarrollo/secrets"
 sale_con "sin secrets/ aborta" 1 bash -c "cd '$ROOT' && ./scripts/secrets-perms.sh --check"
+
+# =====================================================================
+titulo "monitoring-role.sh — contexto y secreto del runtime"
+# =====================================================================
+
+ROOT_MON=$(crear_root monitoring)
+mkdir -p "$ROOT_MON/stacks/alloy/scripts" "$ROOT_MON/runtime/produccion/secrets"
+ROOT_MON="$(cd "$ROOT_MON" && pwd -P)"
+cp "$REPO_ROOT/stacks/alloy/scripts/monitoring-role.sh" "$ROOT_MON/stacks/alloy/scripts/"
+printf 'password-de-prueba\n' > "$ROOT_MON/runtime/produccion/secrets/postgres_exporter_password"
+chmod 640 "$ROOT_MON/runtime/produccion/secrets/postgres_exporter_password"
+reset_stub
+SALIDA=$( (cd "$ROOT_MON" && ENTORNO=produccion ./stacks/alloy/scripts/monitoring-role.sh 2>&1) )
+contiene "monitoring-role usa el secreto del runtime" "monitoring-role listo" "$SALIDA"
+contiene "monitoring-role usa la composición del entorno" \
+  "-f $ROOT_MON/runtime/produccion/compose.yaml" "$(llamadas)"
 
 # =====================================================================
 titulo "config-init.sh — qué stack está activo decide qué bootstrapea"
@@ -156,34 +215,41 @@ titulo "config-init.sh — qué stack está activo decide qué bootstrapea"
 
 ROOT=$(crear_root config config-init.sh)
 reset_stub
+mkdir -p "$ROOT/stacks/odoo/image"
+printf 'FROM odoo:19.0\n' > "$ROOT/stacks/odoo/image/Dockerfile"
 
 # Dos stacks activos, uno con dos .example (uno anidado) y otro sin config/ propia.
-mkdir -p "$ROOT/stacks/nginx/config" "$ROOT/stacks/grafana/config/provisioning/alerting" "$ROOT/addons"
+mkdir -p "$ROOT/stacks/nginx/config" "$ROOT/stacks/grafana/config/provisioning/alerting"
 printf 'default;\n' > "$ROOT/stacks/nginx/config/00-http.conf.example"
 printf 'de-mas;\n' > "$ROOT/stacks/nginx/config/odoo.locations.example"
 printf 'TU_EMAIL_ALERTA_TO\n' > "$ROOT/stacks/grafana/config/provisioning/alerting/contact-points.yaml.example"
-printf 'odoo.txt\n' > "$ROOT/addons/addons.txt.example"
-printf 'requirements\n' > "$ROOT/addons/requirements.txt.example"
 printf '%s\n' 'nginx' 'grafana' > "$STUB_DIR/servicios"
 
 SALIDA=$( (cd "$ROOT" && ./scripts/config-init.sh 2>&1) )
-igual "crea los 2 de nginx"        "0" "$([ -f "$ROOT/stacks/nginx/config/00-http.conf" ] && [ -f "$ROOT/stacks/nginx/config/odoo.locations" ]; echo $?)"
-igual "y el anidado de grafana"    "0" "$([ -f "$ROOT/stacks/grafana/config/provisioning/alerting/contact-points.yaml" ]; echo $?)"
-igual "sin odoo, sin addons" "" "$(ls "$ROOT/addons" 2>/dev/null | grep -v example || true)"
+igual "crea los 2 de nginx bajo el runtime" "0" \
+  "$([ -f "$ROOT/runtime/desarrollo/config/nginx/00-http.conf" ] && [ -f "$ROOT/runtime/desarrollo/config/nginx/odoo.locations" ]; echo $?)"
+igual "y el anidado de grafana bajo el runtime" "0" \
+  "$([ -f "$ROOT/runtime/desarrollo/config/grafana/provisioning/alerting/contact-points.yaml" ]; echo $?)"
+igual "no escribe configuraciones en los directorios versionados" "0" \
+  "$([ ! -e "$ROOT/stacks/nginx/config/00-http.conf" ] && [ ! -e "$ROOT/addons" ]; echo $?)"
+igual "guarda la línea de Odoo para el receptor" "19.0" "$(cat "$ROOT/runtime/control/state/odoo-version")"
 
 # --- Idempotencia: no pisa lo cargado a mano ---
 
-printf 'editado a mano\n' > "$ROOT/stacks/nginx/config/00-http.conf"
+printf 'editado a mano\n' > "$ROOT/runtime/desarrollo/config/nginx/00-http.conf"
+printf 'FROM odoo:18.0\n' > "$ROOT/stacks/odoo/image/Dockerfile"
 SALIDA=$( (cd "$ROOT" && ./scripts/config-init.sh 2>&1) )
-igual    "no pisa un archivo ya cargado" "editado a mano" "$(cat "$ROOT/stacks/nginx/config/00-http.conf")"
+igual    "no pisa un archivo ya cargado" "editado a mano" "$(cat "$ROOT/runtime/desarrollo/config/nginx/00-http.conf")"
 contiene "y lo dice"                     "skip (ya existe)" "$SALIDA"
+igual "actualiza la línea derivada si cambia Odoo" "18.0" "$(cat "$ROOT/runtime/control/state/odoo-version")"
 
-# --- Odoo activo: addons entra ---
+# Odoo activo
+# La configuración privada permanece en runtime, y addons los gestiona su propio flujo.
 
 printf '%s\n' 'nginx' 'grafana' 'odoo' > "$STUB_DIR/servicios"
 SALIDA=$( (cd "$ROOT" && ./scripts/config-init.sh 2>&1) )
-igual "bootstrapea los 2 de addons" "0" \
-  "$([ -f "$ROOT/addons/addons.txt" ] && [ -f "$ROOT/addons/requirements.txt" ]; echo $?)"
+igual "no crea configuración fuera del runtime" "0" \
+  "$([ ! -e "$ROOT/addons" ] && [ -d "$ROOT/runtime/desarrollo/config" ]; echo $?)"
 
 # --- Un stack ausente no deja rastro ---
 # dnsmasq no está entre los activos: su .example no se toca.
@@ -192,7 +258,7 @@ mkdir -p "$ROOT/stacks/dnsmasq/config"
 printf 'TU_IP_LOCAL\n' > "$ROOT/stacks/dnsmasq/config/dnsmasq.conf.example"
 ( cd "$ROOT" && ./scripts/config-init.sh >/dev/null 2>&1 )
 igual "un stack fuera de la composición no bootstrapea" "1" \
-  "$([ -f "$ROOT/stacks/dnsmasq/config/dnsmasq.conf" ]; echo $?)"
+  "$([ -f "$ROOT/runtime/desarrollo/config/dnsmasq/dnsmasq.conf" ]; echo $?)"
 
 # --- Sin composición legible ---
 
@@ -207,20 +273,25 @@ titulo "timers.sh — qué units corresponden y con qué nombre"
 # instalado de verdad, no una copia de las units dentro del test.
 
 crear_root_timers() {
-  local root proyecto="$1"
+  local root proyecto="$1" entorno="$2"
   root=$(crear_root "timers-$proyecto" timers.sh)
   mkdir -p "$root/host/systemd" "$root/stacks" "$root/systemd"
   cp "$REPO_ROOT"/host/systemd/* "$root/host/systemd/"
   cp -R "$REPO_ROOT"/stacks/backup "$REPO_ROOT"/stacks/certbot "$root/stacks/"
-  printf 'COMPOSE_PROJECT_NAME=%s\n' "$proyecto" >> "$root/.env"
+  printf 'COMPOSE_PROJECT_NAME=%s\nPUBLIC_HOSTNAME=odoo.example.test\nODOO_EDITION=community\nTAG=19.0-ce-2026-09-16\n' \
+    "$proyecto" > "$root/runtime/$entorno/compose.env"
+  printf '%s' "$entorno" > "$root/.entorno-prueba"
   printf '%s' "$root"
 }
 
-timers() { (cd "$1" && SYSTEMD_DIR="$1/systemd" ./scripts/timers.sh "$2" 2>&1); }
+timers() {
+  local entorno; entorno=$(cat "$1/.entorno-prueba")
+  (cd "$1" && ENTORNO="$entorno" SYSTEMD_DIR="$1/systemd" ./scripts/timers.sh "$2" 2>&1)
+}
 
 # --- Producción: respalda y renueva ---
 
-ROOT=$(crear_root_timers production)
+ROOT=$(crear_root_timers production produccion)
 reset_stub
 printf 'postgres\nodoo\nbackup\ncertbot\n' > "$STUB_DIR/servicios"
 
@@ -239,6 +310,7 @@ contiene "y recarga systemd antes" "systemctl daemon-reload" "$(llamadas)"
 # Los dos reemplazos que la plantilla no puede traer resueltos.
 no_contiene "no queda el marcador de ruta" "CAMBIAR-en-deploy" "$(cat "$ROOT/systemd/production-backup-daily.service")"
 contiene    "la ruta es la del checkout"   "WorkingDirectory=$ROOT" "$(cat "$ROOT/systemd/production-backup-daily.service")"
+contiene    "la unit fija el runtime de producción" "Environment=ENTORNO=produccion" "$(cat "$ROOT/systemd/production-backup-daily.service")"
 contiene    "el OnFailure apunta a la plantilla de ESTE stack" \
   "OnFailure=production-notify@%n.service" "$(cat "$ROOT/systemd/production-cert-renew.service")"
 
@@ -258,7 +330,7 @@ igual "y conserva sus archivos para revisión" "0" \
 # --- Staging: no respalda, pero sí renueva ---
 # El agujero que este target cierra: staging quedaba sin ninguna unit instalada.
 
-ROOT_STAG=$(crear_root_timers staging)
+ROOT_STAG=$(crear_root_timers staging staging)
 reset_stub
 printf 'postgres\nodoo\ncertbot\n' > "$STUB_DIR/servicios"
 
@@ -266,6 +338,8 @@ igual "sin capa de backups, solo la del certificado" \
   "staging-cert-renew" "$(timers "$ROOT_STAG" units | tr '\n' ' ' | sed 's/ $//')"
 
 timers "$ROOT_STAG" install >/dev/null
+contiene "la unit fija el runtime de staging" "Environment=ENTORNO=staging" \
+  "$(cat "$ROOT_STAG/systemd/staging-cert-renew.service")"
 
 # --- El checkout que perdió una capa ---
 # La unit vieja sigue enabled y dispara igual: sin removerla, backup.sh corre de
@@ -300,7 +374,7 @@ no_contiene "y no las desactiva" "disable --now staging-qa" "$(llamadas)"
 
 # --- Development: ni una ---
 
-ROOT_DEV=$(crear_root_timers development-sale)
+ROOT_DEV=$(crear_root_timers development-sale desarrollo)
 reset_stub
 printf 'postgres\nodoo\nnginx\n' > "$STUB_DIR/servicios"
 
@@ -316,5 +390,13 @@ reset_stub
 rm -f "$STUB_DIR/servicios"
 sale_con "sin composición legible aborta" 1 \
   bash -c "cd '$ROOT' && SYSTEMD_DIR='$ROOT/systemd' ./scripts/timers.sh install"
+
+# --- Operación de imagen ---
+# Los verbos de promoción quedan disponibles bajo el entorno explícito.
+contiene "Makefile expone apply-image" "apply-image:" "$(cat "$REPO_ROOT/Makefile")"
+contiene "Makefile expone rollback-image" "rollback-image:" "$(cat "$REPO_ROOT/Makefile")"
+contiene "Makefile expone guarda de edición" "require-edition-transition:" "$(cat "$REPO_ROOT/Makefile")"
+contiene "Makefile exige backup previo cuando corresponde" "backup-run" "$(cat "$REPO_ROOT/Makefile")"
+contiene "la operación de módulos exige Actual" "no hay imagen Actual" "$(cat "$REPO_ROOT/scripts/odoo-module-operation.sh")"
 
 resumen

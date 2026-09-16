@@ -15,7 +15,7 @@ v_certbot() {
   # antes de que el timer sea el que descubra el problema.
 
   local venc epoch ahora dias
-  venc=$(docker compose --profile cert run --rm -T certbot certificates 2>/dev/null \
+  venc=$(COMPOSE_PROFILES="${COMPOSE_PROFILES:+$COMPOSE_PROFILES,}cert" contexto_compose run --rm -T certbot certificates 2>/dev/null \
     | sed -n 's/.*Expiry Date: \([^ ]* [^ ]*\).*/\1/p' | head -1)
   if [ -z "$venc" ]; then
     bad "certificado emitido" "certbot no reporta ninguno — correr make cert-issue"

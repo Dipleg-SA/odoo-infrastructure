@@ -8,6 +8,17 @@ Necesitás subir, bajar, reiniciar o inspeccionar `prometheus` + `loki` + `grafa
 
 La capa de observabilidad en el estado pedido. Bajarla no afecta a Odoo ni a los datos: es diagnóstico, no una dependencia de la aplicación.
 
+## Flujo rápido
+
+1. Operar los cuatro servicios de la capa en conjunto.
+2. Revisar logs, estado y acceso a Grafana por túnel SSH.
+3. Ejecutar las cuatro verificaciones específicas.
+
+## A mano
+
+No requiere pasos manuales adicionales; Grafana se accede desde la máquina del
+operador mediante el túnel SSH indicado en `Comandos`.
+
 ## Comandos
 
 No hay target agrupado — la limpieza de `docker/` lo sacó junto con `capa.sh`: cada
@@ -21,7 +32,6 @@ make prometheus-down && make loki-down && make grafana-down && make alloy-down
 docker compose restart prometheus loki grafana alloy   # no recrea contenedores
 docker compose logs -f prometheus loki grafana alloy
 docker compose ps prometheus loki grafana alloy
-make prometheus-verify
 ```
 
 `loki` es el único de los cuatro servicios sin `(healthy)` en `docker compose ps`, y es correcto: su imagen es distroless estricta, sin binario con el cual ejecutar un healthcheck. Su caída la cubre `up == 0` en Prometheus, que lo scrapea directo — por eso la topología es híbrida: Prometheus scrapea por pull todo lo que ya expone HTTP (`cloudflared`, Loki, Grafana, sí mismo y el propio Alloy), y Alloy solo empuja lo que ningún pull alcanza. Si todo se empujara por el agente, la muerte de Alloy no dispararía ninguna alerta.

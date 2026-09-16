@@ -10,6 +10,12 @@ Se genera **una vez por máquina**, no por checkout: `credential.helper store` s
 
 Un token de solo lectura sobre la organización donde viven los repos de addons, guardado en el credential store de git de este checkout.
 
+## Flujo rápido
+
+1. Crear un token con solo lectura de contenidos.
+2. Guardarlo en el credential store global del host.
+3. Confirmar la línea enmascarada y probar `repo-sync` después de clonar.
+
 ## A mano
 
 Generar el token en tu proveedor git (GitHub, GitLab…) — alcanza con lectura de contenidos sobre la organización. Anotá el vencimiento si es de los que expiran.

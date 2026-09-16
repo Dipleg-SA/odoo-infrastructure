@@ -2,42 +2,43 @@
 
 ## Cuándo se usa
 
-Necesitás subir, bajar, reiniciar o inspeccionar el contenedor `backup` (restic) sin tocar el resto del stack. **No es donde corrés un backup** — eso es [realizar-backup](../backup-restore/realizar-backup.md). Este runbook es solo el ciclo de vida del contenedor.
-
-El backup recurrente es exclusivo de producción. Staging incluye el servicio `backup`
-solo bajo `profiles: [restore]`, para leer el repositorio con `make restore`; development
-no lo incluye. Los targets `make backup-up`/`restart` nombran explícitamente el servicio
-y pueden saltar el perfil inactivo de staging — **no los uses ahí**, donde solo se
-necesita el `run` puntual del restore. `make backup-run` y `make backup-integrity` sí
-fallan fuera de producción.
+Para inspeccionar el contenedor de backup o ejecutar un backup y su verificación.
 
 ## Objetivo
 
-El contenedor `backup` en el estado pedido. Es **un solo contenedor para las dos direcciones**: respaldar y restaurar son la misma herramienta sobre el mismo repositorio.
+Conservar base, filestore y procedencia de Actual/Anterior en el mismo snapshot de producción.
+
+## Flujo rápido
+
+1. Levantar la capa de backup si está detenida.
+2. Ejecutar la operación requerida y revisar sus logs.
+3. Confirmar el snapshot con `backup-verify`.
+
+## A mano
+
+No requiere pasos manuales adicionales; las operaciones se ejecutan con `ENTORNO`
+explícito y los restores siguen sus procedimientos específicos.
 
 ## Comandos
 
 ```bash
-make backup-up
-make backup-down
-make backup-restart   # docker compose restart — no recrea el contenedor
-make backup-logs
-make backup-ps
-make backup-verify
+ENTORNO=produccion make backup-up
+ENTORNO=produccion make backup-run
+ENTORNO=produccion make backup-integrity
+ENTORNO=produccion make backup-verify
+ENTORNO=produccion make backup-logs
 ```
 
-**Bajarlo no pierde nada**: el estado vive en el repositorio remoto, no en el contenedor. Lo que se detiene es la posibilidad de correr `make backup-run` hasta que vuelva a subir, y el healthcheck que vigila la frescura del último snapshot.
+El backup registra `runtime/produccion/state/meta/images.json` junto con `addons.txt`. `apply-image` ejecuta el backup previo cuando corresponde.
+
+Para restaurar en staging:
+
+```bash
+ENTORNO=staging make restore SNAPSHOT=latest
+```
+
+Para una restauración productiva, detené Odoo, conservá el snapshot asociado a la promoción y ejecutá el procedimiento de restore aprobado. El script recupera la procedencia e identifica la imagen Actual restaurada.
 
 ## Verificación
 
-```bash
-make backup-verify
-```
-
-Cubre el servicio `healthy`, que `r2.env` no tenga el placeholder sin reemplazar, que el endpoint termine en `.r2.cloudflarestorage.com`, que el repositorio sea alcanzable con snapshots de este stack, que el último traiga **las dos mitades** del estado, el registro de addons, y los dos timers activos con el nombre de este checkout.
-
-Si el contenedor sale `health: starting` **no es un fallo**: con `interval: 1h` el primer chequeo que cuenta cae recién a la hora. **No lo recrees para forzarlo** — le cambiarías el hostname, y con eso el grupo `(host, paths)` por el que restic agrupa la retención.
-
----
-
-**Destructivo — `make nuke`.** No hay nuke por stack: borra containers, imágenes y volúmenes del stack entero, y pide tipear `nuke`. **No toca el repositorio remoto en R2** — eso vive fuera de Docker, y es justamente lo que el nuke no puede destruir.
+`ENTORNO=produccion make backup-verify` debe confirmar snapshots, base y filestore, registro de addons y procedencia de imágenes. Staging solo lee el repositorio y no ejecuta `backup-run`.

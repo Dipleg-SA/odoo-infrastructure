@@ -8,6 +8,17 @@ Necesitás subir, bajar, reiniciar o inspeccionar `postgres` sin tocar el resto 
 
 La capa de datos en el estado pedido. A diferencia de las demás capas, esta es una dependencia dura de Odoo: bajarla o reiniciarla sin coordinar rompe la aplicación mientras dure.
 
+## Flujo rápido
+
+1. Confirmar si la operación requiere detener Odoo.
+2. Ejecutar el target de Postgres o la secuencia segura de parada.
+3. Confirmar salud, conexiones y límites con `postgres-verify`.
+
+## A mano
+
+Avisá el corte y confirmá que existe un backup reciente antes de detener Postgres o
+usar la operación destructiva descrita al final.
+
 ## Comandos
 
 ```bash
@@ -16,7 +27,6 @@ make postgres-down
 make postgres-restart      # docker compose restart — no recrea contenedores
 make postgres-logs
 make postgres-ps
-make postgres-verify
 ```
 
 **Nunca `postgres-down`/`postgres-restart` con Odoo arriba, sin avisar.** Odoo queda con conexiones abiertas; si necesitás bajar Postgres de forma limpia, pará primero los servicios que dependen de él y usá un timeout explícito:
@@ -46,4 +56,3 @@ En producción o staging esto es indistinguible de perder la base —y todo lo d
 docker compose rm -sf postgres
 docker volume rm "${COMPOSE_PROJECT_NAME}_pgdata"
 ```
-

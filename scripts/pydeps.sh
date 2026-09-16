@@ -9,7 +9,20 @@ shopt -s nullglob
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 . scripts/lib/ui.sh
 
-REQUIREMENTS="addons/requirements.txt"
+REQUIREMENTS="${PYDEPS_REQUIREMENTS:-addons/requirements.txt}"
+
+# Snapshot del runtime
+# Los comandos manuales leen candidatos del entorno; el build puede inyectar otra raíz.
+if [ -n "${PYDEPS_SNAPSHOT_ROOT:-}" ]; then
+  SNAPSHOT_ENTERPRISE_ROOT="$PYDEPS_SNAPSHOT_ROOT/enterprise"
+  SNAPSHOT_CUSTOM_ROOT="$PYDEPS_SNAPSHOT_ROOT/custom"
+elif [ -n "${ENTORNO:-}" ]; then
+  SNAPSHOT_ENTERPRISE_ROOT="runtime/addons/enterprise"
+  SNAPSHOT_CUSTOM_ROOT="runtime/addons/custom/$ENTORNO"
+else
+  SNAPSHOT_ENTERPRISE_ROOT="addons/enterprise"
+  SNAPSHOT_CUSTOM_ROOT="addons/custom"
+fi
 
 # --- Bootstrap desde la plantilla ---
 # No se versiona —es local al deployment, como addons.txt—, así que se copia una vez.
@@ -25,10 +38,18 @@ require_requirements() {
 # Una fila por __manifest__.py bajo cada categoría; el layout lo fija entrypoint.sh.
 
 manifest_files() {
-  local category
-  for category in $(sed -n 's/^for category in \(.*\); do/\1/p' stacks/odoo/image/entrypoint.sh); do
-    find "addons/$category" -name __manifest__.py 2>/dev/null || true
+  local root category
+  local modernos=0
+  for root in "$SNAPSHOT_ENTERPRISE_ROOT" "$SNAPSHOT_CUSTOM_ROOT"; do
+    [ -d "$root" ] || continue
+    modernos=1
+    find "$root" -name __manifest__.py -type f -print 2>/dev/null || true
   done
+  if [ "$modernos" -eq 0 ]; then
+    for category in $(sed -n 's/^for category in \(.*\); do/\1/p' stacks/odoo/image/entrypoint.sh); do
+      find "addons/$category" -name __manifest__.py -type f -print 2>/dev/null || true
+    done
+  fi
 }
 
 # --- external_dependencies.python ---

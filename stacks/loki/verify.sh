@@ -32,7 +32,7 @@ v_loki() {
   if ! corriendo prometheus; then
     omitir "Loki recibe logs por contenedor" "$(motivo prometheus)"
   else
-    expect "Loki recibe logs por contenedor" "odoo" docker compose exec -T prometheus \
+    expect "Loki recibe logs por contenedor" "odoo" contexto_compose exec -T prometheus \
       wget -qO- 'http://loki:3100/loki/api/v1/label/container/values'
   fi
 

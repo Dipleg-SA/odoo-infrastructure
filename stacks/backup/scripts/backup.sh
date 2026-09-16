@@ -10,6 +10,18 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
 . scripts/lib/ui.sh
 
+# Contexto del estado de imágenes
+# En un runtime real los metadatos viven bajo su state; el fallback mantiene el arnés aislado.
+if [ -n "${ENTORNO:-}" ] && [ -f scripts/lib/contexto.sh ]; then
+  . scripts/lib/contexto.sh
+  contexto_iniciar
+  META_DIR="$RUNTIME_STATE_DIR/meta"
+  compose() { contexto_compose "$@"; }
+else
+  META_DIR="state/meta"
+  compose() { docker compose "$@"; }
+fi
+
 if [ -f .env ]; then set -a; . ./.env; set +a; fi
 
 MODE="${1:-daily}"
@@ -63,15 +75,15 @@ else
   ui_warn "flock no disponible (macOS)" "corrida sin serializar" >&2
 fi
 
-res() { docker compose exec -T backup restic "$@"; }
-pg()  { docker compose exec -T postgres "$@"; }
+res() { compose exec -T backup restic "$@"; }
+pg()  { compose exec -T postgres "$@"; }
 
 # --- Marca de éxito ---
 # El exit code no es consultable desde Prometheus; esta marca sí. Escritura atómica:
 # el colector de textfile puede leer en cualquier momento y un archivo a medias lo rompe.
 
 marcar_exito() {
-  local dir="state/textfile" tmp
+  local dir="${RUNTIME_STATE_DIR:-state}/textfile" tmp
   mkdir -p "$dir"
   tmp=$(mktemp "$dir/.backup.XXXXXX")
   {
@@ -88,12 +100,12 @@ marcar_exito() {
 # Informativo: un fallo acá no aborta el backup — tolerante y best-effort.
 
 registrar_addons() {
-  local dir="state/meta" tmp error detalle estado
+  local dir="$META_DIR" tmp error detalle estado
   mkdir -p "$dir" 2>/dev/null || { ui_warn "no se pudo crear $dir" "backup sigue sin el registro de addons" >&2; return 0; }
   tmp=$(mktemp "$dir/.addons.XXXXXX" 2>/dev/null) || { ui_warn "no se pudo escribir el registro de addons" "" >&2; return 0; }
   error=$(mktemp "$dir/.addons-error.XXXXXX" 2>/dev/null) || { ui_warn "no se pudo escribir el diagnóstico de addons" "" >&2; rm -f "$tmp"; return 0; }
   if scripts/addons.sh status > "$tmp" 2> "$error"; then
-    if grep -E '^(enterprise|custom-addons|oca|third-party)[[:space:]]' "$tmp" > "$tmp.registro"; then
+    if grep -E '^(enterprise:|[[:alnum:]_.-]+[[:space:]]+(publicado|sin candidato)[[:space:]]+)' "$tmp" > "$tmp.registro"; then
       chmod 644 "$tmp.registro"
       mv -f "$tmp.registro" "$dir/addons.txt"
     else
@@ -108,6 +120,79 @@ registrar_addons() {
   fi
   rm -f "$tmp" "$error"
   return 0
+}
+
+# Registro de imágenes
+# Actual y Anterior deben entrar en el mismo snapshot que el dump y el filestore.
+registrar_imagenes() {
+  local tmp="$META_DIR/.images.$$.tmp"
+  mkdir -p "$META_DIR"
+  if [ -x scripts/image-state.sh ] && [ -n "${ENTORNO:-}" ]; then
+    scripts/image-state.sh show > "$tmp"
+  else
+    printf '%s\n' '{"Nueva":null,"Actual":null,"Anterior":null,"validation":null}' > "$tmp"
+  fi
+  chmod 644 "$tmp"
+  mv -f "$tmp" "$META_DIR/images.json"
+}
+
+# Metadata de backup asociado
+# Registra de forma atómica el snapshot y la imagen Actual que quedaron respaldados.
+registrar_backup_metadata() {
+  local backup_json="$1" snapshot_id actual_tag tmp
+  [ -n "${ENTORNO:-}" ] || return 0
+  [ -n "${ODOO_EDITION:-}" ] || return 0
+
+  snapshot_id=$(printf '%s\n' "$backup_json" | python3 -c '
+import json, sys
+
+ids = []
+for line in sys.stdin:
+    try:
+        value = json.loads(line)
+    except json.JSONDecodeError:
+        continue
+    values = value if isinstance(value, list) else [value]
+    ids.extend(item.get("snapshot_id") or item.get("id") for item in values if isinstance(item, dict))
+print(next((value for value in reversed(ids) if value), ""))
+')
+  if [ -z "$snapshot_id" ]; then
+    ui_bad "backup sin identificador de snapshot" "restic no devolvió snapshot_id; no se registra la transición" >&2
+    return 1
+  fi
+
+  actual_tag=$(python3 - "$META_DIR/images.json" <<'PY'
+import json, sys
+
+try:
+    state = json.load(open(sys.argv[1], encoding='utf-8'))
+except (OSError, json.JSONDecodeError):
+    state = {}
+actual = state.get('Actual')
+print(actual.get('tag', '') if isinstance(actual, dict) else '')
+PY
+  )
+  mkdir -p "$META_DIR"
+  tmp=$(mktemp "$META_DIR/.last-backup.XXXXXX")
+  python3 - "$tmp" "$snapshot_id" "$ENTORNO" "$ODOO_EDITION" "$actual_tag" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+
+path, snapshot_id, entorno, edition, actual_tag = sys.argv[1:]
+payload = {
+    'snapshot_id': snapshot_id,
+    'entorno': entorno,
+    'edition': edition,
+    'actual_tag': actual_tag or None,
+    'created_at': datetime.now(timezone.utc).isoformat(),
+}
+with open(path, 'w', encoding='utf-8') as output:
+    json.dump(payload, output, ensure_ascii=False, sort_keys=True)
+    output.write('\n')
+PY
+  chmod 644 "$tmp"
+  mv -f "$tmp" "$META_DIR/last-backup.json"
+  ui_ok "snapshot asociado registrado: $snapshot_id"
 }
 
 # --- Dump de la base ---
@@ -144,7 +229,9 @@ case "$MODE" in
     validar_endpoint
     dump_base
     registrar_addons
-    res backup /data/odoo /data/dump /data/meta --exclude=/data/odoo/sessions
+    registrar_imagenes
+    backup_json=$(res backup --json /data/odoo /data/dump /data/meta --exclude=/data/odoo/sessions)
+    registrar_backup_metadata "$backup_json"
     res forget --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" \
                --keep-monthly "$KEEP_MONTHLY" --prune
     marcar_exito daily

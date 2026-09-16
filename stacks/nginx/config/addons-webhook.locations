@@ -1,0 +1,10 @@
+# Endpoint del receptor de producción
+# El path exacto se envía a addons-webhook por la red edge, sin exponer otros recursos.
+location = /webhooks/addons {
+  if ($request_method != POST) { return 405; }
+  set $route addons_webhook;
+  set $addons_webhook addons-webhook;
+  proxy_pass http://$addons_webhook:8080/github;
+  proxy_http_version 1.1;
+  proxy_set_header Connection "";
+}

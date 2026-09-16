@@ -1,197 +1,203 @@
 #!/usr/bin/env bash
-# addons.sh de punta a punta, con repos git de verdad. No necesita Docker ni red:
-# el "remoto" es un directorio local, que para git es un remoto como cualquier otro.
-#
-# Es el script con más lógica del repo y el único que no invoca Docker ni una vez,
-# así que es el que más se gana testeando.
+# Sincronización de candidatos
+# Usa remotos Git locales para verificar catálogo, ramas y aislamiento sin Docker.
 
 cd "$(dirname "$0")/.."
 . tests/lib.sh
 
-REPO_ROOT="$(pwd)"
+REPO_ROOT="$PWD"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
+export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.test
+export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.test
 
-# Identidad para los commits de los fixtures, sin tocar la config del operador.
-export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@test
-export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@test
-
-# --- Repo de addon "de terceros" ---
-# Con dos ramas, como los del manifiesto: la de la versión y la de staging.
-
+# Repositorio de prueba
+# Cada entorno tiene una revisión distinta para distinguir los candidatos publicados.
 crear_addon() {
-  local dir="$TMP/remotos/$1"
+  local dir="$TMP/remotos/$1" nombre="$1"
   mkdir -p "$dir" && git -C "$dir" init -q -b 19.0
-  mkdir -p "$dir/$1"
-  echo "{'name': '$1'}" > "$dir/$1/__manifest__.py"
-  git -C "$dir" add -A && git -C "$dir" commit -qm "v1"
-  git -C "$dir" branch 19.0-stag
+  mkdir -p "$dir/$nombre"
+  printf "{'name': '%s'}\n" "$nombre" > "$dir/$nombre/__manifest__.py"
+  git -C "$dir" add -A && git -C "$dir" commit -qm "base"
+  git -C "$dir" checkout -qb 19.0-dev
+  printf 'dev\n' >> "$dir/$nombre/__manifest__.py"
+  git -C "$dir" commit -qam "dev"
+  git -C "$dir" checkout -q 19.0
+  git -C "$dir" checkout -qb 19.0-stag
+  printf 'staging\n' >> "$dir/$nombre/__manifest__.py"
+  git -C "$dir" commit -qam "staging"
+  git -C "$dir" checkout -q 19.0
   printf '%s' "$dir"
 }
 
-# --- Checkout mínimo de infra ---
-# Solo lo que addons.sh toca: él hace cd al padre de su propio directorio, así que
-# copiarlo dentro del árbol falso alcanza para que se ubique.
-
+# Checkout de infraestructura
+# El catálogo y los bare clones son compartidos; las composiciones son por runtime.
 crear_checkout() {
-  local root="$TMP/$1" rama="$2"
-  mkdir -p "$root/scripts/lib" "$root/addons" "$root/stacks/odoo/image"
+  local root="$TMP/$1" entorno
+  mkdir -p "$root/scripts/lib" "$root/stacks/odoo/image" "$root/runtime/addons"
   cp "$REPO_ROOT/scripts/addons.sh" "$root/scripts/"
-  cp "$REPO_ROOT/scripts/lib/ui.sh" "$root/scripts/lib/"
-  echo "FROM odoo:19.0" > "$root/stacks/odoo/image/Dockerfile"
-  : > "$root/addons/addons.txt"
-  [ -n "$rama" ] && echo "ADDONS_BRANCH=$rama" > "$root/.env"
+  cp "$REPO_ROOT/scripts/lib/ui.sh" "$REPO_ROOT/scripts/lib/contexto.sh" \
+    "$REPO_ROOT/scripts/lib/candidate-lock.sh" "$root/scripts/lib/"
+  cp "$REPO_ROOT/runtime/addons/catalogo.txt.example" "$root/runtime/addons/"
+  : > "$root/runtime/addons/catalogo.txt"
+  printf 'FROM odoo:19.0\n' > "$root/stacks/odoo/image/Dockerfile"
+  for entorno in desarrollo staging produccion; do
+    mkdir -p "$root/runtime/$entorno"
+    printf 'services: {}\n' > "$root/runtime/$entorno/compose.yaml"
+    printf 'COMPOSE_PROJECT_NAME=test-%s\nODOO_EDITION=community\nTAG=19.0-ce-2026-09-16\n' \
+      "$entorno" > "$root/runtime/$entorno/compose.env"
+  done
   printf '%s' "$root"
 }
 
-declarar() { printf '%s\t%s\n' "$2" "$3" >> "$1/addons/addons.txt"; }
-sync()     { (cd "$1" && ./scripts/addons.sh sync 2>&1); }
-estado()   { (cd "$1" && ./scripts/addons.sh status 2>&1); }
-sync_code(){ (cd "$1" && ./scripts/addons.sh sync >/dev/null 2>&1; echo $?); }
-branch()      { (cd "$1" && ./scripts/addons.sh branch "${2:-}" 2>&1); }
-branch_code() { (cd "$1" && ./scripts/addons.sh branch "${2:-}" >/dev/null 2>&1; echo $?); }
+declarar() { printf '%s\n' "$2" >> "$1/runtime/addons/catalogo.txt"; }
+ejecutar() {
+  local root="$1" entorno="$2" verbo="$3"
+  shift 3
+  (cd "$root" && ENTORNO="$entorno" ./scripts/addons.sh "$verbo" "$@" 2>&1)
+}
+codigo() {
+  local salida retorno
+  local root="$1" entorno="$2" verbo="$3"
+  shift 3
+  salida=$(ejecutar "$root" "$entorno" "$verbo" "$@" 2>&1)
+  retorno=$?
+  [ "$retorno" -eq 0 ] || printf '%s\n' "$salida" >&2
+  printf '%s' "$retorno"
+}
+commit_candidato() { cat "$1/runtime/addons/custom/$2/$3/.candidate-commit" 2>/dev/null; }
 
-# =====================================================================
-titulo "sync inicial"
-# =====================================================================
+# Ramas por runtime
+# Desarrollo, staging y producción publican la revisión de su rama fija.
+ADDON=$(crear_addon dominio_ventas)
+ROOT=$(crear_checkout caso-ramas)
+declarar "$ROOT" "$ADDON"
 
-ADDON=$(crear_addon mi_modulo)
-ROOT=$(crear_checkout caso1 19.0-stag)
-declarar "$ROOT" "$ADDON" custom-addons
+igual "sin ENTORNO falla antes de clonar" "2" "$(cd "$ROOT" && env -u ENTORNO ./scripts/addons.sh sync >/dev/null 2>&1; echo $?)"
+igual "sync de staging termina bien" "0" "$(codigo "$ROOT" staging sync)"
+STAGING_COMMIT=$(git -C "$ADDON" rev-parse 19.0-stag)
+igual "staging publica el commit de 19.0-stag" "$STAGING_COMMIT" \
+  "$(commit_candidato "$ROOT" staging dominio_ventas)"
+contiene "staging exporta el código del candidato" "staging" \
+  "$(cat "$ROOT/runtime/addons/custom/staging/dominio_ventas/dominio_ventas/__manifest__.py")"
+igual "el candidato no es un worktree Git" "0" \
+  "$([ ! -e "$ROOT/runtime/addons/custom/staging/dominio_ventas/.git" ]; echo $?)"
+igual "el bare compartido vive en runtime/addons" "0" \
+  "$([ -d "$ROOT/runtime/addons/.repos/dominio_ventas.git" ]; echo $?)"
+contiene "status registra el commit publicado" "$STAGING_COMMIT" \
+  "$(ejecutar "$ROOT" staging status)"
 
-igual "sync sale con 0" "0" "$(sync_code "$ROOT")"
-igual "deja el worktree en la rama declarada y limpio" "19.0-stag" \
-  "$(git -C "$ROOT/addons/custom-addons/mi_modulo" rev-parse --abbrev-ref HEAD 2>/dev/null)"
-contiene "status lo reporta limpio" "limpio" "$(estado "$ROOT")"
-igual "el módulo quedó en disco" "0" \
-  "$([ -f "$ROOT/addons/custom-addons/mi_modulo/mi_modulo/__manifest__.py" ]; echo $?)"
+igual "sync de desarrollo termina bien" "0" "$(codigo "$ROOT" desarrollo sync)"
+DEV_COMMIT=$(git -C "$ADDON" rev-parse 19.0-dev)
+igual "desarrollo publica el commit de 19.0-dev" "$DEV_COMMIT" \
+  "$(commit_candidato "$ROOT" desarrollo dominio_ventas)"
+igual "desarrollo no comparte la ruta de staging" "1" \
+  "$([ "$ROOT/runtime/addons/custom/desarrollo/dominio_ventas" -ef "$ROOT/runtime/addons/custom/staging/dominio_ventas" ]; echo $?)"
+igual "sync de producción termina bien" "0" "$(codigo "$ROOT" produccion sync)"
+PROD_COMMIT=$(git -C "$ADDON" rev-parse 19.0)
+igual "producción publica el commit base" "$PROD_COMMIT" \
+  "$(commit_candidato "$ROOT" produccion dominio_ventas)"
+igual "sync conserva la referencia base de Odoo" "FROM odoo:19.0" \
+  "$(cat "$ROOT/stacks/odoo/image/Dockerfile")"
+no_contiene "no materializa candidatos en addons raíz" "addons/custom-addons" \
+  "$(find "$ROOT" -maxdepth 2 -type d -print)"
 
-# El clon bare es compartido y los worktrees cuelgan de él.
-igual "el clon bare vive bajo .repos" "0" "$([ -d "$ROOT/addons/.repos/mi_modulo.git" ]; echo $?)"
+# Actualización aislada
+# Un fetch nuevo reemplaza solo el candidato de su entorno y conserva los demás.
+git -C "$ADDON" checkout -q 19.0-stag
+printf 'v2\n' >> "$ADDON/dominio_ventas/__manifest__.py"
+git -C "$ADDON" commit -qam "staging v2"
+git -C "$ADDON" checkout -q 19.0
+PREVIO_DEV=$(commit_candidato "$ROOT" desarrollo dominio_ventas)
+PREVIO_PROD=$(commit_candidato "$ROOT" produccion dominio_ventas)
+igual "sync actualizado de staging termina bien" "0" "$(codigo "$ROOT" staging sync)"
+NUEVO_STAGING=$(git -C "$ADDON" rev-parse 19.0-stag)
+igual "staging avanza al nuevo commit" "$NUEVO_STAGING" \
+  "$(commit_candidato "$ROOT" staging dominio_ventas)"
+igual "desarrollo conserva su commit" "$PREVIO_DEV" \
+  "$(commit_candidato "$ROOT" desarrollo dominio_ventas)"
+igual "producción conserva su commit" "$PREVIO_PROD" \
+  "$(commit_candidato "$ROOT" produccion dominio_ventas)"
 
-# =====================================================================
-titulo "el remoto avanza"
-# =====================================================================
+# Reemplazo íntegro del candidato
+# El código local no se mezcla con la revisión publicada y desaparece al sincronizar.
+printf 'edición local\n' >> "$ROOT/runtime/addons/custom/staging/dominio_ventas/dominio_ventas/__manifest__.py"
+touch "$ROOT/runtime/addons/custom/staging/dominio_ventas/sobrante.py"
+igual "sync reemplaza el candidato completo" "0" "$(codigo "$ROOT" staging sync)"
+no_contiene "descarta cambios locales" "edición local" \
+  "$(cat "$ROOT/runtime/addons/custom/staging/dominio_ventas/dominio_ventas/__manifest__.py")"
+igual "borra archivos que no pertenecen al commit" "1" \
+  "$([ -e "$ROOT/runtime/addons/custom/staging/dominio_ventas/sobrante.py" ]; echo $?)"
 
-echo "v2" >> "$ADDON/mi_modulo/__manifest__.py"
-git -C "$ADDON" checkout -q 19.0-stag && git -C "$ADDON" commit -qam "v2"
+# Catálogo y fallos de rama
+# La validación ocurre antes de clonar, y un fallo remoto conserva el candidato anterior.
+ROOT_INVALIDO=$(crear_checkout caso-invalido)
+printf '%s custom-addons\n' "$ADDON" > "$ROOT_INVALIDO/runtime/addons/catalogo.txt"
+igual "una línea con categoría se rechaza" "1" "$(codigo "$ROOT_INVALIDO" staging sync)"
+igual "el catálogo inválido no clona repositorios" "1" \
+  "$([ -d "$ROOT_INVALIDO/runtime/addons/.repos" ]; echo $?)"
 
-igual "sync sale con 0" "0" "$(sync_code "$ROOT")"
-contiene "el worktree avanzó por fast-forward" "v2" \
-  "$(git -C "$ROOT/addons/custom-addons/mi_modulo" log --oneline -1)"
+ROOT_URL_INVALIDA=$(crear_checkout caso-url-invalida)
+printf '%s\n' 'https://token@github.com/organizacion/dominio_privado.git' \
+  > "$ROOT_URL_INVALIDA/runtime/addons/catalogo.txt"
+igual "una URL con credenciales se rechaza" "1" "$(codigo "$ROOT_URL_INVALIDA" produccion sync)"
+igual "la URL con credenciales no clona repositorios" "1" \
+  "$([ -d "$ROOT_URL_INVALIDA/runtime/addons/.repos" ]; echo $?)"
 
-# =====================================================================
-titulo "rama de feature: sync no toca nada"
-# =====================================================================
+# Enterprise fuera del catálogo
+# El checkout privado se selecciona por un tag anotado y nunca se materializa como candidato.
+git -C "$ADDON" tag -a 19.0-ee-2026-09-15 -m "Enterprise 19.0" 19.0
+ROOT_ENTERPRISE=$(crear_checkout caso-enterprise)
+igual "Enterprise se sincroniza fuera del catálogo" "0" \
+  "$(codigo "$ROOT_ENTERPRISE" produccion enterprise-sync "$ADDON" 19.0-ee-2026-09-15)"
+igual "Enterprise queda detached en el commit del tag" "$(git -C "$ADDON" rev-parse 19.0)" \
+  "$(git -C "$ROOT_ENTERPRISE/runtime/addons/enterprise" rev-parse HEAD)"
+contiene "Enterprise status muestra el tag seleccionado" "19.0-ee-2026-09-15" \
+  "$(ejecutar "$ROOT_ENTERPRISE" produccion enterprise-status)"
+igual "Enterprise pasa la validación de tag inmutable" "0" \
+  "$(codigo "$ROOT_ENTERPRISE" produccion enterprise-validate 19.0-ee-2026-09-15)"
+igual "Enterprise no crea un candidato de dominio" "0" \
+  "$([ ! -e "$ROOT_ENTERPRISE/runtime/addons/custom/produccion/enterprise" ]; echo $?)"
+printf '%s\n' 'ODOO_EDITION=enterprise' 'TAG=19.0-ee-2026-09-15' \
+  >> "$ROOT_ENTERPRISE/runtime/produccion/compose.env"
+export ENTERPRISE_REPOSITORY="$ADDON"
+igual "Enterprise resuelve el tag desde TAG" "0" \
+  "$(codigo "$ROOT_ENTERPRISE" produccion enterprise-sync)"
+unset ENTERPRISE_REPOSITORY
+ENTERPRISE_ANTERIOR=$(git -C "$ROOT_ENTERPRISE/runtime/addons/enterprise" rev-parse HEAD)
+igual "un tag Enterprise inexistente falla" "1" \
+  "$(codigo "$ROOT_ENTERPRISE" produccion enterprise-sync "$ADDON" 19.0-ee-2026-09-16)"
+igual "el tag inexistente no cambia el checkout" "$ENTERPRISE_ANTERIOR" \
+  "$(git -C "$ROOT_ENTERPRISE/runtime/addons/enterprise" rev-parse HEAD)"
+git -C "$ADDON" tag 19.0-ee-2026-09-17 19.0
+ROOT_ENTERPRISE_LW=$(crear_checkout caso-enterprise-lightweight)
+igual "un tag Enterprise liviano no se acepta como inmutable" "1" \
+  "$(codigo "$ROOT_ENTERPRISE_LW" produccion enterprise-sync "$ADDON" 19.0-ee-2026-09-17)"
+printf '%s\n' 'https://github.com/organizacion/enterprise.git' > "$ROOT_ENTERPRISE/runtime/addons/catalogo.txt"
+igual "Enterprise no se admite dentro del catálogo" "1" \
+  "$(codigo "$ROOT_ENTERPRISE" produccion sync)"
+igual "el checkout Enterprise sucio no se pisa" "1" \
+  "$(touch "$ROOT_ENTERPRISE/runtime/addons/enterprise/edicion.local"; codigo "$ROOT_ENTERPRISE" produccion enterprise-sync "$ADDON" 19.0-ee-2026-09-15)"
 
-git -C "$ROOT/addons/custom-addons/mi_modulo" checkout -q -b feat/mi-cambio
-ANTES=$(git -C "$ROOT/addons/custom-addons/mi_modulo" rev-parse HEAD)
-SALIDA=$(sync "$ROOT")
+rm -f "$ROOT/runtime/addons/catalogo.txt"
+igual "sin catálogo real falla y no usa la plantilla" "1" "$(codigo "$ROOT" staging sync)"
+contiene "y nombra la plantilla para copiar" "runtime/addons/catalogo.txt.example" \
+  "$(ejecutar "$ROOT" staging sync)"
+printf '%s\n' "$ADDON" > "$ROOT/runtime/addons/catalogo.txt"
 
-igual    "sync sale con 0" "0" "$(sync_code "$ROOT")"
-contiene "avisa que no actualiza" "no se actualiza" "$SALIDA"
-igual    "y deja el worktree donde estaba" "$ANTES" \
-  "$(git -C "$ROOT/addons/custom-addons/mi_modulo" rev-parse HEAD)"
+RAMA_ANTERIOR=$(commit_candidato "$ROOT" desarrollo dominio_ventas)
+git -C "$ADDON" branch -D 19.0-dev >/dev/null
+igual "una rama ausente hace fallar el sync" "1" "$(codigo "$ROOT" desarrollo sync)"
+igual "un fallo conserva el candidato anterior" "$RAMA_ANTERIOR" \
+  "$(commit_candidato "$ROOT" desarrollo dominio_ventas)"
 
-# =====================================================================
-titulo "commits locales sin pushear: es el estado normal entre el commit y el push"
-# =====================================================================
-
-git -C "$ROOT/addons/custom-addons/mi_modulo" checkout -q 19.0-stag
-echo "mi cambio" >> "$ROOT/addons/custom-addons/mi_modulo/mi_modulo/__manifest__.py"
-git -C "$ROOT/addons/custom-addons/mi_modulo" commit -qam "feat: mi cambio"
-
-igual    "sync NO lo trata como error" "0" "$(sync_code "$ROOT")"
-contiene "y el commit local sigue ahí" "feat: mi cambio" \
-  "$(git -C "$ROOT/addons/custom-addons/mi_modulo" log --oneline -1)"
-contiene "pero avisa, porque un re-clone se lo comería" "1 commit(s) locales sin pushear" \
-  "$(sync "$ROOT")"
-
-# =====================================================================
-titulo "divergencia: yo commiteé y el remoto también"
-# =====================================================================
-
-echo "ajeno" >> "$ADDON/mi_modulo/otro.py"
-git -C "$ADDON" add -A && git -C "$ADDON" commit -qm "feat: cambio ajeno"
-
-MIO=$(git -C "$ROOT/addons/custom-addons/mi_modulo" rev-parse HEAD)
-SALIDA=$(sync "$ROOT")
-
-igual    "sync falla, para que el operador decida" "1" "$(sync_code "$ROOT")"
-contiene "cuenta los commits de cada lado" "1 commit(s) locales, 1 en el remoto" "$SALIDA"
-contiene "propone integrar con rebase"     "rebase origin/19.0-stag"             "$SALIDA"
-contiene "y condiciona el reset a que sean descartables" "solo si esos 1 commit(s) locales son descartables" "$SALIDA"
-no_contiene "no dice que la rama fue reescrita" "fue reescrita" "$SALIDA"
-contiene "y arrastra el error real de git"  "Detalle:" "$SALIDA"
-
-# Lo más importante del caso: que no haya tocado el trabajo local.
-igual "el worktree queda intacto" "$MIO" "$(git -C "$ROOT/addons/custom-addons/mi_modulo" rev-parse HEAD)"
-
-# Y que el comando que sugiere funcione tal cual.
-git -C "$ROOT/addons/custom-addons/mi_modulo" rebase -q origin/19.0-stag >/dev/null 2>&1
-igual "después del rebase que propone, el sync pasa" "0" "$(sync_code "$ROOT")"
-
-# =====================================================================
-titulo "manifiesto: se valida antes de clonar nada"
-# =====================================================================
-
-ROOT2=$(crear_checkout caso2 19.0-stag)
-igual    "un manifiesto vacío aborta" "1" "$(sync_code "$ROOT2")"
-contiene "y dice por qué" "no declara ningún repositorio" "$(sync "$ROOT2")"
-
-declarar "$ROOT2" "$ADDON" categoria-inventada
-SALIDA=$(sync "$ROOT2")
-igual    "una categoría inválida aborta" "1" "$(sync_code "$ROOT2")"
-contiene "nombrando la categoría"        "categoria-inventada" "$SALIDA"
-igual    "sin haber clonado nada"        "1" "$([ -d "$ROOT2/addons/.repos" ]; echo $?)"
-
-# =====================================================================
-titulo "guardas del layout viejo y de los huérfanos"
-# =====================================================================
-
-ROOT3=$(crear_checkout caso3 19.0-stag)
-declarar "$ROOT3" "$ADDON" custom-addons
-mkdir -p "$ROOT3/addons/production"
-SALIDA=$(sync "$ROOT3")
-igual    "un árbol por entorno del layout anterior aborta" "1" "$(sync_code "$ROOT3")"
-contiene "y nombra el rm que lo destraba" "rm -rf addons/production" "$SALIDA"
-
-rm -rf "$ROOT3/addons/production"
-sync "$ROOT3" >/dev/null 2>&1
-mkdir -p "$ROOT3/addons/oca/repo_ajeno"
-contiene "status lista lo que no está en el manifiesto" "huérfano: oca/repo_ajeno" "$(estado "$ROOT3")"
-
-# =====================================================================
-titulo "branch: crea la rama de feature antes del primer sync"
-# =====================================================================
-
-ADDON2=$(crear_addon otro_modulo)
-ROOT4=$(crear_checkout caso4 feat/nueva)
-declarar "$ROOT4" "$ADDON2" custom-addons
-
-igual "branch sale con 0" "0" "$(branch_code "$ROOT4")"
-igual "y crea la rama en el remoto" "0" \
-  "$(git -C "$ADDON2" show-ref --verify -q refs/heads/feat/nueva; echo $?)"
-
-igual "y ahora sync arma el worktree sobre ella" "0" "$(sync_code "$ROOT4")"
-igual "en la rama declarada" "feat/nueva" \
-  "$(git -C "$ROOT4/addons/custom-addons/otro_modulo" rev-parse --abbrev-ref HEAD 2>/dev/null)"
-
-contiene "correrlo de nuevo avisa que ya existe" "ya existe" "$(branch "$ROOT4")"
-igual    "y no falla" "0" "$(branch_code "$ROOT4")"
-
-# =====================================================================
-titulo "branch: guardas"
-# =====================================================================
-
-ROOT5=$(crear_checkout caso5 "")
-declarar "$ROOT5" "$ADDON2" custom-addons
-igual    "sin rama de feature propia en .env, aborta" "1" "$(branch_code "$ROOT5")"
-contiene "y dice por qué" "declará una rama de feature" "$(branch "$ROOT5")"
-
-ROOT6=$(crear_checkout caso6 feat/otra)
-declarar "$ROOT6" "$ADDON2" custom-addons
-igual    "una rama base inexistente falla" "1" "$(branch_code "$ROOT6" "99.0")"
-contiene "nombrando la que falta" "origin/99.0 no existe" "$(branch "$ROOT6" "99.0")"
+# Catálogo vacío y huérfanos
+# Un dominio retirado queda visible para limpieza manual, pero no se borra solo.
+: > "$ROOT/runtime/addons/catalogo.txt"
+igual "un catálogo vacío es válido" "0" "$(codigo "$ROOT" staging sync)"
+contiene "status señala el candidato huérfano" "huérfano: custom/staging/dominio_ventas" \
+  "$(ejecutar "$ROOT" staging status)"
+igual "el candidato huérfano se conserva" "0" \
+  "$([ -d "$ROOT/runtime/addons/custom/staging/dominio_ventas" ]; echo $?)"
 
 resumen

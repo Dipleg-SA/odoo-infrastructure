@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
-# Crea el esqueleto de secrets/: genera los derivables y deja plantillas con el
-# marcador CAMBIAR para los que se pegan a mano. Idempotente — nunca pisa nada.
+# Secretos privados por runtime
+# Genera los derivables y deja marcadores solo para valores que carga el operador.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 . scripts/lib/ui.sh
+. scripts/lib/contexto.sh
 . scripts/lib/compose.sh
+contexto_iniciar
 
 # --- Umask ---
 # Lo que se cree acá nace 600; secrets-perms le pone 640 y el grupo consumidor.
 
 umask 077
-mkdir -p secrets
+SECRETS_DIR="$RUNTIME_SECRETS_DIR"
+SECRETS_VISIBLE="runtime/$ENTORNO/secrets"
+CONTROL_DIR="$PWD/runtime/control/secrets"
+CONTROL_VISIBLE="runtime/control/secrets"
+mkdir -p "$SECRETS_DIR"
 
 MARK="CAMBIAR"
 creados=()
@@ -25,33 +31,50 @@ creados=()
 # configuracion() fusiona los perfiles en la variable, no con --profile: un
 # --profile explícito reemplaza a COMPOSE_PROFILES en vez de sumarse.
 
-DECLARADOS=$(configuracion | sed -n 's|^ *file: .*/secrets/\([a-z0-9_]*\)$|\1|p')
+CONFIGURACION=$(configuracion)
+DECLARADOS=$(printf '%s\n' "$CONFIGURACION" | sed -n 's|^ *file: .*/secrets/\([a-z0-9_]*\)$|\1|p')
+CONTROL_ACTIVO=0
+if printf '%s\n' "$CONFIGURACION" | grep -qE '^  addons-webhook:$'; then
+  CONTROL_ACTIVO=1
+fi
 
 if [ -z "$DECLARADOS" ]; then
-  ui_bad "no se pudo leer los secrets de la composición" "revisar COMPOSE_FILE en .env" >&2
+  ui_bad "no se pudo leer los secrets de la composición" "revisar ENTORNO y runtime/$ENTORNO/compose.env" >&2
   exit 1
 fi
 
-ENTORNO=$(sed -n 's|^COMPOSE_FILE=envs/\(.*\)\.yaml$|\1|p' .env 2>/dev/null)
-
 ui_plan_start "secrets-init"
-ui_step 1 "Creación de secretos${ENTORNO:+ para entorno $ENTORNO}. Si alguno existe, se omite la creación."
+ui_step 1 "Creación de secretos para entorno $ENTORNO. Si alguno existe, se omite la creación."
 
-# --- Helper ---
-# Escribe solo si el archivo no existe y este stack lo declara; stdin trae el contenido.
+# Escritura idempotente
+# Crea solo los secretos declarados por la composición seleccionada.
 
 nuevo() {
   if ! printf '%s\n' "$DECLARADOS" | grep -qx "$1"; then
-    ui_skip "omitido (este stack no lo declara): secrets/$1"
+    ui_skip "omitido (este runtime no lo declara): $SECRETS_VISIBLE/$1"
     return 1
   fi
-  if [ -e "secrets/$1" ]; then
-    ui_skip "skip (ya existe): secrets/$1"
+  if [ -e "$SECRETS_DIR/$1" ]; then
+    ui_skip "skip (ya existe): $SECRETS_VISIBLE/$1"
     return 1
   fi
-  cat > "secrets/$1"
-  ui_ok "creado: secrets/$1"
+  cat > "$SECRETS_DIR/$1"
+  ui_ok "creado: $SECRETS_VISIBLE/$1"
   creados+=("$1")
+  return 0
+}
+
+# Secretos del receptor de candidatos
+# El webhook usa runtime/control y no pertenece a un entorno operativo.
+nuevo_control() {
+  [ "$CONTROL_ACTIVO" -eq 1 ] || return 1
+  if [ -e "$CONTROL_DIR/$1" ]; then
+    ui_skip "skip (ya existe): $CONTROL_VISIBLE/$1"
+    return 1
+  fi
+  mkdir -p "$CONTROL_DIR"
+  cat > "$CONTROL_DIR/$1"
+  ui_ok "creado: $CONTROL_VISIBLE/$1"
   return 0
 }
 
@@ -61,6 +84,15 @@ nuevo() {
 # 32 bytes = 256 bits, misma entropía que antes.
 
 genpass() { openssl rand -hex 32 | tr -d '\n'; }
+
+# Bootstrap del control plane
+# La firma se deriva; Git y SSH quedan como marcadores para carga manual.
+if [ "$CONTROL_ACTIVO" -eq 1 ]; then
+  nuevo_control addons_webhook_secret < <(genpass) || true
+  for s in git_readonly_token git_readonly_key git_known_hosts; do
+    nuevo_control "$s" < <(printf '%s' "$MARK") || true
+  done
+fi
 
 # --- Password de Postgres ---
 # Lo lee el motor y lo lee Odoo: un solo valor, un solo archivo.
@@ -103,10 +135,15 @@ EOF
 # Solo lo que quedó con marcador necesita intervención antes de secrets-perms.
 
 ui_plan_end
-pendientes=$(grep -rl "$MARK" secrets/ 2>/dev/null | sed 's|secrets/||' | sort || true)
-if [ -n "$pendientes" ]; then
+pendientes=$(grep -rl "$MARK" "$SECRETS_DIR/" 2>/dev/null | sed "s|$SECRETS_DIR/||" | sort || true)
+pendientes_control=""
+if [ "$CONTROL_ACTIVO" -eq 1 ]; then
+  pendientes_control=$(grep -rl "$MARK" "$CONTROL_DIR/" 2>/dev/null | sed "s|$CONTROL_DIR/||" | sort || true)
+fi
+if [ -n "$pendientes" ] || [ -n "$pendientes_control" ]; then
   ui_warn "Falta cargar el valor real en:" ""
-  printf '  %s\n' $pendientes
+  [ -z "$pendientes" ] || printf '  %s\n' $pendientes
+  [ -z "$pendientes_control" ] || sed 's|^|  runtime/control/secrets/|' <<<"$pendientes_control"
   echo
   echo "Después: sudo make secrets-perms && make secrets-check"
 else

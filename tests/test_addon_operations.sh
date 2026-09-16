@@ -11,14 +11,22 @@ trap 'rm -rf "$TMP"' EXIT
 
 ROOT="$TMP/checkout"
 FAKEBIN="$ROOT/fakebin"
-mkdir -p "$ROOT/scripts/lib" "$FAKEBIN"
-cp scripts/odoo-module-operation.sh "$ROOT/scripts/"
-cp scripts/lib/ui.sh "$ROOT/scripts/lib/"
+mkdir -p "$ROOT/scripts/lib" "$FAKEBIN" "$ROOT/runtime/desarrollo/state"
+cp scripts/odoo-module-operation.sh scripts/image-state.sh "$ROOT/scripts/"
+cp scripts/lib/ui.sh scripts/lib/contexto.sh "$ROOT/scripts/lib/"
 chmod +x "$ROOT/scripts/odoo-module-operation.sh"
 
-cat > "$ROOT/.env" <<'EOF'
-COMPOSE_FILE=envs/development.yaml
+cat > "$ROOT/runtime/desarrollo/compose.env" <<'EOF'
+COMPOSE_PROJECT_NAME=test-development
 HTTP_PORT=8081
+ODOO_EDITION=community
+TAG=19.0-ce-2026-09-16
+EOF
+cat > "$ROOT/runtime/desarrollo/compose.yaml" <<'EOF'
+services: {}
+EOF
+cat > "$ROOT/runtime/desarrollo/state/images.json" <<'EOF'
+{"Nueva":null,"Actual":{"tag":"local/odoo:actual","digest":"sha256:actual","edition":"community","edition_tag":"19.0-ce-2026-09-16","enterprise_tag":null,"enterprise_commit":null,"enterprise_modules":[],"odoo_version":"19.0","base_image":"odoo:19.0","infra_commit":"infra","addons":{},"built_at":"20260916T120000Z"},"Anterior":null,"validation":null}
 EOF
 
 cat > "$FAKEBIN/docker" <<'EOF'
@@ -28,7 +36,11 @@ printf '%s\n' "$*" >> "$DOCKER_CALLS"
 
 [ "${1:-}" = compose ] || exit 1
 
-case "${2:-}" in
+subcomando=""
+for argumento in "$@"; do
+  case "$argumento" in stop|up|run) subcomando="$argumento"; break ;; esac
+done
+case "$subcomando" in
   stop|up)
     exit 0
     ;;
@@ -75,6 +87,7 @@ chmod +x "$FAKEBIN/make"
 run_operation() {
   local action="$1" modules="$2" confirm="${3:-}"
   (cd "$ROOT" && PATH="$FAKEBIN:$PATH" \
+    ENTORNO=desarrollo \
     DOCKER_CALLS="$ROOT/docker-calls" MAKE_CALLS="$ROOT/make-calls" \
     MODULES="$modules" CONFIRM="$confirm" \
     ./scripts/odoo-module-operation.sh "$action" 2>&1)
@@ -86,6 +99,7 @@ SALIDA_UNINSTALL=$(run_operation uninstall dipl_doc_sale desinstalar)
 
 set +e
 SALIDA_FAILURE=$(cd "$ROOT" && PATH="$FAKEBIN:$PATH" \
+  ENTORNO=desarrollo \
   DOCKER_CALLS="$ROOT/docker-calls" MAKE_CALLS="$ROOT/make-calls" \
   MODULES="dipl_doc_sale" FAIL_RUN=1 \
   ./scripts/odoo-module-operation.sh install 2>&1)
@@ -99,6 +113,6 @@ contiene "desinstala mediante la API" "API operation=uninstall phase=apply" "$SA
 contiene "levanta Odoo después de operar" "make odoo-report-config" "$(cat "$ROOT/make-calls")"
 contiene "usa el one-off común" "run --rm --name odoo-oneoff" "$(cat "$ROOT/docker-calls")"
 sale_con "conserva el error del one-off" 17 bash -c "exit $ESTADO_FAILURE"
-contiene "levanta Odoo aunque falle la API" "compose up -d odoo" "$(cat "$ROOT/docker-calls")"
+contiene "levanta Odoo aunque falle la API" "up -d odoo" "$(cat "$ROOT/docker-calls")"
 
 resumen

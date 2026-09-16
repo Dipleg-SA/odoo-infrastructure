@@ -8,6 +8,12 @@ Antes de clonar el repositorio — es la credencial más sensible del stack: abr
 
 Un bucket R2 nuevo y vacío, un token `Object Read & Write` acotado a él, y la passphrase de cifrado de restic generada y guardada — nada de esto se puede recuperar después si se pierde.
 
+## Flujo rápido
+
+1. Crear el bucket y el token restringido en Cloudflare.
+2. Anotar endpoint y bucket, generar la passphrase y guardarlos fuera del servidor.
+3. Confirmar los tres elementos en `Verificación` antes de clonar el repositorio.
+
 ## A mano
 
 1. Cloudflare → R2 → crear un bucket nuevo y vacío.

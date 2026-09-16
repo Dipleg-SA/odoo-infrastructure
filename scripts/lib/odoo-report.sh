@@ -9,23 +9,23 @@ odoo_report_resolve_urls() {
   PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-}"
 
   if [ -z "$PUBLIC_BASE_URL" ]; then
-    case "${COMPOSE_FILE:-}" in
-      envs/development.yaml)
+    case "${ENTORNO:-}" in
+      desarrollo)
         if [ -z "${HTTP_PORT:-}" ]; then
-          ODOO_REPORT_URL_ERROR="falta HTTP_PORT en .env"
+          ODOO_REPORT_URL_ERROR="falta HTTP_PORT en runtime/desarrollo/compose.env"
           return 1
         fi
         PUBLIC_BASE_URL="http://127.0.0.1:${HTTP_PORT}"
         ;;
-      envs/staging.yaml|envs/production.yaml)
+      staging|produccion)
         if [ -z "${PUBLIC_HOSTNAME:-}" ]; then
-          ODOO_REPORT_URL_ERROR="falta PUBLIC_HOSTNAME en .env"
+          ODOO_REPORT_URL_ERROR="falta PUBLIC_HOSTNAME en runtime/$ENTORNO/compose.env"
           return 1
         fi
         PUBLIC_BASE_URL="https://${PUBLIC_HOSTNAME}"
         ;;
       *)
-        ODOO_REPORT_URL_ERROR="definir PUBLIC_BASE_URL en .env o usar COMPOSE_FILE de un entorno conocido"
+        ODOO_REPORT_URL_ERROR="ENTORNO no es válido; usar desarrollo, staging o produccion"
         return 1
         ;;
     esac

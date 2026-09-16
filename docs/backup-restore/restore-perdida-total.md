@@ -20,8 +20,9 @@ Este procedimiento es para recuperar producción. Para sembrar staging, seguí
    secrets y addons; ver [A mano](#a-mano).
 2. **Restaurar las dos partes del estado.** Consultar el inventario de addons si hace falta,
    iniciar Postgres y restaurar filestore y base desde el mismo snapshot; ver [Comandos](#comandos).
-3. **Reponer código y levantar servicios.** Sincronizar addons, resolver dependencias, iniciar Odoo
-   y reactivar backups y timers; ver [Comandos](#comandos).
+3. **Reponer código y levantar servicios.** Sincronizar addons, resolver dependencias, reemitir el
+   certificado, preparar el monitoreo y arrancar el stack antes de reactivar backups y timers; ver
+   [Comandos](#comandos).
 4. **Confirmar la recuperación.** Ejecutar las verificaciones y descargar un adjunto desde la
    aplicación; ver [Verificación](#verificación).
 
@@ -37,11 +38,13 @@ letra por letra. En la recuperación de producción, conserva el `COMPOSE_PROJEC
 original: restic agrupa los snapshots por ese nombre y `backup-verify` lo usa para
 encontrar los de este stack.
 
-El snapshot guarda la base, el filestore y un inventario informativo de ramas y commits
-de addons en `state/meta/addons.txt`; no guarda los repositorios ni el manifiesto
+El snapshot guarda la base, el filestore, la procedencia de imágenes con edición y un
+inventario informativo de ramas y commits de addons en `state/meta/addons.txt`; no guarda los repositorios ni el manifiesto
 `addons/addons.txt`. Recuperá el manifiesto y el ZIP de Enterprise, si se usa, desde su
 copia externa. Los commits de addons que registra el inventario tienen que seguir
 disponibles en sus repositorios remotos. Odoo aborta si levantás sin addons.
+
+Antes de levantar Odoo, leé `state/meta/images.json` y configurá `ODOO_EDITION` y `TAG` con la edición registrada en la fotografía `Actual`. No elijas Community solo porque el checkout no tenga el ZIP Enterprise: la base puede conservar módulos Enterprise.
 
 Si se perdió el servidor entero, primero reconstruí Docker y los prerrequisitos del
 host con [configurar-docker-host](../operacion/configurar-docker-host.md). En el
@@ -66,11 +69,14 @@ make restore SNAPSHOT="$SNAPSHOT"
 make repo-sync                   # primero completar addons/addons.txt
 make addons-deps
 make build                       # solo si addons-deps agregó o cambió pines
-make backup-up
-make odoo-up
+make cert-issue                  # el volumen de certificados no está en el backup
+make monitoring-role             # el dump lógico no restaura roles de Postgres
 sudo make up-timers
+make up                          # levanta Edge, backup y observabilidad también
 make backup-run                  # crea un snapshot nuevo de la instancia recuperada
 ```
+
+Para recuperar hacia Community desde una fotografía Enterprise, restaurá primero la copia en staging con la edición Enterprise, retirá manualmente los módulos Enterprise y validá la base. Luego configurá `ODOO_EDITION=community` y `TAG=19.0-ce-YYYY-MM-DD`, construí y validá la imagen Community, y repetí el restore controlado antes de aplicarla. Conservá el snapshot Enterprise asociado: `apply-image` exige el backup correspondiente y `rollback-image` no puede reactivar una edición distinta contra la base resultante.
 
 **El orden interno no es simétrico al del backup, y es deliberado:** primero el
 filestore, después la base. Un filestore más nuevo que la base deja archivos huérfanos,
@@ -87,8 +93,6 @@ recurrente —el backup diario— siga corriendo sin privilegios.
 ## Verificación
 
 ```bash
-make backup-verify
-make odoo-verify
 make verify
 ```
 

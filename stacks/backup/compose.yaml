@@ -67,9 +67,9 @@ services:
       # El dump que escribe postgres. rw por el mismo motivo que odoo-data: el
       # restore lo repone desde el snapshot antes de que psql lo cargue.
       - dumps:/data/dump
-      # Registro de addons del snapshot; lo escribe backup.sh en el host.
+      # Metadatos del runtime: addons e imágenes Actual/Anterior viajan con el snapshot.
       # Los scripts NO se montan: corren en el host y entran por docker compose exec.
-      - ../../state/meta:/data/meta:ro
+      - ${RUNTIME_STATE_DIR:?falta RUNTIME_STATE_DIR}/meta:/data/meta:rw
     # Verifica repo alcanzable Y frescura: cubre tanto "el backup falló" como
     # "el backup nunca corrió", que el OnFailure= por definición no puede ver.
     healthcheck:

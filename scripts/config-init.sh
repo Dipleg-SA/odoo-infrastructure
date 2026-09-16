@@ -1,58 +1,66 @@
 #!/usr/bin/env bash
-# Bootstrapea los config reales de cada stack activo desde su .example: cp
-# idempotente, nunca pisa un archivo que ya exista.
+# Configuración privada por runtime
+# Copia los ejemplos de los servicios activos sin pisar valores existentes.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 . scripts/lib/ui.sh
+. scripts/lib/contexto.sh
 . scripts/lib/compose.sh
+contexto_iniciar
 
 creados=()
 
-# --- Helper ---
-# Escribe solo si el destino no existe; el nombre real sale de sacarle el .example.
+# Copia idempotente
+# Conserva la ruta relativa del servicio bajo runtime/<entorno>/config/.
 
-nuevo() {
-  local origen="$1" destino="${1%.example}"
+copiar_config() {
+  local servicio="$1" origen="$2" relativo destino visible
+  relativo="${origen#stacks/$servicio/config/}"
+  destino="$RUNTIME_CONFIG_DIR/$servicio/${relativo%.example}"
+  visible="runtime/$ENTORNO/config/$servicio/${relativo%.example}"
   if [ -e "$destino" ]; then
-    ui_skip "skip (ya existe): $destino"
+    ui_skip "skip (ya existe): $visible"
     return
   fi
+  mkdir -p "$(dirname "$destino")"
   cp "$origen" "$destino"
-  ui_ok "creado: $destino"
-  creados+=("$destino")
+  ui_ok "creado: $visible"
+  creados+=("$visible")
 }
 
 SERVICIOS=$(servicios_activos)
 if [ -z "$SERVICIOS" ]; then
-  ui_bad "no se pudo leer los servicios de la composición" "revisar COMPOSE_FILE en .env" >&2
+  ui_bad "no se pudo leer los servicios de la composición" "revisar ENTORNO y runtime/$ENTORNO/compose.env" >&2
   exit 1
 fi
 
-ENTORNO=$(sed -n 's|^COMPOSE_FILE=envs/\(.*\)\.yaml$|\1|p' .env 2>/dev/null)
+# Línea mayor para webhooks
+# Se comparte con el receptor para aceptar solo ramas de esta imagen Odoo.
+ODOO_VERSION="$(contexto_odoo_version | head -1)"
+if [ -z "$ODOO_VERSION" ]; then
+  ui_bad "no se pudo leer la línea de Odoo" "revisar FROM odoo: en stacks/odoo/image/Dockerfile" >&2
+  exit 1
+fi
+mkdir -p runtime/control/secrets runtime/control/state
+printf '%s\n' "$ODOO_VERSION" > runtime/control/state/odoo-version
 
 ui_plan_start "config-init"
-ui_step 1 "Bootstrapeo de configs${ENTORNO:+ para entorno $ENTORNO}. Si alguno existe, se omite la copia."
+ui_step 1 "Bootstrapeo de configs para entorno $ENTORNO. Si alguno existe, se omite la copia."
 
-# --- Config de cada stack activo ---
-# Un stack ausente de la composición no bootstrapea archivos inertes: ningún
-# verify.sh de un stack omitido va a pedir que se completen.
+# Servicios activos
+# Copia sus plantillas y archivos versionados, excepto archivos ya representados por .example.
 
 for svc in $SERVICIOS; do
   [ -d "stacks/$svc/config" ] || continue
   while IFS= read -r ejemplo; do
-    nuevo "$ejemplo"
+    copiar_config "$svc" "$ejemplo"
   done < <(find "stacks/$svc/config" -name '*.example' | sort)
+  while IFS= read -r archivo; do
+    [ -f "$archivo.example" ] && continue
+    copiar_config "$svc" "$archivo"
+  done < <(find "stacks/$svc/config" -type f ! -name '*.example' ! -name '.gitkeep' | sort)
 done
-
-# --- Addons ---
-# No vive bajo stacks/<nombre>/config/ —es del entrypoint, no de un stack— pero
-# solo tiene sentido si Odoo está en la composición.
-
-if printf '%s\n' "$SERVICIOS" | grep -qx odoo; then
-  nuevo addons/addons.txt.example
-  nuevo addons/requirements.txt.example
-fi
 
 ui_plan_end
 if [ "${#creados[@]}" -gt 0 ]; then

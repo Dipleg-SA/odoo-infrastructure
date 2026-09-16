@@ -3,17 +3,9 @@ volumes:
 
 services:
   odoo:
-    build:
-      context: ./image
-      # El requirements.txt lo escribe 'make addons-deps' desde los manifiestos y no se
-      # versiona: vive con los addons, fuera del contexto de build. Relativo a
-      # este compose.yaml, no a 'context': additional_contexts no seguía a
-      # 'context' cuando el Dockerfile se movió a image/ — se probó.
-      additional_contexts:
-        addons: ../../addons
-    # Tag por proyecto: el nombre de imagen es global al daemon, así que un tag
-    # fijo deja que el build de un stack pise la imagen que corre el otro.
-    image: local/odoo:${COMPOSE_PROJECT_NAME}
+    # Imagen declarada por el estado del runtime
+    # La aplicación manual fija ODOO_IMAGE antes de levantar Compose.
+    image: ${ODOO_IMAGE:?falta ODOO_IMAGE}
     # Nombre derivado del proyecto: predecible y sin el sufijo -1 del autonaming,
     # pero sin colisionar si se levanta un segundo stack con otro nombre de proyecto.
     container_name: ${COMPOSE_PROJECT_NAME}-odoo
@@ -41,8 +33,6 @@ services:
     volumes:
       - odoo-data:/var/lib/odoo
       - ./config/odoo.conf:/etc/odoo/odoo.conf:ro
-      # Un árbol por checkout: qué rama se materializa lo dice ADDONS_BRANCH.
-      - ../../addons:/mnt/extra-addons:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8069/web/health?db_server_status=1"]
       start_period: 90s

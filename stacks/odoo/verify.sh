@@ -40,7 +40,7 @@ v_odoo() {
     omitir "smtp_server cargado en el runtime conf" "$(motivo odoo)"
   else
     expect "smtp_server cargado en el runtime conf" "smtp_server = " \
-      docker compose exec -T odoo grep "^smtp_server = .\+" /tmp/odoo-runtime.conf
+      contexto_compose exec -T odoo grep "^smtp_server = .\+" /tmp/odoo-runtime.conf
   fi
 
   if ! corriendo odoo; then
@@ -48,102 +48,90 @@ v_odoo() {
     omitir "web.base.url congelado" "$(motivo odoo)"
     omitir "REPORT_URL accesible desde Odoo" "$(motivo odoo)"
   else
-    expect "report.url configurado" "$REPORT_URL" docker compose exec -T postgres psql -U odoo -d odoo -Atc \
+    expect "report.url configurado" "$REPORT_URL" contexto_compose exec -T postgres psql -U odoo -d odoo -Atc \
       "SELECT value FROM ir_config_parameter WHERE key = 'report.url'"
     if [ "$ODOO_REPORT_URLS_OK" -eq 1 ]; then
-      expect "web.base.url configurado" "$PUBLIC_BASE_URL" docker compose exec -T postgres psql -U odoo -d odoo -Atc \
+      expect "web.base.url configurado" "$PUBLIC_BASE_URL" contexto_compose exec -T postgres psql -U odoo -d odoo -Atc \
         "SELECT value FROM ir_config_parameter WHERE key = 'web.base.url'"
     else
       aviso "web.base.url configurado" "$ODOO_REPORT_URL_ERROR"
     fi
-    expect "web.base.url congelado" "True" docker compose exec -T postgres psql -U odoo -d odoo -Atc \
+    expect "web.base.url congelado" "True" contexto_compose exec -T postgres psql -U odoo -d odoo -Atc \
       "SELECT value FROM ir_config_parameter WHERE key = 'web.base.url.freeze'"
-    expect "REPORT_URL accesible desde Odoo" "200" docker compose exec -T odoo \
+    expect "REPORT_URL accesible desde Odoo" "200" contexto_compose exec -T odoo \
       curl -sS -o /dev/null -w '%{http_code}' "$REPORT_URL/web/health"
   fi
 
   if ! corriendo odoo; then
     omitir "odoo sirve en :8069" "$(motivo odoo)"
   else
-    expect "odoo sirve en :8069" "200" docker compose exec -T odoo \
+    expect "odoo sirve en :8069" "200" contexto_compose exec -T odoo \
       curl -sS -o /dev/null -w '%{http_code}' http://localhost:8069/web/login
   fi
 
-  # --- Árbol de addons ---
-  # Llegan por bind-mount: su presencia ya no la garantiza la imagen.
-
-  local estado sucios faltan
-  estado=$(scripts/addons.sh status 2>/dev/null | grep -E '^(enterprise|custom-addons|oca|third-party)[[:space:]]')
-  sucios=$(printf '%s\n' "$estado" | awk '$NF=="sucio" {print $2}' | tr '\n' ' ')
-  faltan=$(printf '%s\n' "$estado" | grep 'sin worktree' | awk '{print $2}' | tr '\n' ' ')
-  if [ -z "$estado" ]; then
-    bad "worktrees del checkout presentes" "árbol vacío — correr make repo-sync"
-  elif [ -n "$faltan" ]; then
-    bad "worktrees del checkout presentes" "sin clonar: $faltan — correr make repo-sync"
-  elif [ -n "$sucios" ]; then
-    bad "worktrees del checkout limpios" "sucios: $sucios — addons.sh no actualiza un worktree con cambios"
+  # --- Imagen Actual y addons internos ---
+  # La imagen declarada y el estado deben apuntar a la misma fotografía inmutable.
+  local estado tag digest edition edition_tag
+  local estado_runtime
+  if estado_runtime=$(scripts/image-state.sh validate-runtime 2>&1); then
+    ok "ranuras de imágenes coherentes con el runtime"
   else
-    ok "worktrees del checkout presentes y limpios"
+    bad "ranuras de imágenes coherentes con el runtime" "$(printf '%s' "$estado_runtime" | tr '\n' ' ')"
   fi
-
-  # --- Módulos server-wide presentes en el árbol ---
-  # Odoo NO falla si uno no existe: loguea el error y sigue. El síntoma aparece
-  # lejos de la causa — el bus deja de actualizar en tiempo real, por ejemplo.
-
-  local swm mod hallado
-  swm=$(sed -n 's/^server_wide_modules[[:space:]]*=[[:space:]]*\(.*\)/\1/p' "$ODOO_CONF" 2>/dev/null | tr -d ' ' | tr ',' '\n')
-  while read -r mod; do
-    [ -n "$mod" ] || continue
-    case "$mod" in base|web) continue ;; esac
-    hallado=$(find addons -mindepth 3 -maxdepth 3 -type d -name "$mod" 2>/dev/null | head -1)
-    if [ -n "$hallado" ]; then
-      ok "módulo server-wide '$mod' presente en el árbol"
+  estado=$(scripts/image-state.sh get Actual 2>/dev/null || true)
+  if [ -z "$estado" ] || [ "$estado" = "null" ]; then
+    aviso "imagen Actual declarada" "runtime/state/images.json no tiene Actual"
+  else
+    tag=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["tag"])' <<<"$estado" 2>/dev/null || true)
+    digest=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])' <<<"$estado" 2>/dev/null || true)
+    edition=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("edition", ""))' <<<"$estado" 2>/dev/null || true)
+    edition_tag=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("edition_tag", ""))' <<<"$estado" 2>/dev/null || true)
+    if [ -z "$tag" ] || [ -z "$digest" ]; then
+      bad "procedencia de imagen Actual completa" "faltan tag o digest"
     else
-      bad "módulo server-wide '$mod' presente en el árbol" \
-          "no está en addons/ — Odoo arranca igual y falla en silencio"
+      ok "procedencia de imagen Actual completa"
+      printf '    imagen: %s\n    digest: %s\n' "$tag" "$digest"
+      if [ "$edition" = "$ODOO_EDITION" ] && [ "$edition_tag" = "$TAG" ]; then
+        ok "edición y tag de imagen Actual coherentes"
+      else
+        bad "edición y tag de imagen Actual coherentes" \
+          "imagen=${edition:-desconocida}/${edition_tag:-sin tag}; runtime=$ODOO_EDITION/$TAG"
+      fi
+      if python3 - "$estado" <<'PY'
+import json, sys
+data = json.loads(sys.argv[1])
+required = ("edition", "edition_tag", "odoo_version", "base_image", "infra_commit", "addons", "built_at")
+missing = [key for key in required if key not in data]
+if missing:
+    raise SystemExit("faltan " + ", ".join(missing))
+PY
+      then
+        ok "procedencia técnica de imagen Actual completa"
+      else
+        bad "procedencia técnica de imagen Actual completa" "faltan campos de procedencia"
+      fi
+      if grep -qE '^    image: ' <(contexto_compose config 2>/dev/null) && contexto_compose config 2>/dev/null | grep -q "image: $tag$"; then
+        ok "Compose usa la imagen Actual ($tag)"
+      else
+        bad "Compose usa la imagen Actual" "la referencia declarada no coincide con $tag"
+      fi
     fi
-  done <<< "$swm"
-
-  # --- Rama de addons contra la versión de la imagen ---
-  # Clonar ramas de una versión y montarlas en un Odoo de otra rompe de formas
-  # raras. Prefijo y no igualdad: 19.0-stag es coherente con la imagen 19.0, y
-  # 18.0 no lo es. La versión vive solo en el Dockerfile; ADDONS_BRANCH la hereda.
-
-  local ver_img rama
-  ver_img=$(sed -n 's/^FROM odoo:\([0-9.]*\).*/\1/p' "$ODOO_DOCKERFILE" 2>/dev/null | head -1)
-  rama="${ADDONS_BRANCH:-$ver_img}"
-  if [ -z "$ver_img" ]; then
-    aviso "ADDONS_BRANCH coherente con la imagen" "no se pudo leer el tag del Dockerfile"
-  else
-    case "$rama" in
-      "$ver_img"|"$ver_img"-*)
-        ok "ADDONS_BRANCH ($rama) coherente con la imagen ($ver_img)" ;;
-      # Una rama de feature no lleva la versión en el nombre, así que no hay nada
-      # que cruzar: se avisa en vez de fallar, y el operador es quien sabe de dónde salió.
-      [!0-9]*)
-        aviso "ADDONS_BRANCH coherente con la imagen" \
-              "'$rama' no declara versión — nada garantiza que sea de la $ver_img" ;;
-      *)
-        bad "ADDONS_BRANCH coherente con la imagen" \
-            "ADDONS_BRANCH=$rama contra imagen $ver_img" ;;
-    esac
   fi
 
-  # --- Categorías de addons ---
-  # La lista vive en dos archivos: addons.sh valida contra ella y el entrypoint
-  # arma el addons_path recorriéndola. Si divergen, los módulos de la categoría
-  # que falta se clonan y nunca se cargan — sin error, solo no aparecen.
-
-  local cats_sync cats_path
-  cats_sync=$(sed -n 's/^[[:space:]]*\([a-z|-]*\)) return 0 ;;/\1/p' scripts/addons.sh | tr '|' '\n' | sort | tr '\n' ' ')
-  cats_path=$(sed -n 's/^for category in \(.*\); do/\1/p' "$ODOO_ENTRYPOINT" 2>/dev/null | tr ' ' '\n' | sort | tr '\n' ' ')
-  if [ -z "$cats_sync" ] || [ -z "$cats_path" ]; then
-    aviso "categorías coherentes entre sync y addons_path" "no se pudieron leer las listas"
-  elif [ "$cats_sync" = "$cats_path" ]; then
-    ok "categorías coherentes entre sync y addons_path"
+  # --- Rutas internas ---
+  # El compose no puede montar el checkout ni el volumen histórico de addons.
+  local compose_odoo
+  compose_odoo=$(contexto_compose config 2>/dev/null | sed -n '/^  odoo:/,/^  [a-z]/p')
+  if printf '%s\n' "$compose_odoo" | grep -qE '/mnt/extra-addons|/addons([/:]|$)'; then
+    bad "addons dentro de la imagen" "Compose monta código de addons desde el host"
   else
-    bad "categorías coherentes entre sync y addons_path" \
-        "addons.sh: [$cats_sync] · entrypoint: [$cats_path]"
+    ok "addons dentro de la imagen"
+  fi
+  if [ -d stacks/odoo/image ] && grep -q '/opt/odoo/enterprise' stacks/odoo/image/Dockerfile \
+      && grep -q '/opt/odoo/custom' stacks/odoo/image/Dockerfile; then
+    ok "Dockerfile copia Enterprise y dominios a rutas internas"
+  else
+    bad "Dockerfile copia Enterprise y dominios a rutas internas" "faltan rutas internas de fotografía"
   fi
 
   # --- Binds ---

@@ -8,7 +8,7 @@ El mismo procedimiento sirve para instalar el módulo por primera vez y para tra
 
 ## Objetivo
 
-Módulo disponible en `addons/enterprise/`, instalado.
+Módulo disponible en `runtime/addons/enterprise/`, instalado.
 
 ## Flujo rápido
 
@@ -19,43 +19,43 @@ Este es el recorrido para instalar un módulo Enterprise por primera vez o actua
 2. **Descomprimirlo en desarrollo** y resolver dependencias Python si el módulo las declara:
 
    ```bash
-   unzip -q odoo-enterprise.zip -d addons/enterprise/
-   make addons-deps
-   make build   # solo si addons-deps agregó o cambió pines
+   unzip -q odoo-enterprise.zip -d runtime/addons/enterprise/
+   ENTORNO=desarrollo make addons-deps
+   ENTORNO=desarrollo make build   # solo si addons-deps agregó o cambió pines
    ```
 
 3. **Instalar o actualizar en desarrollo** según el estado de la base:
 
    ```bash
-   make addons-install MODULES=<nombre_tecnico>  # primera vez en esta base
+   ENTORNO=desarrollo make addons-install MODULES=<nombre_tecnico>  # primera vez en esta base
    # o
-   make addons-update MODULES=<nombre_tecnico>   # ya estaba instalado
-   make odoo-verify
+   ENTORNO=desarrollo make addons-update MODULES=<nombre_tecnico>   # ya estaba instalado
+   ENTORNO=desarrollo make odoo-verify
    ```
 
 4. **Repetir el mismo ZIP en staging** y validar antes de producción:
 
    ```bash
-   unzip -q odoo-enterprise.zip -d addons/enterprise/
-   make addons-deps
-   make build   # solo si addons-deps agregó o cambió pines
-   make addons-install MODULES=<nombre_tecnico>  # primera vez en staging
+   unzip -q odoo-enterprise.zip -d runtime/addons/enterprise/
+   ENTORNO=staging make addons-deps
+   ENTORNO=staging make build   # solo si addons-deps agregó o cambió pines
+   ENTORNO=staging make addons-install MODULES=<nombre_tecnico>  # primera vez en staging
    # o
-   make addons-update MODULES=<nombre_tecnico>   # ya estaba instalado
-   make verify
+   ENTORNO=staging make addons-update MODULES=<nombre_tecnico>   # ya estaba instalado
+   ENTORNO=staging make verify
    ```
 
 5. **Aplicar el ZIP validado en producción** y confirmar el resultado:
 
    ```bash
-   unzip -q odoo-enterprise.zip -d addons/enterprise/
-   make addons-deps
-   make build   # solo si addons-deps agregó o cambió pines
-   make addons-install MODULES=<nombre_tecnico>  # primera vez en producción
+   unzip -q odoo-enterprise.zip -d runtime/addons/enterprise/
+   ENTORNO=produccion make addons-deps
+   ENTORNO=produccion make build   # solo si addons-deps agregó o cambió pines
+   ENTORNO=produccion make addons-install MODULES=<nombre_tecnico>  # primera vez en producción
    # o
-   make addons-update MODULES=<nombre_tecnico>   # ya estaba instalado
-   make verify
-   make addons-modules
+   ENTORNO=produccion make addons-update MODULES=<nombre_tecnico>   # ya estaba instalado
+   ENTORNO=produccion make verify
+   ENTORNO=produccion make addons-modules
    ```
 
 | Situación | Comando |
@@ -72,12 +72,12 @@ Descargar el ZIP desde el portal de tu cuenta de Odoo.
 ## Comandos
 
 ```bash
-unzip -q odoo-enterprise.zip -d addons/enterprise/
-make addons-deps
-make build   # solo si addons-deps agregó o cambió pines
+unzip -q odoo-enterprise.zip -d runtime/addons/enterprise/
+ENTORNO=desarrollo make addons-deps
+ENTORNO=desarrollo make build   # solo si addons-deps agregó o cambió pines
 ```
 
-`entrypoint.sh` arma el `addons_path` con un glob por categoría. El ZIP debe conservar su directorio contenedor de primer nivel dentro de `addons/enterprise/`; los módulos son los directorios que contienen `__manifest__.py`, no necesariamente los directorios de primer nivel.
+`entrypoint.sh` arma el `addons_path` con un glob por categoría. El ZIP debe conservar su directorio contenedor de primer nivel dentro de `runtime/addons/enterprise/`; los módulos son los directorios que contienen `__manifest__.py`, no necesariamente los directorios de primer nivel.
 
 Después elegí **uno** de estos comandos, nunca los dos:
 
@@ -94,7 +94,7 @@ make addons-update MODULES=<nombre_tecnico>    # el módulo ya estaba instalado
 ### Desarrollo
 
 ```bash
-find addons/enterprise -name __manifest__.py -print
+find runtime/addons/enterprise -name __manifest__.py -print
 make addons-modules
 make odoo-verify
 docker compose logs --since 5m odoo
@@ -127,3 +127,21 @@ Probá el flujo con cuidado y confirmá que llegó el correo si el cambio lo dis
 **Sin staging por git.** Sin `repo-sync` no hay forma de traer este cambio al servidor de staging antes de producción por el camino habitual. Si querés probarlo antes de tocar producción, repetí este mismo `unzip` + `addons-install`/`addons-update` a mano en el checkout de staging primero — es la única forma de validarlo con este mecanismo.
 
 La carpeta sigue gitignoreada por dentro, igual que cualquier otra categoría: el ZIP nunca se versiona.
+
+## Retirar Enterprise y pasar a Community
+
+No retires el checkout Enterprise antes de quitar sus módulos de la base. La imagen Community no puede arrancar de forma segura si la base conserva módulos Enterprise instalados.
+
+1. Conservá el backup asociado y restaurá una copia en staging.
+2. Identificá los módulos Enterprise instalados y desinstalalos manualmente en esa copia:
+
+   ```bash
+   ENTORNO=staging scripts/odoo-edition-check.sh --destino community
+   ENTORNO=staging make addons-uninstall MODULES=<nombre_tecnico>
+   ENTORNO=staging make verify
+   ```
+
+3. Cambiá únicamente `ODOO_EDITION=community` y `TAG=19.0-ce-YYYY-MM-DD` en el `compose.env`, retiră el ZIP Enterprise del checkout aislado y construí una imagen Community.
+4. Validá nuevamente staging. No desinstales, actualices ni conviertas módulos automáticamente durante `apply-image`.
+
+En producción, `apply-image` vuelve a ejecutar el preflight y exige el backup asociado antes de aceptar la transición. La imagen Enterprise anterior queda como frontera de recuperación; `rollback-image` no la reactiva contra el runtime Community. Si la base todavía tiene módulos Enterprise, el preflight bloquea el cambio.

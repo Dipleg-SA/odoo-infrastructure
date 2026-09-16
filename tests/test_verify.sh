@@ -9,7 +9,21 @@
 cd "$(dirname "$0")/.."
 
 STUB_DIR=$(mktemp -d); export STUB_DIR
-trap 'rm -rf "$STUB_DIR"' EXIT
+RUNTIME_ENV_CREADO=0
+STATE_FILE="runtime/desarrollo/state/images.json"
+STATE_EXISTIA=0
+if [ -f "$STATE_FILE" ]; then cp "$STATE_FILE" "$STUB_DIR/state-images"; STATE_EXISTIA=1; fi
+if [ ! -f runtime/desarrollo/compose.env ]; then
+  cp runtime/desarrollo/compose.env.example runtime/desarrollo/compose.env
+  RUNTIME_ENV_CREADO=1
+fi
+limpiar() {
+  if [ "$STATE_EXISTIA" -eq 1 ]; then cp "$STUB_DIR/state-images" "$STATE_FILE"; else rm -f "$STATE_FILE"; fi
+  rm -rf "$STUB_DIR"
+  [ "$RUNTIME_ENV_CREADO" -eq 0 ] || rm -f runtime/desarrollo/compose.env
+}
+trap limpiar EXIT
+export ENTORNO=desarrollo
 PATH="$PWD/tests/stubs:$PATH"
 
 . scripts/lib/verify.sh
@@ -239,22 +253,23 @@ no_contiene "y no lo reporta como ok" "  ok" \
 titulo "claves_ausentes — una clave que nunca se escribió, no solo vacía"
 # =====================================================================
 
-# Escenario real: ALERT_EMAIL_FROM nunca se escribió en .env.production.example
-# (no 'ALERT_EMAIL_FROM=', directamente no estaba la línea), así que ningún grep de
-# '^KEY=$' lo atrapaba — host-verify daba verde y notify-test fallaba en el
-# servidor meses después, con el aviso de fallo que se supone que manda ese mismo
-# mecanismo.
+# Clave requerida
+# El runtime declara ALERT_EMAIL_FROM; host-verify debe detectar si el operador no la completó.
 
-printf 'COMPOSE_PROJECT_NAME=production\nPUBLIC_HOSTNAME=\nSMTP_HOST=\nSMTP_USER=\nALERT_EMAIL_FROM=\nALERT_EMAIL_TO=\n#COMPOSE_PROFILES=lan\n' \
-  > "$STUB_DIR/plantilla.example"
-
-printf 'COMPOSE_PROJECT_NAME=production\nPUBLIC_HOSTNAME=odoo.ejemplo.com\nSMTP_HOST=smtp.ejemplo.com\nSMTP_USER=apikey\nALERT_EMAIL_TO=ops@ejemplo.com\n' \
-  > "$STUB_DIR/env-incompleto"
+cp runtime/produccion/compose.env.example "$STUB_DIR/plantilla.example"
+sed \
+  -e 's/^LOCAL_IP=$/LOCAL_IP=203.0.113.10/' \
+  -e 's/^PUBLIC_HOSTNAME=$/PUBLIC_HOSTNAME=odoo.example.test/' \
+  -e 's/^SMTP_HOST=$/SMTP_HOST=smtp.example.test/' \
+  -e 's/^SMTP_USER=$/SMTP_USER=usuario/' \
+  -e 's/^ALERT_EMAIL_TO=$/ALERT_EMAIL_TO=ops@example.test/' \
+  "$STUB_DIR/plantilla.example" > "$STUB_DIR/env-completo"
+grep -v '^ALERT_EMAIL_FROM=' "$STUB_DIR/env-completo" > "$STUB_DIR/env-incompleto"
 
 igual "la clave nunca escrita se reporta" "ALERT_EMAIL_FROM" \
   "$(claves_ausentes "$STUB_DIR/plantilla.example" "$STUB_DIR/env-incompleto")"
 
-printf 'ALERT_EMAIL_FROM=alertas@ejemplo.com\n' >> "$STUB_DIR/env-incompleto"
+printf 'ALERT_EMAIL_FROM=alertas@example.test\n' >> "$STUB_DIR/env-incompleto"
 
 igual "completa la clave y no falta ninguna" "" \
   "$(claves_ausentes "$STUB_DIR/plantilla.example" "$STUB_DIR/env-incompleto")"
@@ -338,6 +353,19 @@ rm -f "$DAEMON_JSON"
 igual "sin archivo también falla"          "falla" "$(veredicto)"
 
 # =====================================================================
+titulo "rotacion_host — /etc/docker/daemon.json solo se chequea en Linux"
+# =====================================================================
+
+. scripts/verify-host.sh
+salida=$(verificar_rotacion_daemon Darwin 2>&1)
+contiene "macOS omite el chequeo de Linux" "solo aplica a Linux" "$salida"
+no_contiene "macOS no sugiere host-init" "sudo make host-init" "$salida"
+
+salida=$(verificar_rotacion_daemon Linux 2>&1)
+contiene "Linux sigue fallando si falta max-size" "FALLA   rotación de logs del daemon" "$salida"
+contiene "Linux conserva la corrección sugerida" "sudo make host-init" "$salida"
+
+# =====================================================================
 titulo "timer_activo — la unit sale de timers.sh, no de una lista de acá"
 # =====================================================================
 
@@ -392,5 +420,53 @@ igual "un unhealthy solo no pasa por sano" "1 1" \
 # Grepear la clave equivocada daba cero coincidencias y el chequeo pasaba siempre:
 # total en 0 es lo que hace que v_alloy falle en vez de dar verde sobre nada.
 igual "una respuesta sin componentes no se disimula" "0 0" "$(alloy_salud '{"otra":"cosa"}')"
+
+# Procedencia de la imagen Actual
+# verify debe detectar edición distinta y tag de release inconsistente.
+. stacks/odoo/verify.sh
+SERVICIOS="nginx"
+printf '%s\n' 'services:' '  odoo:' '    image: local/odoo:19.0-desarrollo-actual' > "$STUB_DIR/config"
+PAYLOAD_ACTUAL='{"tag":"local/odoo:19.0-desarrollo-actual","digest":"sha256:actual","odoo_version":"19.0","base_image":"odoo:19.0-20260810","infra_commit":"infra","edition":"community","edition_tag":"19.0-ce-2026-09-16","enterprise_tag":null,"enterprise_commit":null,"enterprise_modules":[],"addons":{},"built_at":"20260916T120000Z"}'
+escribir_actual() {
+  python3 - "$STATE_FILE" "$1" <<'PY'
+import json, sys
+path, payload = sys.argv[1:]
+data = {"Nueva": None, "Actual": json.loads(payload), "Anterior": None, "validation": None, "rollback_blocked": False, "module_operations": []}
+open(path, "w", encoding="utf-8").write(json.dumps(data) + "\n")
+PY
+}
+escribir_actual "$PAYLOAD_ACTUAL"
+SALIDA=$(v_odoo 2>&1)
+contiene "verify acepta edición y tag coherentes" "ok      edición y tag de imagen Actual coherentes" "$SALIDA"
+contiene "verify acepta ranuras coherentes" "ok      ranuras de imágenes coherentes con el runtime" "$SALIDA"
+PAYLOAD_EE="${PAYLOAD_ACTUAL/community/enterprise}"
+PAYLOAD_EE="${PAYLOAD_EE/19.0-ce-2026-09-16/19.0-ee-2026-09-14}"
+PAYLOAD_EE="${PAYLOAD_EE/\"enterprise_tag\":null/\"enterprise_tag\":\"19.0-ee-2026-09-14\"}"
+PAYLOAD_EE="${PAYLOAD_EE/\"enterprise_commit\":null/\"enterprise_commit\":\"ee\"}"
+PAYLOAD_EE="${PAYLOAD_EE/\"enterprise_modules\":\[\]/\"enterprise_modules\":[\"ventas\"]}"
+escribir_actual "$PAYLOAD_EE"
+contiene "verify detecta edición distinta" "edición y tag de imagen Actual coherentes" "$(v_odoo 2>&1)"
+escribir_actual "${PAYLOAD_ACTUAL/19.0-ce-2026-09-16/19.0-ee-2026-09-14}"
+contiene "verify detecta tag inconsistente" "edición y tag de imagen Actual coherentes" "$(v_odoo 2>&1)"
+
+escribir_actual "$PAYLOAD_ACTUAL"
+python3 - "$STATE_FILE" "$PAYLOAD_EE" <<'PY'
+import json, sys
+path, anterior = sys.argv[1:]
+data = json.load(open(path, encoding="utf-8"))
+data["Anterior"] = json.loads(anterior)
+open(path, "w", encoding="utf-8").write(json.dumps(data) + "\n")
+PY
+contiene "verify conserva la frontera de rollback" "ok      ranuras de imágenes coherentes con el runtime" "$(v_odoo 2>&1)"
+
+escribir_actual "$PAYLOAD_ACTUAL"
+python3 - "$STATE_FILE" "$PAYLOAD_EE" <<'PY'
+import json, sys
+path, nueva = sys.argv[1:]
+data = json.load(open(path, encoding="utf-8"))
+data["Nueva"] = json.loads(nueva)
+open(path, "w", encoding="utf-8").write(json.dumps(data) + "\n")
+PY
+contiene "verify rechaza Nueva incompatible" "ranuras de imágenes coherentes con el runtime" "$(v_odoo 2>&1)"
 
 resumen

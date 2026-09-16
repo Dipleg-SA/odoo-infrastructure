@@ -3,20 +3,20 @@
 
 define stack_sextet
 $(1)-up:
-	@. scripts/lib/ui.sh; ui_run "$(1)-up" docker compose up -d $(1)
+	@. scripts/lib/ui.sh; ui_run "$(1)-up" $(CONTEXTO_COMPOSE) up -d $(1)
 	@if [ "$(1)" = "odoo" ]; then $(MAKE) odoo-report-config; fi
 
 $(1)-down:
-	@. scripts/lib/ui.sh; ui_run "$(1)-down" docker compose rm -sf $(1)
+	@. scripts/lib/ui.sh; ui_run "$(1)-down" $(CONTEXTO_COMPOSE) rm -sf $(1)
 
 $(1)-restart:
-	@. scripts/lib/ui.sh; ui_run "$(1)-restart" docker compose restart $(1)
+	@. scripts/lib/ui.sh; ui_run "$(1)-restart" $(CONTEXTO_COMPOSE) restart $(1)
 
 $(1)-logs:
-	@. scripts/ui/components.sh; ui_section "$(1)-logs: siguiendo (Ctrl-C para salir)"; docker compose logs -f $(1)
+	@. scripts/ui/components.sh; ui_section "$(1)-logs: siguiendo (Ctrl-C para salir)"; $(CONTEXTO_COMPOSE) logs -f $(1)
 
 $(1)-ps:
-	@. scripts/ui/components.sh; salida=$$$$(docker compose ps --format "{{.Name}}$$$$(printf '\t'){{.Status}}$$$$(printf '\t'){{.Ports}}" $(1)) || exit $$$$?; printf '%s\n' "$$$$salida" | ui_ps_table
+	@. scripts/ui/components.sh; salida=$$$$($(CONTEXTO_COMPOSE) ps --format "{{.Name}}$$$$(printf '\t'){{.Status}}$$$$(printf '\t'){{.Ports}}" $(1)) || exit $$$$?; printf '%s\n' "$$$$salida" | ui_ps_table
 
 $(1)-verify:
 	scripts/verify-stacks.sh $(1)
@@ -28,10 +28,10 @@ endef
 
 define stack_oneshot
 $(1)-logs:
-	@. scripts/ui/components.sh; ui_section "$(1)-logs: siguiendo (Ctrl-C para salir)"; docker compose logs -f $(1)
+	@. scripts/ui/components.sh; ui_section "$(1)-logs: siguiendo (Ctrl-C para salir)"; $(CONTEXTO_COMPOSE) logs -f $(1)
 
 $(1)-ps:
-	@. scripts/ui/components.sh; salida=$$$$(docker compose ps --format "{{.Name}}$$$$(printf '\t'){{.Status}}$$$$(printf '\t'){{.Ports}}" $(1)) || exit $$$$?; printf '%s\n' "$$$$salida" | ui_ps_table
+	@. scripts/ui/components.sh; salida=$$$$($(CONTEXTO_COMPOSE) ps --format "{{.Name}}$$$$(printf '\t'){{.Status}}$$$$(printf '\t'){{.Ports}}" $(1)) || exit $$$$?; printf '%s\n' "$$$$salida" | ui_ps_table
 
 $(1)-verify:
 	scripts/verify-stacks.sh $(1)

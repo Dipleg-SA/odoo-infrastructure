@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
-# Permisos y grupo de secrets/. Único dueño del mapa de GIDs: --apply lo escribe,
-# --check lo valida, así que no hay dos copias que se desincronicen.
+# Permisos privados por runtime
+# Mantiene el mapa único de grupos para aplicar o comprobar permisos de secretos.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 . scripts/lib/ui.sh
+. scripts/lib/contexto.sh
+contexto_iniciar
 
-SECRETS_DIR="secrets"
+SECRETS_DIR="$RUNTIME_SECRETS_DIR"
+SECRETS_VISIBLE="runtime/$ENTORNO/secrets"
+CONTROL_DIR="$PWD/runtime/control/secrets"
+CONTROL_VISIBLE="runtime/control/secrets"
+SECRET_DIRS=("$SECRETS_DIR" "$CONTROL_DIR")
 EXPECTED_PERMS="640"
 MARK="CAMBIAR"
 
@@ -39,11 +45,17 @@ get_stat() {
   fi
 }
 
+# Ruta visible del diagnóstico
+# Distingue secretos operativos de los que usa el control plane compartido.
+visible_dir() {
+  [ "$1" = "$CONTROL_DIR" ] && printf '%s' "$CONTROL_VISIBLE" || printf '%s' "$SECRETS_VISIBLE"
+}
+
 # --- Directorio ---
 # Sin secrets/ no hay nada que hacer; secrets-init lo crea.
 
 if [ ! -d "$SECRETS_DIR" ]; then
-  ui_bad "$SECRETS_DIR no existe" "correr 'make secrets-init' primero" >&2
+  ui_bad "$SECRETS_VISIBLE no existe" "correr 'make secrets-init' primero" >&2
   exit 1
 fi
 
@@ -59,12 +71,14 @@ if [ "$MODE" = "--apply" ]; then
   fi
   ui_plan_start "secrets-perms --apply"
   ui_step 1 "Aplicación de permisos y grupo en cada secret."
-  for file in "$SECRETS_DIR"/*; do
-    [ -f "$file" ] || continue
-    chmod "$EXPECTED_PERMS" "$file"
-    gid="$(expected_gid_for "$(basename "$file")")"
-    [ -n "$gid" ] && chgrp "$gid" "$file"
-    echo "  $(basename "$file"): $EXPECTED_PERMS${gid:+ / gid $gid}"
+  for secrets_dir in "${SECRET_DIRS[@]}"; do
+    for file in "$secrets_dir"/*; do
+      [ -f "$file" ] || continue
+      chmod "$EXPECTED_PERMS" "$file"
+      gid="$(expected_gid_for "$(basename "$file")")"
+      [ -n "$gid" ] && chgrp "$gid" "$file"
+      echo "  $(visible_dir "$secrets_dir")/$(basename "$file"): $EXPECTED_PERMS${gid:+ / gid $gid}"
+    done
   done
   ui_plan_end
   ui_ok "secrets-perms --apply listo"
@@ -83,24 +97,27 @@ fi
 ui_plan_start "secrets-perms --check"
 ui_step 1 "Verificación de permisos, grupo y marcador pendiente en cada secret."
 fail=0
-for file in "$SECRETS_DIR"/*; do
-  [ -f "$file" ] || continue
-  name="$(basename "$file")"
-  expected_gid="$(expected_gid_for "$name")"
-  read -r actual_perms actual_gid <<< "$(get_stat "$file")"
+for secrets_dir in "${SECRET_DIRS[@]}"; do
+  for file in "$secrets_dir"/*; do
+    [ -f "$file" ] || continue
+    name="$(basename "$file")"
+    visible="$(visible_dir "$secrets_dir")/$name"
+    expected_gid="$(expected_gid_for "$name")"
+    read -r actual_perms actual_gid <<< "$(get_stat "$file")"
 
-  if [ "$actual_perms" != "$EXPECTED_PERMS" ]; then
-    ui_bad "$file" "permisos $actual_perms, esperado $EXPECTED_PERMS" >&2
-    fail=1
-  fi
-  if [ -n "$expected_gid" ] && [ "$actual_gid" != "$expected_gid" ]; then
-    ui_bad "$file" "grupo $actual_gid, esperado $expected_gid" >&2
-    fail=1
-  fi
-  if grep -q "$MARK" "$file" 2>/dev/null; then
-    ui_bad "$file" "todavía tiene el marcador $MARK, falta el valor real" >&2
-    fail=1
-  fi
+    if [ "$actual_perms" != "$EXPECTED_PERMS" ]; then
+      ui_bad "$visible" "permisos $actual_perms, esperado $EXPECTED_PERMS" >&2
+      fail=1
+    fi
+    if [ -n "$expected_gid" ] && [ "$actual_gid" != "$expected_gid" ]; then
+      ui_bad "$visible" "grupo $actual_gid, esperado $expected_gid" >&2
+      fail=1
+    fi
+    if grep -q "$MARK" "$file" 2>/dev/null; then
+      ui_bad "$visible" "todavía tiene el marcador $MARK, falta el valor real" >&2
+      fail=1
+    fi
+  done
 done
 
 ui_plan_end

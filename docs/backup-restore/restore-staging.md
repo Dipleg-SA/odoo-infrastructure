@@ -2,65 +2,53 @@
 
 ## Cuándo se usa
 
-Para sembrar o volver a sembrar staging con una copia coherente de producción, incluido el simulacro semestral. Para el primer levantamiento completo, seguí [levantar-staging](../entorno/levantar-staging.md); este procedimiento cubre el restore cuando el checkout de staging ya está preparado.
+Para sembrar o volver a sembrar staging con el último snapshot válido de producción.
 
 ## Objetivo
 
-La base y el filestore de staging restaurados desde el mismo snapshot de producción, con los addons de la rama de staging disponibles antes de levantar Odoo.
+Restaurar base, filestore y procedencia de imágenes en staging sin modificar producción.
 
 ## Flujo rápido
 
-El restore reemplaza los datos actuales de staging. Confirmá el entorno antes de empezar.
-
-1. **Preparar staging.** Verificar el nombre de proyecto propio, las credenciales de lectura y las
-   ramas `-stag`; ver [A mano](#a-mano).
-2. **Restaurar el snapshot.** Comprobar acceso al repositorio, detener Odoo y restaurar base y
-   filestore; ver [Comandos](#comandos).
-3. **Sincronizar y levantar.** Actualizar addons, instalar o actualizar módulos que no están en
-   producción y luego iniciar Odoo; ver [Comandos](#comandos).
-4. **Validar sin escribir en producción.** Comprobar el estado, los registros y un adjunto en la UI.
-   No ejecutar `make backup-run`; ver [Verificación](#verificación).
+1. Confirmar credenciales de solo lectura y detener Odoo.
+2. Restaurar el snapshot y sincronizar código y dependencias.
+3. Construir, levantar y verificar staging.
 
 ## A mano
 
-- Confirmá que el checkout usa `envs/staging.yaml` y un `COMPOSE_PROJECT_NAME` distinto al de producción. El restore reemplaza todos los datos actuales de staging.
-- `stacks/backup/config/r2.env` tiene que apuntar al repositorio de producción. `secrets/restic_password` y `secrets/restic_r2_credentials` tienen que permitir leerlo; la credencial R2 de staging debe ser **solo lectura**.
-- `addons/addons.txt` debe declarar los mismos repositorios que producción y `ADDONS_BRANCH` debe elegir las ramas de staging (`<versión>-stag`). Si el stack usa Enterprise, tené también el ZIP de la misma versión de Odoo.
-- Odoo en staging fuerza `ODOO_DISABLE_SMTP=1`. Las credenciales de usuario que trae la base son las de producción.
+Confirmá `ENTORNO=staging`, la credencial Restic de solo lectura y que Odoo esté detenido. El restore reemplaza los datos actuales de staging.
 
 ## Comandos
 
-Primero comprobá que el repositorio sea accesible y tenga snapshots. En staging este chequeo lee R2; no inicia los timers ni escribe backups.
-
 ```bash
-make backup-verify
+ENTORNO=staging make backup-verify
+ENTORNO=staging make odoo-down
+ENTORNO=staging make postgres-up
+ENTORNO=staging make restore SNAPSHOT=latest
+ENTORNO=staging make repo-sync
+ENTORNO=staging make addons-deps
+ENTORNO=staging make build
+ENTORNO=staging make up
 ```
 
-El restore reemplaza la base y el filestore. Si no indicás `SNAPSHOT`, usa el último snapshot:
-
-```bash
-make odoo-down
-make postgres-up
-make restore                         # o SNAPSHOT=<id>
-```
-
-Antes de iniciar Odoo, sincronizá los addons de la rama de staging y reconstruí si cambiaron dependencias Python:
-
-```bash
-make repo-sync
-make addons-deps
-make build   # si addons-deps agregó o cambió pines
-```
-
-Si staging tiene cambios de módulos que todavía no están en producción, el restore no los instala ni actualiza: aplicá `make addons-install` o `make addons-update` según corresponda, siguiendo el runbook del módulo.
-
-```bash
-make odoo-up
-make verify
-```
+El restore recupera `Actual` y `Anterior` desde `state/meta/images.json`; la imagen candidata de staging se aplica después de construirla y validarla.
 
 ## Verificación
 
-`make verify` debe terminar con exit `0`. Confirmá además en la UI que podés abrir un registro restaurado y descargar un adjunto. Si el restore es parte de una prueba de módulo, probá el flujo de esa feature según [gestionar-modulo](../modulos/gestionar-modulo.md).
+```bash
+ENTORNO=staging make verify
+ENTORNO=staging make addons-modules
+```
 
-No uses `make backup-run` en staging: su credencial R2 es de solo lectura y este entorno no respalda producción.
+No ejecutes `backup-run` en staging. Si la validación incluyó operaciones de módulos, descartá y restaurá nuevamente antes de continuar.
+
+## Validar una variante Community
+
+Si el snapshot corresponde a Enterprise, mantené temporalmente `ODOO_EDITION=enterprise` y su `TAG` mientras restaurás la procedencia. Sobre la copia aislada, retiră manualmente los módulos Enterprise y verificá que la base quede sin ellos:
+
+```bash
+ENTORNO=staging scripts/odoo-edition-check.sh --destino community
+ENTORNO=staging make verify
+```
+
+Después cambiá únicamente `ODOO_EDITION=community` y `TAG=19.0-ce-YYYY-MM-DD` en `runtime/staging/compose.env`, construí la imagen Community y repetí la validación. El preflight bloquea la imagen si encuentra módulos Enterprise instalados o si falta el inventario Enterprise histórico; no convierte módulos ni modifica producción.

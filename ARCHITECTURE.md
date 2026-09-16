@@ -219,6 +219,22 @@ Se descartaron dos niveles de `.env` (uno común del entorno más uno por stack)
 duplicación, pero devuelve la pregunta "¿este valor es transversal?" en cada decisión, y
 obliga a mirar dos archivos para saber con qué valor corre un stack.
 
+### Edición de Odoo
+
+Cada runtime elige una sola edición con el par plano `ODOO_EDITION` y `TAG` en su
+`compose.env`. `community` usa tags `19.0-ce-...` y no necesita checkout ni credencial
+privada de Enterprise; aunque quede un checkout residual en el runtime, la imagen
+Community no lo copia ni lo monta. `enterprise` usa tags `19.0-ee-...` y exige el
+checkout privado limpio, con tag anotado e inmutable, fuera de la historia de este repo.
+
+La edición y el tag forman parte de la procedencia de la imagen y de las ranuras
+`Nueva`, `Actual` y `Anterior`. Cambiar de edición es una frontera operativa: requiere
+un chequeo ORM de solo lectura, validación manual en desarrollo y staging y un backup
+asociado antes de aplicar en producción. El cambio no instala, actualiza ni desinstala
+módulos. La fotografía anterior queda como frontera de recuperación, no como rollback
+ordinario hacia otra edición; para volver se restaura el backup y se repite la transición
+validada.
+
 ---
 
 ## Capa de datos

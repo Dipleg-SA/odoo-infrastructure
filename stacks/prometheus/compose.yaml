@@ -17,7 +17,7 @@ services:
       - edge
     volumes:
       - prometheus-data:/prometheus
-      - ./config/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - ${RUNTIME_CONFIG_DIR:?falta RUNTIME_CONFIG_DIR}/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
     # --- Techos y receptor de push ---
     # Techo por tiempo Y por tamaño: el segundo es el fusible si la cardinalidad supera lo estimado.
     # Repetir los dos flags de path es obligatorio: pasar command: pisa los defaults de la imagen.
