@@ -26,7 +26,7 @@ crear_root() {
   for entorno in desarrollo staging produccion; do
     mkdir -p "$root/runtime/$entorno"
     printf 'services: {}\n' > "$root/runtime/$entorno/compose.yaml"
-    printf 'COMPOSE_PROJECT_NAME=%s-%s\nPUBLIC_HOSTNAME=odoo.example.test\n' \
+    printf 'COMPOSE_PROJECT_NAME=%s-%s\nPUBLIC_HOSTNAME=odoo.example.test\nODOO_EDITION=community\nTAG=19.0-ce-2026-09-16\n' \
       "$nombre" "$entorno" > "$root/runtime/$entorno/compose.env"
   done
   printf '%s' "$root"
@@ -270,7 +270,7 @@ crear_root_timers() {
   mkdir -p "$root/host/systemd" "$root/stacks" "$root/systemd"
   cp "$REPO_ROOT"/host/systemd/* "$root/host/systemd/"
   cp -R "$REPO_ROOT"/stacks/backup "$REPO_ROOT"/stacks/certbot "$root/stacks/"
-  printf 'COMPOSE_PROJECT_NAME=%s\nPUBLIC_HOSTNAME=odoo.example.test\n' \
+  printf 'COMPOSE_PROJECT_NAME=%s\nPUBLIC_HOSTNAME=odoo.example.test\nODOO_EDITION=community\nTAG=19.0-ce-2026-09-16\n' \
     "$proyecto" > "$root/runtime/$entorno/compose.env"
   printf '%s' "$entorno" > "$root/.entorno-prueba"
   printf '%s' "$root"

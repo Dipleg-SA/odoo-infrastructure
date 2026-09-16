@@ -36,6 +36,50 @@ recursos() {
   '
 }
 
+# Contextos temporales de edición
+# Ejercen contexto.sh sin usar archivos privados ni un daemon Docker.
+contexto_prueba() {
+  local nombre="$1" valores="$2" root
+  root="$TMP/contexto-$nombre"
+  mkdir -p "$root/scripts/lib" "$root/runtime/desarrollo"
+  cp scripts/lib/contexto.sh "$root/scripts/lib/contexto.sh"
+  printf 'services: {}\n' > "$root/runtime/desarrollo/compose.yaml"
+  printf 'COMPOSE_PROJECT_NAME=prueba-%s\n%s\n' "$nombre" "$valores" \
+    > "$root/runtime/desarrollo/compose.env"
+  printf '%s\n' "$root"
+}
+
+# Validación de edición
+# Comprueba las dos combinaciones válidas y todos los rechazos del contrato.
+validar_contexto() {
+  (cd "$1" && ENTORNO=desarrollo bash scripts/lib/contexto.sh validar)
+}
+
+ROOT_COMMUNITY=$(contexto_prueba community $'ODOO_EDITION=community\nTAG=19.0-ce-2026-09-16')
+ROOT_ENTERPRISE=$(contexto_prueba enterprise $'ODOO_EDITION=enterprise\nTAG=19.0-ee-2026-09-16')
+ROOT_SIN_EDICION=$(contexto_prueba sin-edicion $'TAG=19.0-ce-2026-09-16')
+ROOT_EDICION_INVALIDA=$(contexto_prueba edicion-invalida $'ODOO_EDITION=standard\nTAG=19.0-ce-2026-09-16')
+ROOT_SIN_TAG=$(contexto_prueba sin-tag $'ODOO_EDITION=community')
+ROOT_TAG_INVALIDO=$(contexto_prueba tag-invalido $'ODOO_EDITION=community\nTAG=19.0-ce-hoy')
+ROOT_PREFIJO_INCOMPATIBLE=$(contexto_prueba prefijo-incompatible $'ODOO_EDITION=enterprise\nTAG=19.0-ce-2026-09-16')
+
+sale_con "contexto acepta Community" 0 validar_contexto "$ROOT_COMMUNITY"
+sale_con "contexto acepta Enterprise" 0 validar_contexto "$ROOT_ENTERPRISE"
+sale_con "contexto rechaza edición ausente" 2 validar_contexto "$ROOT_SIN_EDICION"
+sale_con "contexto rechaza edición inválida" 2 validar_contexto "$ROOT_EDICION_INVALIDA"
+sale_con "contexto rechaza TAG ausente" 2 validar_contexto "$ROOT_SIN_TAG"
+sale_con "contexto rechaza TAG inválido" 2 validar_contexto "$ROOT_TAG_INVALIDO"
+sale_con "contexto rechaza prefijo incompatible" 2 validar_contexto "$ROOT_PREFIJO_INCOMPATIBLE"
+
+# Contrato en plantillas
+# Las tres plantillas exponen la selección plana que consumen los operadores.
+for entorno in desarrollo staging produccion; do
+  contiene "$entorno declara edición Community" "ODOO_EDITION=community" \
+    "$(grep -E '^(ODOO_EDITION|TAG)=' "runtime/$entorno/compose.env.example")"
+  contiene "$entorno declara TAG Community" "TAG=19.0-ce-2026-09-16" \
+    "$(grep -E '^(ODOO_EDITION|TAG)=' "runtime/$entorno/compose.env.example")"
+done
+
 # Development
 # El entorno local incluye solo proxy, datos y aplicación.
 DEV=$(resuelto desarrollo)

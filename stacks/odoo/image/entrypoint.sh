@@ -6,10 +6,14 @@ ADDONS_BASE=/opt/odoo
 RUNTIME_CONF=/tmp/odoo-runtime.conf
 
 # addons_path interno
-# Enterprise precede dominios propios y Community cierra la precedencia.
+# Un Enterprise con manifiestos precede dominios propios y Community cierra la precedencia.
 
 paths=()
-[ -d "$ADDONS_BASE/enterprise" ] && paths+=("$ADDONS_BASE/enterprise")
+# Addons Enterprise opcionales
+# Solo un snapshot con manifiestos válidos se agrega a la precedencia del runtime.
+if [ -n "$(find "$ADDONS_BASE/enterprise" -name __manifest__.py -type f -print -quit 2>/dev/null)" ]; then
+  paths+=("$ADDONS_BASE/enterprise")
+fi
 for repo in "$ADDONS_BASE/custom"/*/; do
   [ -d "$repo" ] && paths+=("${repo%/}")
 done

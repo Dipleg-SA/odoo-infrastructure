@@ -31,6 +31,8 @@ COMPOSE_PROJECT_NAME=prueba-$entorno
 MARCADOR_ENTORNO=$entorno
 COMPOSE_PROFILES=lan
 RUNTIME_CONFIG_DIR=esta-ruta-debe-ser-derivada
+ODOO_EDITION=community
+TAG=19.0-ce-2026-09-16
 EOF
 done
 mkdir -p "$ROOT/stacks/odoo/image"

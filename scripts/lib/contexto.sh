@@ -2,6 +2,44 @@
 # Contexto del runtime
 # Valida ENTORNO, carga sus variables y centraliza las llamadas a Compose.
 
+# Edición y tag de Odoo
+# Exige una pareja coherente antes de cualquier operación del runtime.
+contexto_edicion_validar() {
+  local edicion="${ODOO_EDITION:-}" tag="${TAG:-}"
+  local valores archivo_edicion archivo_tag
+
+  if [[ -n "${RUNTIME_ENV_FILE:-}" && -f "$RUNTIME_ENV_FILE" ]]; then
+    valores="$( (set -a; . "$RUNTIME_ENV_FILE"; printf '%s\n%s\n' "${ODOO_EDITION:-}" "${TAG:-}") )"
+    archivo_edicion="$(printf '%s\n' "$valores" | sed -n '1p')"
+    archivo_tag="$(printf '%s\n' "$valores" | sed -n '2p')"
+    edicion="$archivo_edicion"
+    tag="$archivo_tag"
+    ODOO_EDITION="$edicion"
+    TAG="$tag"
+  fi
+
+  case "$edicion" in
+    community)
+      [[ "$tag" =~ ^19\.0-ce-[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || {
+        printf 'TAG debe tener formato 19.0-ce-YYYY-MM-DD para ODOO_EDITION=community\n' >&2
+        return 2
+      }
+      ;;
+    enterprise)
+      [[ "$tag" =~ ^19\.0-ee-[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || {
+        printf 'TAG debe tener formato 19.0-ee-YYYY-MM-DD para ODOO_EDITION=enterprise\n' >&2
+        return 2
+      }
+      ;;
+    *)
+      printf 'ODOO_EDITION debe ser community o enterprise\n' >&2
+      return 2
+      ;;
+  esac
+
+  export ODOO_EDITION TAG
+}
+
 # Validación y carga
 # Calcula rutas absolutas desde el checkout y carga el archivo privado del entorno.
 contexto_iniciar() {
@@ -22,7 +60,8 @@ contexto_iniciar() {
   archivo_env="$ruta_runtime/compose.env"
 
   if [[ "${CONTEXTO_ENTORNO:-}" == "$entorno" && "${RUNTIME_DIR:-}" == "$ruta_runtime" && -f "$archivo_compose" && -f "$archivo_env" ]]; then
-    return 0
+    contexto_edicion_validar
+    return $?
   fi
 
   if [[ ! -f "$archivo_compose" || ! -f "$archivo_env" ]]; then
@@ -38,6 +77,8 @@ contexto_iniciar() {
     return 2
   fi
   [[ "$allexport_activo" -eq 1 ]] || set +a
+
+  contexto_edicion_validar || return $?
 
   ENTORNO="$entorno"
   RUNTIME_DIR="$ruta_runtime"

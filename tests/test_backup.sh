@@ -86,7 +86,8 @@ ROOT="$(cd "$ROOT" && pwd -P)"
 cp "$REPO_ROOT/stacks/backup/scripts/backup.sh" "$ROOT/stacks/backup/scripts/"
 cp "$REPO_ROOT/scripts/lib/ui.sh" "$REPO_ROOT/scripts/lib/contexto.sh" "$ROOT/scripts/lib/"
 printf 'services: {}\n' > "$ROOT/runtime/produccion/compose.yaml"
-printf 'COMPOSE_PROJECT_NAME=backup-context\n' > "$ROOT/runtime/produccion/compose.env"
+printf 'COMPOSE_PROJECT_NAME=backup-context\nODOO_EDITION=community\nTAG=19.0-ce-2026-09-16\n' \
+  > "$ROOT/runtime/produccion/compose.env"
 printf '%s\n' 'RESTIC_REPOSITORY=s3:https://cuenta.r2.cloudflarestorage.com/bucket/restic' \
   > "$ROOT/stacks/backup/config/r2.env"
 definir_addons "$ROOT" <<'EOF'

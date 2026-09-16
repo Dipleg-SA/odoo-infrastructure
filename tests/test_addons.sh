@@ -44,7 +44,8 @@ crear_checkout() {
   for entorno in desarrollo staging produccion; do
     mkdir -p "$root/runtime/$entorno"
     printf 'services: {}\n' > "$root/runtime/$entorno/compose.yaml"
-    printf 'COMPOSE_PROJECT_NAME=test-%s\n' "$entorno" > "$root/runtime/$entorno/compose.env"
+    printf 'COMPOSE_PROJECT_NAME=test-%s\nODOO_EDITION=community\nTAG=19.0-ce-2026-09-16\n' \
+      "$entorno" > "$root/runtime/$entorno/compose.env"
   done
   printf '%s' "$root"
 }

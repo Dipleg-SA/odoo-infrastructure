@@ -19,6 +19,8 @@ chmod +x "$ROOT/scripts/odoo-module-operation.sh"
 cat > "$ROOT/runtime/desarrollo/compose.env" <<'EOF'
 COMPOSE_PROJECT_NAME=test-development
 HTTP_PORT=8081
+ODOO_EDITION=community
+TAG=19.0-ce-2026-09-16
 EOF
 cat > "$ROOT/runtime/desarrollo/compose.yaml" <<'EOF'
 services: {}

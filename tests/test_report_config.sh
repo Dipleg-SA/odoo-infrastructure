@@ -25,6 +25,8 @@ cat > "$ROOT/runtime/desarrollo/compose.env" <<'EOF'
 COMPOSE_PROJECT_NAME=prueba-reportes
 HTTP_PORT=8081
 REPORT_URL=http://odoo:8069
+ODOO_EDITION=community
+TAG=19.0-ce-2026-09-16
 RUNTIME_CONFIG_DIR=../../runtime/desarrollo/config
 RUNTIME_SECRETS_DIR=../../runtime/desarrollo/secrets
 RUNTIME_STATE_DIR=../../runtime/desarrollo/state
