@@ -8,6 +8,17 @@ Necesitás subir, bajar, reiniciar o inspeccionar `prometheus` + `loki` + `grafa
 
 La capa de observabilidad en el estado pedido. Bajarla no afecta a Odoo ni a los datos: es diagnóstico, no una dependencia de la aplicación.
 
+## Flujo rápido
+
+1. Operar los cuatro servicios de la capa en conjunto.
+2. Revisar logs, estado y acceso a Grafana por túnel SSH.
+3. Ejecutar las cuatro verificaciones específicas.
+
+## A mano
+
+No requiere pasos manuales adicionales; Grafana se accede desde la máquina del
+operador mediante el túnel SSH indicado en `Comandos`.
+
 ## Comandos
 
 No hay target agrupado — la limpieza de `docker/` lo sacó junto con `capa.sh`: cada

@@ -8,6 +8,12 @@ Antes de clonar el repositorio — es el primer prerrequisito de toda la instala
 
 Tu dominio administrado por Cloudflare, con el DNS delegado desde el registrador, y un token de API acotado a esa zona con permiso para escribir registros DNS — el que usa `certbot` para la emisión del certificado por DNS-01.
 
+## Flujo rápido
+
+1. Crear la zona y delegar sus nameservers en el registrador.
+2. Crear el token con `Zone:Read` y `Zone:DNS:Edit`.
+3. Probarlo contra la zona y guardarlo fuera del servidor.
+
 ## A mano
 
 1. **Zona:** en Cloudflare, agregá tu dominio. Te da los nameservers a apuntar.

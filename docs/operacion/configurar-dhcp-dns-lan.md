@@ -8,7 +8,15 @@ Después de levantar la capa `edge` en producción ([levantar-produccion](../ent
 
 Los dispositivos de la LAN reciben la IP del servidor como DNS primario, resuelven el hostname público directo a la IP local sin salir a internet y volver por NAT, y conservan un DNS público como secundario — así una caída del servidor no deja a la LAN entera sin resolución de nombres.
 
-## Prerrequisito del servidor
+## Flujo rápido
+
+1. Abrir el puerto DNS en el host si corresponde.
+2. Reservar la IP del servidor y configurar DNS primario y secundario en el DHCP.
+3. Renovar leases y probar el hostname propio y un dominio externo desde la LAN.
+
+## A mano
+
+### Prerrequisito del servidor
 
 `ufw allow 53/udp` desde la subred LAN, si el host lo usa. `dnsmasq` corre en `network_mode: host`, así que entra por la cadena `INPUT` y no lo cubre el DNAT de Docker: sin esta regla, el router puede apuntar perfecto a `${LOCAL_IP}` y las consultas igual se pierden.
 
@@ -17,7 +25,7 @@ sudo ufw allow from <subred-lan>/24 to any port 53 proto udp
 sudo ufw status | grep 53/udp   # tiene que listar la regla recién agregada
 ```
 
-## A mano
+### Configuración del router y DHCP
 
 Configuración en el router/DHCP de la red, fuera de este repositorio — el mecanismo exacto varía por fabricante, el concepto es el mismo en cualquiera:
 
@@ -27,6 +35,11 @@ Configuración en el router/DHCP de la red, fuera de este repositorio — el mec
 4. **Aplicar y renovar.** Un cambio de DHCP no empuja a los clientes ya conectados — o esperan a que expire su lease, o hace falta forzar la renovación (reconectar Wi-Fi, `ipconfig /renew`, reiniciar el dispositivo).
 
 Poner acá un DNS local **no evita que se caiga internet** — solo evita que el hostname propio dependa de que el WAN esté arriba. Cualquier dominio externo sigue resolviendo vía los forwarders de `dnsmasq`, que necesitan salida real a internet.
+
+## Comandos
+
+Los comandos del servidor y las pruebas desde un dispositivo de la LAN están en los
+bloques siguientes. No hay un target `make` agrupado para esta configuración.
 
 ## Verificación
 

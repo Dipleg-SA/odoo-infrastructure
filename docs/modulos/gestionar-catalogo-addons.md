@@ -8,6 +8,12 @@ Cuando se incorpora o retira un repositorio de dominio del checkout canónico.
 
 Mantener una lista blanca de repositorios propios para candidatos e imágenes.
 
+## Flujo rápido
+
+1. Agregar o retirar la URL del catálogo.
+2. Sincronizar el repositorio en los entornos que corresponda.
+3. Confirmar el árbol y construir nuevas imágenes si se retiró un repositorio.
+
 ## A mano
 
 `runtime/addons/catalogo.txt` contiene una URL Git por línea. Enterprise queda fuera del catálogo y se administra por tag inmutable.

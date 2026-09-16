@@ -63,11 +63,13 @@ contiene "el verify detecta acceso al socket Docker" \
 python3 - "$PWD" "$TMP" <<'PY'
 import hashlib
 import hmac
+import io
 import importlib.util
 import json
 import os
 import subprocess
 import sys
+import tarfile
 import tempfile
 import threading
 import time
@@ -93,6 +95,39 @@ def check(name, condition):
     else:
         failures += 1
         print(f"  FALLA   {name}")
+
+original_file = webhook.__file__
+webhook.__file__ = "/app/server.py"
+environment_paths = {
+    "ADDONS_CATALOG": temporary / "env-catalog",
+    "ADDONS_BARE_DIR": temporary / "env-bare",
+    "ADDONS_CANDIDATE_ROOT": temporary / "env-candidates",
+    "ADDONS_STATE_DIR": temporary / "env-state",
+    "ADDONS_SECRET_FILE": temporary / "env-secret",
+    "ADDONS_GIT_TOKEN_FILE": temporary / "env-token",
+    "ADDONS_GIT_SSH_KEY_FILE": temporary / "env-key",
+    "ADDONS_GIT_KNOWN_HOSTS_FILE": temporary / "env-known-hosts",
+}
+previous_environment = {key: os.environ.get(key) for key in environment_paths}
+os.environ.update({key: str(value) for key, value in environment_paths.items()})
+check("Config funciona desde el WORKDIR /app del contenedor", webhook.Config.from_env().catalog_path == environment_paths["ADDONS_CATALOG"])
+for key, value in previous_environment.items():
+    if value is None:
+        os.environ.pop(key, None)
+    else:
+        os.environ[key] = value
+webhook.__file__ = original_file
+
+archive_bytes = io.BytesIO()
+with tarfile.open(fileobj=archive_bytes, mode="w:") as archive:
+    content = b"contenido seguro\n"
+    member = tarfile.TarInfo("README.txt")
+    member.size = len(content)
+    archive.addfile(member, io.BytesIO(content))
+extract_destination = temporary / "safe-extract"
+extract_destination.mkdir()
+webhook.safe_extract(io.BytesIO(archive_bytes.getvalue()), extract_destination)
+check("safe_extract funciona en el Python del host", (extract_destination / "README.txt").read_bytes() == b"contenido seguro\n")
 
 def run(*arguments, cwd=None):
     environment = os.environ.copy()

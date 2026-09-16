@@ -8,6 +8,12 @@ Para diagnosticar entregas GitHub y candidatos por entorno.
 
 Recibir únicamente pushes válidos y dejar disponible el candidato para el próximo build.
 
+## Flujo rápido
+
+1. Revisar el receptor y su estado de candidatos.
+2. Confirmar repositorio, rama y firma de la entrega.
+3. Verificar que el webhook no haya cambiado imágenes ni runtimes.
+
 ## A mano
 
 El endpoint público es `POST /webhooks/addons`. El receptor necesita solo el secreto de firma, el catálogo, clones bare, candidatos y su estado. No recibe socket Docker, secretos de Odoo, Enterprise ni referencias de imagen.

@@ -8,6 +8,12 @@ Antes de clonar el repositorio. La verificación del dominio de envío escribe S
 
 Dominio de envío verificado, un Mail Agent con credencial SMTP, y saldo cargado — sin créditos la alerta se detecta pero no sale.
 
+## Flujo rápido
+
+1. Verificar el dominio y crear el Mail Agent.
+2. Cargar saldo y probar el envío SMTP.
+3. Guardar los cinco valores que consumen Odoo, alertas y Grafana.
+
 ## A mano
 
 1. Cuenta en ZeptoMail, dominio de envío verificado (SPF/DKIM contra tu zona de Cloudflare).

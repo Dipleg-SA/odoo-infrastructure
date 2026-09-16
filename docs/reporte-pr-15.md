@@ -14,7 +14,7 @@ automatizadas para los casos que podían volver a romperse.
 ## Correcciones
 
 - Backup: usa el Compose del entorno, escribe la métrica bajo su estado y conserva la procedencia actual de addons y Enterprise.
-- `nuke`: elimina clones, builds y estado generado de `runtime/`, sin tocar configuraciones ni secretos.
+- `nuke`: elimina candidatos, builds y estado generado solo del entorno seleccionado; conserva clones bare compartidos, Enterprise, otros entornos, control, configuraciones y secretos.
 - Observabilidad: `monitoring-role` lee el secreto y ejecuta Compose desde el contexto seleccionado.
 - Dependencias: `pydeps` inspecciona los candidatos de `runtime/addons` y mantiene la raíz inyectada por el build.
 - Webhook: `secrets-init` crea la firma y los cuatro archivos de credenciales bajo `runtime/control/secrets`.
@@ -26,6 +26,6 @@ automatizadas para los casos que podían volver a romperse.
 - `bash -n` sobre los scripts modificados: correcto.
 - `make test`: 13/13 suites, 395 comprobaciones correctas.
 - `git diff --check`: correcto.
-- `ENTORNO=desarrollo make -n nuke`: confirma las rutas generadas de `runtime/` y conserva configs y secretos.
+- `ENTORNO=desarrollo make -n nuke`: confirma las rutas del entorno seleccionado y conserva recursos compartidos, configs y secretos.
 
 Los cambios locales ajenos a este PR se conservaron fuera del commit.

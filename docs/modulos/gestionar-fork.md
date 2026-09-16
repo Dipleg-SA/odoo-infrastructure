@@ -70,13 +70,23 @@ Este es el recorrido completo para incorporar, actualizar o retirar un repositor
 
 ---
 
-## Crear
+## A mano
+
+Elegí si el origen es propio o de terceros, resolvé manualmente los conflictos de
+integración y desinstalá los módulos antes de retirar un repositorio.
+
+## Comandos
+
+Las operaciones de crear, actualizar y eliminar están organizadas como subsecciones
+de este bloque.
+
+### Crear
 
 **A mano.** **Origen propio:** creá el repositorio vacío en tu organización, con al menos la rama de versión que usa este stack (`ADDONS_BRANCH` en `.env`; su default es la versión del tag `FROM odoo:` del Dockerfile).
 
 **Origen de terceros:** forkealo a tu organización, en tu proveedor git. No se agrega el repositorio ajeno directo al manifiesto: sin fork no se puede parchear un módulo sin salirse del modelo, y sin un remote propio no hay dónde pushear la integración a staging.
 
-### Comandos
+#### Comandos
 
 ```bash
 # origen propio
@@ -102,7 +112,7 @@ git -C addons/.repos/<repo>.git remote add upstream <url-del-original>
 git -C addons/.repos/<repo>.git fetch upstream
 ```
 
-### Verificación
+#### Verificación
 
 ```bash
 make repo-status
@@ -118,11 +128,11 @@ Tiene que listar `upstream` además de `origin`.
 
 ---
 
-## Actualizar
+### Actualizar
 
 Requiere haber trackeado `upstream` al crear el fork (ver [Crear](#crear) más arriba).
 
-### Comandos
+#### Comandos
 
 ```bash
 git -C addons/.repos/<repo>.git fetch upstream
@@ -179,7 +189,7 @@ docker compose logs --since 10m odoo
 
 Probá el flujo específico del cambio en la UI de producción con cuidado; si dispara correo, confirmá que llegó. La validación de producción es de confirmación, no de exploración. Si falla algo que pasó en staging, registrá el caso y ampliá esa prueba para la próxima actualización.
 
-### Verificación
+#### Verificación
 
 ```bash
 make repo-status      # limpio, en la rama esperada, en cada checkout
@@ -189,17 +199,17 @@ make verify
 
 ---
 
-## Eliminar
+### Eliminar
 
 **Objetivo** — el repo fuera de `addons/addons.txt`, su worktree y su clon bare borrados, y —si el módulo estaba instalado— desinstalado de la base antes de tocar el código.
 
-### A mano
+#### A mano
 
 Si alguno de los módulos del repo está instalado en una base, desinstalalo desde ahí antes de seguir con `make addons-uninstall MODULES=<nombre_tecnico>`. El comando usa la API ORM interna de Odoo, muestra los módulos dependientes que también serán afectados y exige confirmación explícita. Dejar registros en `ir_module_module` apuntando a código que ya no existe puede romper el próximo arranque o `make addons-update`.
 
 Repetí la desinstalación y la baja de la línea del manifiesto en desarrollo, staging y producción: `addons/addons.txt` es local a cada checkout y no se promueve por Git.
 
-### Comandos
+#### Comandos
 
 ```bash
 nano addons/addons.txt   # sacar la línea del repo
@@ -221,9 +231,15 @@ make repo-status
 make verify
 ```
 
-### Verificación
+#### Verificación
 
 Ya no debería listar ese repo ni marcarlo como huérfano.
+
+## Verificación
+
+El repositorio debe quedar declarado o retirado según la operación, limpio, en la rama
+esperada y sin worktrees ni clones bare huérfanos. En forks de terceros, `upstream`
+debe seguir disponible para futuras actualizaciones.
 
 ---
 

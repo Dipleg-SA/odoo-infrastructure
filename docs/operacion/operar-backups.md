@@ -8,6 +8,17 @@ Para inspeccionar el contenedor de backup o ejecutar un backup y su verificació
 
 Conservar base, filestore y procedencia de Actual/Anterior en el mismo snapshot de producción.
 
+## Flujo rápido
+
+1. Levantar la capa de backup si está detenida.
+2. Ejecutar la operación requerida y revisar sus logs.
+3. Confirmar el snapshot con `backup-verify`.
+
+## A mano
+
+No requiere pasos manuales adicionales; las operaciones se ejecutan con `ENTORNO`
+explícito y los restores siguen sus procedimientos específicos.
+
 ## Comandos
 
 ```bash

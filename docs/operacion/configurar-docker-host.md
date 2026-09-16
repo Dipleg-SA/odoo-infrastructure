@@ -8,6 +8,12 @@ Antes de clonar el repositorio en un servidor nuevo — el stack entero corre so
 
 Docker Engine y Compose ≥ 2.20 instalados, el daemon arrancando solo tras un reinicio, y claro qué protege — y qué no — el firewall del host una vez que Docker está corriendo.
 
+## Flujo rápido
+
+1. Instalar Docker Engine y el plugin Compose según la distribución.
+2. Habilitar el arranque automático del daemon.
+3. Confirmar versiones y ejecutar `make host-verify` después de clonar.
+
 ## A mano
 
 Instalación: seguí la documentación oficial de Docker para tu distribución — este repositorio no la reproduce, cambia por sistema operativo y versión. Confirmá que el plugin Compose (`docker compose`, no el standalone `docker-compose`) quedó instalado: lo trae el paquete `docker-compose-plugin` en las distros basadas en Debian/Ubuntu.

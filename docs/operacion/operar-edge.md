@@ -23,6 +23,11 @@ llevan nginx y cloudflared; `dnsmasq` corresponde únicamente a producción con 
    certificado, seguí el procedimiento destructivo al final y reemitilo antes de levantar nginx;
    ver [Verificación](#verificación).
 
+## A mano
+
+Identificá qué servicios incluye el entorno antes de operar. `dnsmasq` solo aplica a
+producción con LAN y `certbot` se ejecuta como operación puntual.
+
 ## Comandos
 
 No hay target agrupado — la limpieza de `docker/` lo sacó junto con `capa.sh`: cada

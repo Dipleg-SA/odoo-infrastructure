@@ -12,6 +12,14 @@ rm -f runtime/desarrollo/state/images.json
 export ENTORNO=desarrollo
 SCRIPT=scripts/image-state.sh
 
+"$SCRIPT" show >/dev/null
+cat > "$TMP/without-actual.json" <<'EOF'
+{"Actual": null, "Anterior": null, "Nueva": null, "module_operations": [], "rollback_blocked": false, "validation": null}
+EOF
+ESTADO_ANTES=$(cat runtime/desarrollo/state/images.json)
+sale_con "restore rechaza un snapshot sin Actual" 1 "$SCRIPT" restore-meta "$TMP/without-actual.json"
+igual "restore no muta el estado si falta Actual" "$ESTADO_ANTES" "$(cat runtime/desarrollo/state/images.json)"
+
 igual "estado inicial declara ranuras y bloqueo" '{"Actual": null, "Anterior": null, "Nueva": null, "module_operations": [], "rollback_blocked": false, "validation": null}' "$("$SCRIPT" show | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin), sort_keys=True))')"
 PAYLOAD='{"tag":"local/odoo:19.0-desarrollo-utc-hash","digest":"sha256:abc","odoo_version":"19.0","base_image":"odoo:19.0-20260810","infra_commit":"infra","edition":"community","edition_tag":"19.0-ce-2026-09-16","enterprise_tag":null,"enterprise_commit":null,"enterprise_modules":[],"addons":{"ventas":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"built_at":"20260914T120000Z"}'
 igual "write-new publica Nueva" 'local/odoo:19.0-desarrollo-utc-hash' "$("$SCRIPT" write-new "$PAYLOAD" >/dev/null; "$SCRIPT" get Nueva | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag"])')"

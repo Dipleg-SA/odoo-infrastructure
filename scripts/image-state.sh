@@ -153,6 +153,8 @@ elif action == "validate-runtime":
 elif action == "restore-meta":
     source = pathlib.Path(argument)
     restored = json.loads(source.read_text(encoding="utf-8"))
+    if restored.get("Actual") is None:
+        raise SystemExit("el snapshot no contiene una imagen Actual")
     for key in ("Actual", "Anterior", "validation"):
         data[key] = restored.get(key)
     data["Nueva"], data["rollback_blocked"] = None, False

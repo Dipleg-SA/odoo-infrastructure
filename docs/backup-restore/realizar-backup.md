@@ -19,6 +19,12 @@ Que las dos mitades vayan juntas no es una comodidad: la base referencia archivo
 solo existen en el filestore, y respaldarlos por separado convierte la consistencia en
 un procedimiento que hay que recordar en vez de una propiedad del backup.
 
+## Flujo rápido
+
+1. Ejecutar `backup-run` en producción.
+2. Ejecutar `backup-integrity` si se necesita revisar el repositorio sin escribir.
+3. Confirmar el snapshot completo con `backup-verify`.
+
 ## A mano
 
 Ninguno. La corrida diaria no pide nada.

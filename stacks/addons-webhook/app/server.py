@@ -53,7 +53,8 @@ class Config:
 
     @classmethod
     def from_env(cls) -> "Config":
-        root = Path(__file__).resolve().parents[3]
+        file_path = Path(__file__).resolve()
+        root = file_path.parents[3] if len(file_path.parents) > 3 else file_path.parent
         return cls(
             catalog_path=Path(os.environ.get("ADDONS_CATALOG", root / "runtime/addons/catalogo.txt")),
             bare_dir=Path(os.environ.get("ADDONS_BARE_DIR", root / "runtime/addons/.repos")),
@@ -349,6 +350,17 @@ def safe_extract(archive_file, destination: Path) -> None:
                 raise GitOperationError("el commit contiene una ruta inválida")
         try:
             archive.extractall(destination, members=members, filter="data")
+        except TypeError as error:
+            # Python < 3.12 no conoce `filter`; en ese caso rechazamos enlaces
+            # y archivos especiales antes de usar la extracción validada arriba.
+            if "filter" not in str(error):
+                raise GitOperationError("no se pudo extraer el commit") from error
+            if any(member.issym() or member.islnk() or member.isdev() for member in members):
+                raise GitOperationError("el commit contiene un tipo de archivo no admitido")
+            try:
+                archive.extractall(destination, members=members)
+            except (OSError, tarfile.TarError, ValueError) as error:
+                raise GitOperationError("no se pudo extraer el commit") from error
         except (OSError, tarfile.TarError, ValueError) as error:
             raise GitOperationError("no se pudo extraer el commit") from error
 

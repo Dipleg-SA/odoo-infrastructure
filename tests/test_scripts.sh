@@ -13,6 +13,14 @@ trap 'rm -rf "$TMP"' EXIT
 PATH="$REPO_ROOT/tests/stubs:$PATH"
 export ENTORNO=desarrollo
 
+# nuke debe limpiar solo el runtime seleccionado: los clones bare y el control
+# son compartidos, y los candidatos/builds de los otros entornos no se pueden borrar.
+NUKE=$(make -n ENTORNO=desarrollo nuke 2>&1)
+contiene "nuke limita candidatos al entorno seleccionado" 'runtime/addons/custom/${ENTORNO}' "$NUKE"
+contiene "nuke limita builds al entorno seleccionado" 'runtime/addons/builds/${ENTORNO}' "$NUKE"
+no_contiene "nuke conserva los clones bare compartidos" "runtime/addons/.repos" "$NUKE"
+no_contiene "nuke conserva el estado del control plane" "runtime/control/state" "$NUKE"
+
 # Checkout falso
 # Cada entorno tiene su composición y variables privadas bajo runtime/.
 

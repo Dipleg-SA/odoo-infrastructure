@@ -8,6 +8,12 @@ Al publicar el receptor del checkout canónico o rotar su secreto de firma.
 
 Entregar pushes de ramas de integración al endpoint sin ampliar los permisos del receptor.
 
+## Flujo rápido
+
+1. Generar y guardar el secreto de firma.
+2. Configurar en GitHub el evento `push` y la URL del receptor.
+3. Inicializar secretos, verificar permisos y enviar una entrega de prueba.
+
 ## A mano
 
 Generá un secreto aleatorio y guardalo en el archivo privado de firma del runtime de control. Configurá GitHub con evento `push`, tipo de contenido JSON y la URL exacta `https://<hostname>/webhooks/addons`.
@@ -18,7 +24,7 @@ Generá un secreto aleatorio y guardalo en el archivo privado de firma del runti
 ENTORNO=produccion make secrets-init
 $EDITOR runtime/control/secrets/addons_webhook_secret
 sudo ENTORNO=produccion make secrets-perms
-ENTORNO=produccion make addons-webhook-verify
+ENTORNO=produccion scripts/verify-stacks.sh addons-webhook
 ```
 
 El mismo bootstrap deja los archivos `git_readonly_token`, `git_readonly_key` y

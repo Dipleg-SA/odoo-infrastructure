@@ -8,6 +8,12 @@ Para instalar, actualizar o desinstalar módulos de forma manual sobre la imagen
 
 Operar módulos con una fotografía identificable, registrar el impacto sobre la reversión y validar el flujo antes de promover.
 
+## Flujo rápido
+
+1. Confirmar catálogo, candidato, entorno e imagen Actual.
+2. Ejecutar la operación explícita sobre el módulo.
+3. Verificar, validar el entorno y conservar el backup asociado.
+
 ## A mano
 
 El repositorio debe estar en el catálogo y el candidato sincronizado. Las operaciones requieren `ENTORNO` y `MODULES`; nunca se disparan desde el webhook.

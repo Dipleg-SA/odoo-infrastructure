@@ -172,17 +172,17 @@ logs: ## Sigue los logs de todos los servicios
 ps: ## Lista el estado de los contenedores
 	@. scripts/ui/components.sh; salida=$$($(CONTEXTO_COMPOSE) ps --format "{{.Name}}$$(printf '\t'){{.Status}}$$(printf '\t'){{.Ports}}") || exit $$?; printf '%s\n' "$$salida" | ui_ps_table
 
-# nuke exige escribir su nombre y elimina volúmenes, imágenes propias, clones y estado generado.
+# nuke exige escribir su nombre y elimina volúmenes, imágenes propias y estado generado del entorno seleccionado.
 # reset exige confirmación y recrea solo volúmenes; ambos conservan configs y secretos.
 
-nuke: ## Borra TODO: containers/imágenes/volúmenes del stack + clones + estado generado
+nuke: ## Borra containers/imágenes/volúmenes del stack y estado generado del entorno seleccionado
 	@. scripts/lib/ui.sh; \
 	  ui_warn "esto borra los datos de este stack" \
 	    "volúmenes, imágenes propias y estado generado de runtime/ — configs y secretos quedan"; \
 	  ui_confirm nuke || exit 1; \
 	  ui_run "nuke" env ENTORNO="$$ENTORNO" bash -c '$(CONTEXTO_COMPOSE) down -v --rmi local --remove-orphans && \
-	    rm -rf runtime/addons/.repos runtime/addons/custom/* runtime/addons/builds/* \
-	      runtime/$${ENTORNO}/state/* runtime/control/state/*'
+	    rm -rf runtime/addons/custom/$${ENTORNO} runtime/addons/builds/$${ENTORNO} \
+	      runtime/$${ENTORNO}/state/*'
 
 # Mismo indicador que require-backups, leído al revés: backup sin profiles: solo
 # está en producción (en staging tiene profiles: [restore]; en desarrollo no está).

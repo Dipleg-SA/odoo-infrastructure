@@ -8,6 +8,17 @@ Para subir, bajar, reiniciar o inspeccionar Odoo dentro de un entorno explícito
 
 Operar el servicio sin cambiar la imagen declarada ni tocar otros entornos.
 
+## Flujo rápido
+
+1. Elegir el entorno explícito.
+2. Ejecutar la operación de Odoo y revisar sus logs.
+3. Confirmar la referencia Actual con `odoo-verify`.
+
+## A mano
+
+Confirmá el entorno y la operación antes de ejecutarla. Los cambios de imagen y las
+operaciones de módulos tienen procedimientos separados.
+
 ## Comandos
 
 ```bash

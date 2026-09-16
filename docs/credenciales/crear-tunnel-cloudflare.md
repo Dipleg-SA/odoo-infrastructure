@@ -8,6 +8,12 @@ Antes de clonar el repositorio — el Tunnel es la única vía de entrada del st
 
 Un Tunnel creado y con su ruta pública configurada —apuntando a `nginx:443` con el hostname correcto en el certificado— y su token guardado, listo para que `cloudflared` se conecte apenas levante.
 
+## Flujo rápido
+
+1. Crear el Tunnel y su Public Hostname.
+2. Configurar `https://nginx:443` y el Origin Server Name completo.
+3. Guardar el token y confirmar la configuración antes de clonar.
+
 ## A mano
 
 1. **Crear el Tunnel:** Zero Trust → Networks → Tunnels → crear uno nuevo, tipo *Cloudflared*. Te da el token del conector.
@@ -27,6 +33,12 @@ Sin Origin Server Name, `cloudflared` cae al hostname del propio Service (`nginx
 ```
 tls: failed to verify certificate: x509: certificate is valid for <tu PUBLIC_HOSTNAME>, not nginx
 ```
+
+## Comandos
+
+No hay comandos del repositorio en esta etapa: la creación del Tunnel y del Public
+Hostname se hace en la consola de Cloudflare. El token se prueba cuando el checkout
+está clonado y la capa `edge` está levantada.
 
 ## Verificación
 
