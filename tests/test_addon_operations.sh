@@ -26,7 +26,7 @@ cat > "$ROOT/runtime/desarrollo/compose.yaml" <<'EOF'
 services: {}
 EOF
 cat > "$ROOT/runtime/desarrollo/state/images.json" <<'EOF'
-{"Nueva":null,"Actual":{"tag":"local/odoo:actual","digest":"sha256:actual"},"Anterior":null,"validation":null}
+{"Nueva":null,"Actual":{"tag":"local/odoo:actual","digest":"sha256:actual","edition":"community","edition_tag":"19.0-ce-2026-09-16","enterprise_tag":null,"enterprise_commit":null,"enterprise_modules":[],"odoo_version":"19.0","base_image":"odoo:19.0","infra_commit":"infra","addons":{},"built_at":"20260916T120000Z"},"Anterior":null,"validation":null}
 EOF
 
 cat > "$FAKEBIN/docker" <<'EOF'

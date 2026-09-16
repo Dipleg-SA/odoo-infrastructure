@@ -71,18 +71,39 @@ v_odoo() {
 
   # --- Imagen Actual y addons internos ---
   # La imagen declarada y el estado deben apuntar a la misma fotografía inmutable.
-  local estado tag digest
+  local estado tag digest edition edition_tag
   estado=$(scripts/image-state.sh get Actual 2>/dev/null || true)
   if [ -z "$estado" ] || [ "$estado" = "null" ]; then
     aviso "imagen Actual declarada" "runtime/state/images.json no tiene Actual"
   else
     tag=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["tag"])' <<<"$estado" 2>/dev/null || true)
     digest=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])' <<<"$estado" 2>/dev/null || true)
+    edition=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("edition", ""))' <<<"$estado" 2>/dev/null || true)
+    edition_tag=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("edition_tag", ""))' <<<"$estado" 2>/dev/null || true)
     if [ -z "$tag" ] || [ -z "$digest" ]; then
       bad "procedencia de imagen Actual completa" "faltan tag o digest"
     else
       ok "procedencia de imagen Actual completa"
       printf '    imagen: %s\n    digest: %s\n' "$tag" "$digest"
+      if [ "$edition" = "$ODOO_EDITION" ] && [ "$edition_tag" = "$TAG" ]; then
+        ok "edición y tag de imagen Actual coherentes"
+      else
+        bad "edición y tag de imagen Actual coherentes" \
+          "imagen=${edition:-desconocida}/${edition_tag:-sin tag}; runtime=$ODOO_EDITION/$TAG"
+      fi
+      if python3 - "$estado" <<'PY'
+import json, sys
+data = json.loads(sys.argv[1])
+required = ("edition", "edition_tag", "odoo_version", "base_image", "infra_commit", "addons", "built_at")
+missing = [key for key in required if key not in data]
+if missing:
+    raise SystemExit("faltan " + ", ".join(missing))
+PY
+      then
+        ok "procedencia técnica de imagen Actual completa"
+      else
+        bad "procedencia técnica de imagen Actual completa" "faltan campos de procedencia"
+      fi
       if grep -qE '^    image: ' <(contexto_compose config 2>/dev/null) && contexto_compose config 2>/dev/null | grep -q "image: $tag$"; then
         ok "Compose usa la imagen Actual ($tag)"
       else

@@ -30,12 +30,12 @@
 
 ## Phase 4: US4 — Promover y revertir sin mezclar ediciones (P1)
 
-- [ ] T016 [US4] Extender `scripts/image-state.sh` con `edition`, `edition_tag` y los campos Enterprise opcionales u obligatorios según la edición, incluyendo inferencia de estados históricos Enterprise.
-- [ ] T017 [US4] Agregar en `scripts/image-state.sh` las guardas de edición para `verify`, `apply-image`, `rollback-image`, rotación de `Nueva`/`Actual`/`Anterior` y sincronización del selector de Compose.
-- [ ] T018 [P][US4] Actualizar `stacks/odoo/verify.sh` para comparar edición, tag, digest y procedencia de la imagen activa con el runtime configurado.
-- [ ] T019 [P][US4] Actualizar `Makefile` para detectar un cambio de edición antes de `apply-image`, conservar el backup previo de producción y exponer la guarda sin cambiar el propósito de `build`, `rollback-image` y `verify`.
-- [ ] T020 [TEST][US4] Extender `tests/test_image_state.sh` con estados Community y Enterprise, mismatch de ranuras, promoción válida, rollback cruzado bloqueado e inferencia histórica.
-- [ ] T021 [TEST][US4] Extender `tests/test_verify.sh` para comprobar que `verify` detecta una imagen activa de edición distinta y una procedencia inconsistente.
+- [x] T016 [US4] Extender `scripts/image-state.sh` con `edition`, `edition_tag` y los campos Enterprise opcionales u obligatorios según la edición, incluyendo inferencia de estados históricos Enterprise.
+- [x] T017 [US4] Agregar en `scripts/image-state.sh` las guardas de edición para `verify`, `apply-image`, `rollback-image`, rotación de `Nueva`/`Actual`/`Anterior` y sincronización del selector de Compose.
+- [x] T018 [P][US4] Actualizar `stacks/odoo/verify.sh` para comparar edición, tag, digest y procedencia de la imagen activa con el runtime configurado.
+- [x] T019 [P][US4] Actualizar `Makefile` para detectar un cambio de edición antes de `apply-image`, conservar el backup previo de producción y exponer la guarda sin cambiar el propósito de `build`, `rollback-image` y `verify`.
+- [x] T020 [TEST][US4] Extender `tests/test_image_state.sh` con estados Community y Enterprise, mismatch de ranuras, promoción válida, rollback cruzado bloqueado e inferencia histórica.
+- [x] T021 [TEST][US4] Extender `tests/test_verify.sh` para comprobar que `verify` detecta una imagen activa de edición distinta y una procedencia inconsistente.
 
 ## Phase 5: US5 — Pasar de Community a Enterprise (P1)
 

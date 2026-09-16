@@ -387,6 +387,7 @@ sale_con "sin composición legible aborta" 1 \
 # Los verbos de promoción quedan disponibles bajo el entorno explícito.
 contiene "Makefile expone apply-image" "apply-image:" "$(cat "$REPO_ROOT/Makefile")"
 contiene "Makefile expone rollback-image" "rollback-image:" "$(cat "$REPO_ROOT/Makefile")"
+contiene "Makefile expone guarda de edición" "require-edition-transition:" "$(cat "$REPO_ROOT/Makefile")"
 contiene "Makefile exige backup previo cuando corresponde" "backup-run" "$(cat "$REPO_ROOT/Makefile")"
 contiene "la operación de módulos exige Actual" "no hay imagen Actual" "$(cat "$REPO_ROOT/scripts/odoo-module-operation.sh")"
 

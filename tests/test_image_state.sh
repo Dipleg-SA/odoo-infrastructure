@@ -13,7 +13,7 @@ export ENTORNO=desarrollo
 SCRIPT=scripts/image-state.sh
 
 igual "estado inicial declara ranuras y bloqueo" '{"Actual": null, "Anterior": null, "Nueva": null, "module_operations": [], "rollback_blocked": false, "validation": null}' "$("$SCRIPT" show | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin), sort_keys=True))')"
-PAYLOAD='{"tag":"local/odoo:19.0-desarrollo-utc-hash","digest":"sha256:abc","odoo_version":"19.0","base_image":"odoo:19.0-20260810","infra_commit":"infra","enterprise_tag":"19.0-ee-2026-09-14","enterprise_commit":"ee","addons":{"ventas":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"built_at":"20260914T120000Z"}'
+PAYLOAD='{"tag":"local/odoo:19.0-desarrollo-utc-hash","digest":"sha256:abc","odoo_version":"19.0","base_image":"odoo:19.0-20260810","infra_commit":"infra","edition":"community","edition_tag":"19.0-ce-2026-09-16","enterprise_tag":null,"enterprise_commit":null,"enterprise_modules":[],"addons":{"ventas":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"built_at":"20260914T120000Z"}'
 igual "write-new publica Nueva" 'local/odoo:19.0-desarrollo-utc-hash' "$("$SCRIPT" write-new "$PAYLOAD" >/dev/null; "$SCRIPT" get Nueva | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag"])')"
 sale_con "rechaza procedencia incompleta" 1 "$SCRIPT" write-new '{"tag":"incompleto"}'
 BAD_PAYLOAD=$(python3 -c 'import json,sys; data=json.loads(sys.argv[1]); data["tag"]="local/odoo:19.0-desarrollo-$(touch /tmp/image-state-test-pwned)"; print(json.dumps(data))' "$PAYLOAD")
@@ -31,6 +31,46 @@ contiene "registra la validación" 'smoke staging' "$("$SCRIPT" get validation)"
 igual "reactiva Anterior" 'local/odoo:19.0-desarrollo-utc-hash' "$("$SCRIPT" get Actual | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag"])')"
 "$SCRIPT" write-new "$PAYLOAD2" >/dev/null
 "$SCRIPT" apply >/dev/null
+contiene "promoción conserva edición Community" '"edition": "community"' "$($SCRIPT get Actual)"
+contiene "promoción conserva tag de edición" '"edition_tag": "19.0-ce-2026-09-16"' "$($SCRIPT get Actual)"
+
+# Ranuras cruzadas e inferencia histórica
+# Una fotografía Enterprise no se puede activar en un runtime Community.
+PAYLOAD_EE='{"tag":"local/odoo:19.0-desarrollo-ee-hash","digest":"sha256:ee","odoo_version":"19.0","base_image":"odoo:19.0-20260810","infra_commit":"infra","edition":"enterprise","edition_tag":"19.0-ee-2026-09-14","enterprise_tag":"19.0-ee-2026-09-14","enterprise_commit":"ee","enterprise_modules":["ventas"],"addons":{"ventas":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"built_at":"20260914T120000Z"}'
+python3 - "runtime/desarrollo/state/images.json" "$PAYLOAD_EE" <<'PY'
+import json, sys
+path, payload = sys.argv[1:]
+data = json.load(open(path, encoding="utf-8"))
+data["Nueva"] = json.loads(payload)
+open(path, "w", encoding="utf-8").write(json.dumps(data) + "\n")
+PY
+sale_con "bloquea Nueva Enterprise en runtime Community" 1 "$SCRIPT" apply
+igual "conserva Actual ante ranura cruzada" 'local/odoo:19.0-desarrollo-utc-hash-2' \
+  "$($SCRIPT get Actual | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag"])')"
+python3 - "runtime/desarrollo/state/images.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path, encoding="utf-8"))
+data["Nueva"] = None
+data["Anterior"] = json.loads('''{"tag":"local/odoo:19.0-desarrollo-ee-hash","digest":"sha256:ee","odoo_version":"19.0","base_image":"odoo:19.0-20260810","infra_commit":"infra","edition":"enterprise","edition_tag":"19.0-ee-2026-09-14","enterprise_tag":"19.0-ee-2026-09-14","enterprise_commit":"ee","enterprise_modules":["ventas"],"addons":{"ventas":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"built_at":"20260914T120000Z"}''')
+open(path, "w", encoding="utf-8").write(json.dumps(data) + "\n")
+PY
+sale_con "bloquea rollback hacia Enterprise" 1 "$SCRIPT" rollback
+
+python3 - "runtime/desarrollo/state/images.json" "$PAYLOAD_EE" <<'PY'
+import json, sys
+path, payload = sys.argv[1:]
+data = json.load(open(path, encoding="utf-8"))
+historica = json.loads(payload)
+historica.pop("edition")
+historica.pop("edition_tag")
+historica.pop("enterprise_modules")
+data["Nueva"] = historica
+open(path, "w", encoding="utf-8").write(json.dumps(data) + "\n")
+PY
+contiene "infiere edición Enterprise histórica" '"edition": "enterprise"' "$($SCRIPT get Nueva)"
+contiene "infiere tag Enterprise histórico" '"edition_tag": "19.0-ee-2026-09-14"' "$($SCRIPT get Nueva)"
+
 "$SCRIPT" invalidate-rollback "update:ventas" >/dev/null
 sale_con "bloquea rollback tras módulos" 1 "$SCRIPT" rollback
 

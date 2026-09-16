@@ -17,7 +17,7 @@ include .make/main.mk
         cert-issue cert-renew \
         backup-run backup-integrity restore \
         repo-sync repo-status addons-install addons-update addons-uninstall addons-modules addons-deps \
-        require-entorno require-modules require-backups require-restore require-root require-systemd require-not-production test verify \
+        require-entorno require-edition-transition require-modules require-backups require-restore require-root require-systemd require-not-production test verify \
         $(foreach s,$(STACKS),$(s)-up $(s)-down $(s)-restart $(s)-logs $(s)-ps $(s)-verify) \
         $(foreach s,$(STACKS_ONESHOT),$(s)-logs $(s)-ps $(s)-verify)
 .DEFAULT_GOAL := help
@@ -28,7 +28,7 @@ RUNTIME_TARGETS := secrets-init secrets-perms secrets-check config-init dev-work
                    host-verify up-timers down-timers notify-test monitoring-role cert-issue cert-renew \
                    backup-run backup-integrity restore repo-sync repo-status \
                    addons-install addons-update addons-uninstall addons-modules addons-deps \
-                   require-backups require-restore require-not-production verify \
+                   require-edition-transition require-backups require-restore require-not-production verify \
                    up down logs ps nuke reset build apply-image rollback-image validate-image
 RUNTIME_TARGETS += $(foreach s,$(STACKS),$(s)-up $(s)-down $(s)-restart $(s)-logs $(s)-ps $(s)-verify)
 RUNTIME_TARGETS += $(foreach s,$(STACKS_ONESHOT),$(s)-logs $(s)-ps $(s)-verify)
@@ -217,7 +217,16 @@ repo-status: ## Muestra el estado de los addons
 build: ## Construye la imagen Odoo desde la fotografía del entorno
 	scripts/build-odoo-image.sh
 
-apply-image: ## Promueve Nueva a Actual y levanta Odoo con esa referencia
+require-edition-transition: ## Detecta un cambio de edición antes de aplicar Nueva
+	@actual=$$(scripts/image-state.sh get Actual 2>/dev/null || echo null); \
+	 nueva=$$(scripts/image-state.sh get Nueva 2>/dev/null || echo null); \
+	 if [ "$$actual" != null ] && [ "$$nueva" != null ] && \
+	    ! python3 -c 'import json,sys; actual,nueva=(json.loads(value) for value in sys.argv[1:]); raise SystemExit(0 if actual.get("edition") == nueva.get("edition") else 1)' "$$actual" "$$nueva"; then \
+	   . scripts/lib/ui.sh; ui_warn "cambio de edición detectado" \
+	     "se conservará el backup de producción antes de aplicar Nueva"; \
+	 fi
+
+apply-image: require-edition-transition ## Promueve Nueva a Actual y levanta Odoo con esa referencia
 	@servicios=$$($(CONTEXTO_COMPOSE) config --services 2>/dev/null) || exit $$?; \
 	if grep -qx backup <<< "$$servicios"; then $(MAKE) backup-run; fi
 	scripts/image-state.sh apply
