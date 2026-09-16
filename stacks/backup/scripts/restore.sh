@@ -62,6 +62,10 @@ en_backup() {
 
 ui_run "restore del filestore" en_backup restic restore "$SNAPSHOT" --target / --include /data/odoo
 
+# Metadata de procedencia
+# El restore debe usar la metadata del snapshot, no una copia local que puede pertenecer a otro estado.
+ui_run "restore de metadata" en_backup restic restore "$SNAPSHOT" --target / --include /data/meta
+
 # 100:101 son los uid/gid de Odoo: restaurado como root, el filestore le queda
 # ilegible a la aplicación si no se le devuelve el owner.
 ui_run "owner del filestore" en_backup chown -R 100:101 /data/odoo

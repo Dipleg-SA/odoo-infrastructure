@@ -123,12 +123,23 @@ contiene "backup conserva la edición Community" '"edition": "community"' \
 contiene "backup conserva el tag Community" '"edition_tag": "19.0-ce-2026-09-16"' \
   "$(cat "$ROOT/runtime/produccion/state/meta/images.json")"
 
+mkdir -p "$STUB_DIR/snapshot-meta"
+cp "$ROOT/runtime/produccion/state/meta/images.json" "$STUB_DIR/snapshot-meta/images.json"
+python3 - "$ROOT/runtime/produccion/state/meta/images.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path, encoding="utf-8"))
+data["Actual"]["tag"] = "local/odoo:stale"
+open(path, "w", encoding="utf-8").write(json.dumps(data) + "\n")
+PY
+
 mkdir -p "$STUB_DIR/restore-bin"
 cat > "$STUB_DIR/restore-bin/docker" <<EOF
 #!/usr/bin/env bash
 case "\$*" in
   *" ps -q odoo"*) exit 0 ;;
   *" ps -q postgres"*) printf '%s\n' postgres-id; exit 0 ;;
+  *" restore "*"/data/meta"*) cp "$STUB_DIR/snapshot-meta/images.json" "$ROOT/runtime/produccion/state/meta/images.json" ;;
 esac
 exec "$REPO_ROOT/tests/stubs/docker" "\$@"
 EOF
@@ -141,6 +152,9 @@ contiene "restore conserva la edición Community" '"edition": "community"' \
   "$(cat "$ROOT/runtime/produccion/state/images.json")"
 contiene "restore conserva el tag Community" '"edition_tag": "19.0-ce-2026-09-16"' \
   "$(cat "$ROOT/runtime/produccion/state/images.json")"
+contiene "restore recupera metadata del snapshot" '"tag": "local/odoo:community"' \
+  "$(cat "$ROOT/runtime/produccion/state/images.json")"
+contiene "restore solicita metadata al snapshot" "/data/meta" "$(cat "$STUB_DIR/llamadas")"
 no_contiene "restore no recupera código Enterprise" "enterprise" "$(cat "$STUB_DIR/llamadas")"
 
 resumen

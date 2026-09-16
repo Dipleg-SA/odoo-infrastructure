@@ -75,3 +75,10 @@
 - [x] VERIFY Confirmar que ningún preflight modifica módulos, registros funcionales o datos de la base y que las operaciones de módulos siguen siendo manuales.
 - [x] VERIFY Confirmar que no se modificaron archivos privados `runtime/*/compose.env`, checkout Enterprise ni secretos, y que no se agregaron dependencias fuera de `plan.md`.
 - [x] VERIFY Confirmar que no se viola ningún principio `MUST` de `.specs/constitution.md` y que la documentación operativa permanece en español.
+
+## Phase 8: Convergencia
+
+- [x] T041 [US4] Completar `stacks/odoo/verify.sh` para validar `Nueva`, `Actual` y `Anterior` contra `ODOO_EDITION`, preservando la excepción explícita de una transición validada, y cubrir el rechazo de ranuras incompatibles en `tests/test_verify.sh` (partial; US4/AC1).
+- [x] T042 [US7] Ajustar `stacks/backup/scripts/restore.sh` para recuperar la metadata `/data/meta` desde el snapshot antes de reaplicar `images.json`, y agregar en `tests/test_backup.sh` un caso de checkout nuevo o metadata local obsoleta (partial; US7/AC2, plan de restore).
+- [x] T043 [US7] Normalizar en `scripts/image-state.sh` las fotografías restauradas sin `edition` antes de validar `restore-meta`, y cubrir la restauración de una fotografía Enterprise histórica en `tests/test_image_state.sh` (partial; US7/AC1).
+- [x] T044 [DOCS] Actualizar `ARCHITECTURE.md` con el contrato plano `ODOO_EDITION`/`TAG`, la separación Community/Enterprise y las fronteras de transición y rollback, y comprobar su presencia en la verificación documental (missing; estructura de archivos del plan).

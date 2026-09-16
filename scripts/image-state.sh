@@ -143,6 +143,13 @@ elif action == "invalidate":
     data["module_operations"].append({"operation": argument, "at": now})
 elif action == "require-actual":
     if data["Actual"] is None: raise SystemExit("no hay imagen Actual declarada")
+elif action == "validate-runtime":
+    permitir_anterior = (
+        data["Nueva"] is None
+        and data["Actual"] is not None
+        and data["Actual"]["edition"] == runtime_edition
+    )
+    validar_edicion(data, permitir_anterior=permitir_anterior)
 elif action == "restore-meta":
     source = pathlib.Path(argument)
     restored = json.loads(source.read_text(encoding="utf-8"))
@@ -150,6 +157,7 @@ elif action == "restore-meta":
         data[key] = restored.get(key)
     data["Nueva"], data["rollback_blocked"] = None, False
     data["module_operations"] = []
+    validar_ranuras(data)
 else: raise SystemExit("transición inválida")
 if action in ("apply", "rollback", "validate", "restore-meta"):
     validar_edicion(data, permitir_anterior=action == "apply" and transition_validated == "1")
@@ -347,6 +355,10 @@ PY
   require-actual)
     transition require-actual >/dev/null
     ;;
+  validate-runtime)
+    transition validate-runtime >/dev/null
+    printf 'ranuras de imágenes coherentes con el runtime\n'
+    ;;
   restore-meta)
     [ -n "${2:-}" ] || { printf 'uso: %s restore-meta <archivo>\n' "$(basename "$0")" >&2; exit 2; }
     resultado=$(transition restore-meta "$2")
@@ -355,7 +367,7 @@ PY
     printf 'procedencia restaurada; Actual: %s\n' "$tag"
     ;;
   *)
-    printf 'uso: %s show|get <ranura>|write-new <json|archivo>|validate|apply|rollback|validate-image|invalidate-rollback|require-actual|restore-meta\n' "$(basename "$0")" >&2
+    printf 'uso: %s show|get <ranura>|write-new <json|archivo>|validate|apply|rollback|validate-image|invalidate-rollback|require-actual|validate-runtime|restore-meta\n' "$(basename "$0")" >&2
     exit 2
     ;;
 esac

@@ -75,6 +75,39 @@ contiene "infiere edición Enterprise histórica" '"edition": "enterprise"' "$($
 contiene "infiere tag Enterprise histórico" '"edition_tag": "19.0-ee-2026-09-14"' "$($SCRIPT get Nueva)"
 igual "lector histórico no reescribe el estado" "$ESTADO_HISTORICO" "$(cat runtime/desarrollo/state/images.json)"
 
+# Restore histórico
+# Una fotografía Enterprise anterior a la feature se normaliza al restaurarla.
+python3 - "$TMP/historic-images.json" <<'PY'
+import json, sys
+historical = {
+    'tag': 'local/odoo:historico-ee', 'digest': 'sha256:historico',
+    'odoo_version': '19.0', 'base_image': 'odoo:19.0-20260810',
+    'infra_commit': 'infra', 'enterprise_tag': '19.0-ee-2026-09-14',
+    'enterprise_commit': 'ee', 'addons': {},
+    'built_at': '20260914T120000Z',
+}
+json.dump({'Nueva': None, 'Actual': historical, 'Anterior': None,
+           'validation': None, 'rollback_blocked': False, 'module_operations': []},
+          open(sys.argv[1], 'w', encoding='utf-8'))
+PY
+ENV_ANTES=$(cat runtime/desarrollo/compose.env)
+python3 - runtime/desarrollo/compose.env <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+lines = path.read_text(encoding='utf-8').splitlines()
+lines = [
+    'ODOO_EDITION=enterprise' if line.startswith('ODOO_EDITION=') else
+    'TAG=19.0-ee-2026-09-14' if line.startswith('TAG=') else line
+    for line in lines
+]
+path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+PY
+sale_con "restore normaliza Enterprise histórico" 0 "$SCRIPT" restore-meta "$TMP/historic-images.json"
+contiene "restore histórico infiere edición" '"edition": "enterprise"' "$($SCRIPT get Actual)"
+contiene "restore histórico conserva tag Enterprise" '"edition_tag": "19.0-ee-2026-09-14"' "$($SCRIPT get Actual)"
+printf '%s\n' "$ENV_ANTES" > runtime/desarrollo/compose.env
+
 "$SCRIPT" invalidate-rollback "update:ventas" >/dev/null
 sale_con "bloquea rollback tras módulos" 1 "$SCRIPT" rollback
 

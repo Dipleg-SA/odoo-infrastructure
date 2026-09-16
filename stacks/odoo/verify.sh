@@ -72,6 +72,12 @@ v_odoo() {
   # --- Imagen Actual y addons internos ---
   # La imagen declarada y el estado deben apuntar a la misma fotografía inmutable.
   local estado tag digest edition edition_tag
+  local estado_runtime
+  if estado_runtime=$(scripts/image-state.sh validate-runtime 2>&1); then
+    ok "ranuras de imágenes coherentes con el runtime"
+  else
+    bad "ranuras de imágenes coherentes con el runtime" "$(printf '%s' "$estado_runtime" | tr '\n' ' ')"
+  fi
   estado=$(scripts/image-state.sh get Actual 2>/dev/null || true)
   if [ -z "$estado" ] || [ "$estado" = "null" ]; then
     aviso "imagen Actual declarada" "runtime/state/images.json no tiene Actual"

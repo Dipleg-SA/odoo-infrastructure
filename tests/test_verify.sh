@@ -438,6 +438,7 @@ PY
 escribir_actual "$PAYLOAD_ACTUAL"
 SALIDA=$(v_odoo 2>&1)
 contiene "verify acepta edición y tag coherentes" "ok      edición y tag de imagen Actual coherentes" "$SALIDA"
+contiene "verify acepta ranuras coherentes" "ok      ranuras de imágenes coherentes con el runtime" "$SALIDA"
 PAYLOAD_EE="${PAYLOAD_ACTUAL/community/enterprise}"
 PAYLOAD_EE="${PAYLOAD_EE/19.0-ce-2026-09-16/19.0-ee-2026-09-14}"
 PAYLOAD_EE="${PAYLOAD_EE/\"enterprise_tag\":null/\"enterprise_tag\":\"19.0-ee-2026-09-14\"}"
@@ -447,5 +448,25 @@ escribir_actual "$PAYLOAD_EE"
 contiene "verify detecta edición distinta" "edición y tag de imagen Actual coherentes" "$(v_odoo 2>&1)"
 escribir_actual "${PAYLOAD_ACTUAL/19.0-ce-2026-09-16/19.0-ee-2026-09-14}"
 contiene "verify detecta tag inconsistente" "edición y tag de imagen Actual coherentes" "$(v_odoo 2>&1)"
+
+escribir_actual "$PAYLOAD_ACTUAL"
+python3 - "$STATE_FILE" "$PAYLOAD_EE" <<'PY'
+import json, sys
+path, anterior = sys.argv[1:]
+data = json.load(open(path, encoding="utf-8"))
+data["Anterior"] = json.loads(anterior)
+open(path, "w", encoding="utf-8").write(json.dumps(data) + "\n")
+PY
+contiene "verify conserva la frontera de rollback" "ok      ranuras de imágenes coherentes con el runtime" "$(v_odoo 2>&1)"
+
+escribir_actual "$PAYLOAD_ACTUAL"
+python3 - "$STATE_FILE" "$PAYLOAD_EE" <<'PY'
+import json, sys
+path, nueva = sys.argv[1:]
+data = json.load(open(path, encoding="utf-8"))
+data["Nueva"] = json.loads(nueva)
+open(path, "w", encoding="utf-8").write(json.dumps(data) + "\n")
+PY
+contiene "verify rechaza Nueva incompatible" "ranuras de imágenes coherentes con el runtime" "$(v_odoo 2>&1)"
 
 resumen
