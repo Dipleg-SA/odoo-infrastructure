@@ -128,7 +128,7 @@ enterprise_checkout_validar() {
 }
 
 enterprise_sync() {
-  local url="${1:-${ENTERPRISE_REPOSITORY:-}}" tag="${2:-${ENTERPRISE_TAG:-}}"
+  local url="${1:-${ENTERPRISE_REPOSITORY:-}}" tag="${2:-${TAG:-${ENTERPRISE_TAG:-}}}"
   if [ -z "$url" ] || [ -z "$tag" ]; then
     enterprise_usage
     return 2
@@ -139,7 +139,7 @@ enterprise_sync() {
 }
 
 enterprise_validate() {
-  local tag="${1:-${ENTERPRISE_TAG:-}}" commit expected
+  local tag="${1:-${TAG:-${ENTERPRISE_TAG:-}}}" commit expected
   if [ -z "$tag" ]; then
     enterprise_usage
     return 2

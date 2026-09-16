@@ -158,8 +158,17 @@ igual "Enterprise pasa la validación de tag inmutable" "0" \
   "$(codigo "$ROOT_ENTERPRISE" produccion enterprise-validate 19.0-ee-2026-09-15)"
 igual "Enterprise no crea un candidato de dominio" "0" \
   "$([ ! -e "$ROOT_ENTERPRISE/runtime/addons/custom/produccion/enterprise" ]; echo $?)"
+printf '%s\n' 'ODOO_EDITION=enterprise' 'TAG=19.0-ee-2026-09-15' \
+  >> "$ROOT_ENTERPRISE/runtime/produccion/compose.env"
+export ENTERPRISE_REPOSITORY="$ADDON"
+igual "Enterprise resuelve el tag desde TAG" "0" \
+  "$(codigo "$ROOT_ENTERPRISE" produccion enterprise-sync)"
+unset ENTERPRISE_REPOSITORY
+ENTERPRISE_ANTERIOR=$(git -C "$ROOT_ENTERPRISE/runtime/addons/enterprise" rev-parse HEAD)
 igual "un tag Enterprise inexistente falla" "1" \
   "$(codigo "$ROOT_ENTERPRISE" produccion enterprise-sync "$ADDON" 19.0-ee-2026-09-16)"
+igual "el tag inexistente no cambia el checkout" "$ENTERPRISE_ANTERIOR" \
+  "$(git -C "$ROOT_ENTERPRISE/runtime/addons/enterprise" rev-parse HEAD)"
 git -C "$ADDON" tag 19.0-ee-2026-09-17 19.0
 ROOT_ENTERPRISE_LW=$(crear_checkout caso-enterprise-lightweight)
 igual "un tag Enterprise liviano no se acepta como inmutable" "1" \

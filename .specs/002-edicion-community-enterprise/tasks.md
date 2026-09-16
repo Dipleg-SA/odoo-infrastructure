@@ -22,11 +22,11 @@
 
 ## Phase 3: US3 — Construir una imagen Enterprise (P1)
 
-- [ ] T011 [US3] Adaptar `scripts/addons.sh` para resolver el tag Enterprise desde `TAG`, conservar compatibilidad con la invocación positional existente y validar el tag anotado e inmutable.
-- [ ] T012 [US3] Implementar en `scripts/build-odoo-image.sh` la rama Enterprise con checkout limpio, tag coherente con `TAG`, commit resoluble y publicación atómica de `Nueva` solo después del digest.
-- [ ] T013 [US3] Completar en `scripts/build-odoo-image.sh` la procedencia Enterprise con `enterprise_tag`, `enterprise_commit` y `enterprise_modules` derivados de manifiestos técnicos, manteniendo la separación del checkout privado.
-- [ ] T014 [TEST][US3] Extender `tests/test_build_odoo_image.sh` para cubrir checkout o tag ausente, tag liviano, tag inexistente, checkout inconsistente y build Enterprise válido.
-- [ ] T015 [TEST][US3] Extender `tests/test_addons.sh` para comprobar que `TAG` selecciona el candidato Enterprise correcto y que los errores no publican un candidato parcial.
+- [x] T011 [US3] Adaptar `scripts/addons.sh` para resolver el tag Enterprise desde `TAG`, conservar compatibilidad con la invocación positional existente y validar el tag anotado e inmutable.
+- [x] T012 [US3] Implementar en `scripts/build-odoo-image.sh` la rama Enterprise con checkout limpio, tag coherente con `TAG`, commit resoluble y publicación atómica de `Nueva` solo después del digest.
+- [x] T013 [US3] Completar en `scripts/build-odoo-image.sh` la procedencia Enterprise con `enterprise_tag`, `enterprise_commit` y `enterprise_modules` derivados de manifiestos técnicos, manteniendo la separación del checkout privado.
+- [x] T014 [TEST][US3] Extender `tests/test_build_odoo_image.sh` para cubrir checkout o tag ausente, tag liviano, tag inexistente, checkout inconsistente y build Enterprise válido.
+- [x] T015 [TEST][US3] Extender `tests/test_addons.sh` para comprobar que `TAG` selecciona el candidato Enterprise correcto y que los errores no publican un candidato parcial.
 
 ## Phase 4: US4 — Promover y revertir sin mezclar ediciones (P1)
 

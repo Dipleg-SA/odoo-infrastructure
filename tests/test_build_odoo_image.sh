@@ -13,7 +13,7 @@ mkdir -p runtime/addons/.repos runtime/addons/custom/desarrollo
 
 git -c init.defaultBranch=main init -q "$TMP/ee"
 git -C "$TMP/ee" config user.email test@example.invalid; git -C "$TMP/ee" config user.name test
-echo "enterprise" > "$TMP/ee/__manifest__.py"; git -C "$TMP/ee" add .; git -C "$TMP/ee" commit -qm inicial; git -C "$TMP/ee" tag -a 19.0-ee-2026-09-14 -m inmutable
+mkdir -p "$TMP/ee/ventas"; echo "enterprise" > "$TMP/ee/ventas/__manifest__.py"; git -C "$TMP/ee" add .; git -C "$TMP/ee" commit -qm inicial; git -C "$TMP/ee" tag -a 19.0-ee-2026-09-14 -m inmutable; git -C "$TMP/ee" tag 19.0-ee-2026-09-17
 git clone -q "$TMP/ee" runtime/addons/enterprise
 git -c init.defaultBranch=main init -q "$TMP/domain"
 git -C "$TMP/domain" config user.email test@example.invalid; git -C "$TMP/domain" config user.name test
@@ -27,14 +27,43 @@ if [ "${BUILD_FAIL:-0}" = 1 ] && [ "$1" = build ]; then exit 1; fi
 if [ "$1" = image ] && [ "$2" = inspect ]; then printf 'sha256:build-digest\n'; fi
 DOCKER
 chmod +x "$TMP/bin/docker"
-export ENTORNO=desarrollo ENTERPRISE_TAG=19.0-ee-2026-09-14 PATH="$TMP/bin:$PATH"
+export ENTORNO=desarrollo ENTERPRISE_TAG=19.0-ee-2026-09-13 PATH="$TMP/bin:$PATH"
 printf '%s\n' 'ODOO_EDITION=enterprise' 'TAG=19.0-ee-2026-09-14' >> runtime/desarrollo/compose.env
 salida=$(scripts/build-odoo-image.sh 2>&1); codigo=$?
 igual "build exitoso" 0 "$codigo"
 contiene "registra Nueva con tag inmutable" 'Nueva registrada: local/odoo:19.0-desarrollo-' "$salida"
-contiene "conserva digest" 'sha256:build-digest' "$(scripts/image-state.sh get Nueva)"
-contiene "exporta Enterprise" 'enterprise/__manifest__.py' "$(find runtime/addons/builds/desarrollo -path '*/enterprise/__manifest__.py' -print)"
+CONTENIDO_EE="$(scripts/image-state.sh get Nueva)"
+contiene "conserva digest" 'sha256:build-digest' "$CONTENIDO_EE"
+contiene "registra edición Enterprise" '"edition": "enterprise"' "$CONTENIDO_EE"
+contiene "registra tag Enterprise configurado" '"edition_tag": "19.0-ee-2026-09-14"' "$CONTENIDO_EE"
+contiene "registra commit Enterprise" '"enterprise_commit": "' "$CONTENIDO_EE"
+contiene "registra módulo Enterprise" '"enterprise_modules": ["ventas"]' "$CONTENIDO_EE"
+contiene "exporta Enterprise" 'enterprise/ventas/__manifest__.py' "$(find runtime/addons/builds/desarrollo -path '*/enterprise/ventas/__manifest__.py' -print)"
 contiene "exporta dominio" 'custom/ventas/__manifest__.py' "$(find runtime/addons/builds/desarrollo -path '*/custom/ventas/__manifest__.py' -print)"
+
+# Fallos de selección Enterprise
+# Ningún tag o checkout inválido puede publicar Nueva.
+printf '%s\n' 'TAG=' >> runtime/desarrollo/compose.env
+rm -f runtime/desarrollo/state/images.json
+sale_con "tag Enterprise ausente falla antes del build" 2 scripts/build-odoo-image.sh
+printf '%s\n' 'TAG=19.0-ee-2026-09-14' >> runtime/desarrollo/compose.env
+rm -f runtime/desarrollo/state/images.json
+rm -rf runtime/addons/enterprise
+sale_con "checkout Enterprise ausente falla" 1 scripts/build-odoo-image.sh
+git clone -q "$TMP/ee" runtime/addons/enterprise
+printf '%s\n' 'TAG=19.0-ee-2026-09-16' >> runtime/desarrollo/compose.env
+rm -f runtime/desarrollo/state/images.json
+sale_con "tag Enterprise inexistente falla" 1 scripts/build-odoo-image.sh
+printf '%s\n' 'TAG=19.0-ee-2026-09-17' >> runtime/desarrollo/compose.env
+rm -f runtime/desarrollo/state/images.json
+sale_con "tag Enterprise liviano falla" 1 scripts/build-odoo-image.sh
+printf '%s\n' 'TAG=19.0-ee-2026-09-14' >> runtime/desarrollo/compose.env
+touch runtime/addons/enterprise/edicion.local
+rm -f runtime/desarrollo/state/images.json
+sale_con "checkout Enterprise sucio falla" 1 scripts/build-odoo-image.sh
+rm -f runtime/addons/enterprise/edicion.local
+igual "los fallos no publican Nueva" 'null' "$(scripts/image-state.sh get Nueva)"
+
 export BUILD_FAIL=1
 rm -f runtime/desarrollo/state/images.json
 sale_con "build fallido no publica Nueva" 1 scripts/build-odoo-image.sh
@@ -54,7 +83,7 @@ contiene "registra tag Community" '"edition_tag": "19.0-ce-2026-09-16"' "$CONTEN
 contiene "omite tag Enterprise" '"enterprise_tag": null' "$CONTENIDO"
 contiene "omite commit Enterprise" '"enterprise_commit": null' "$CONTENIDO"
 contiene "registra inventario Enterprise vacío" '"enterprise_modules": []' "$CONTENIDO"
-CE_BUILD="$(find runtime/addons/builds/desarrollo -mindepth 1 -maxdepth 1 -type d -print | sort | tail -1)"
+CE_BUILD="$(find runtime/addons/builds/desarrollo -mindepth 2 -maxdepth 2 -name image.json -type f -print | while IFS= read -r metadata; do grep -q '"edition": "community"' "$metadata" && dirname "$metadata" && break; done)"
 igual "Community no exporta código Enterprise" '' "$(find "$CE_BUILD/enterprise" -name __manifest__.py -type f -print)"
 no_contiene "Community no registra código Enterprise" 'enterprise/__manifest__.py' "$CONTENIDO"
 

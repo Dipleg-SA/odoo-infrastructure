@@ -34,7 +34,7 @@ case "$ODOO_EDITION" in
     ENTERPRISE_TAG=""
     ;;
   enterprise)
-    [[ -n "$ENTERPRISE_TAG" ]] || fail 'falta ENTERPRISE_TAG; seleccionar un tag Enterprise antes del build'
+    ENTERPRISE_TAG="$TAG"
     [[ -d "$ENTERPRISE_ROOT/.git" ]] || fail 'falta runtime/addons/enterprise; ejecutar enterprise sync'
     scripts/addons.sh enterprise-validate "$ENTERPRISE_TAG" >/dev/null || fail 'Enterprise no coincide con el tag seleccionado'
     ;;
@@ -78,6 +78,13 @@ for i in "${!DOMAINS[@]}"; do
   mkdir -p "$BUILD_DIR/custom/$dominio"
   git -C "$ADDONS_ROOT/.repos/$dominio.git" archive --format=tar "${COMMITS[$i]}" | tar -xf - -C "$BUILD_DIR/custom/$dominio"
 done
+
+# Inventario técnico Enterprise
+# Los módulos se derivan del snapshot que realmente recibe Docker y no del checkout completo.
+ENTERPRISE_MODULES=""
+if [[ "$ODOO_EDITION" == enterprise ]]; then
+  ENTERPRISE_MODULES="$(find "$BUILD_DIR/enterprise" -type f -name __manifest__.py -print | while IFS= read -r manifest; do basename "$(dirname "$manifest")"; done | sort -u)"
+fi
 cp stacks/odoo/image/Dockerfile stacks/odoo/image/entrypoint.sh "$BUILD_DIR/"
 if [[ -f addons/requirements.txt ]]; then cp addons/requirements.txt "$BUILD_DIR/requirements.txt"; else : > "$BUILD_DIR/requirements.txt"; fi
 PYDEPS_REQUIREMENTS="$BUILD_DIR/requirements.txt" PYDEPS_SNAPSHOT_ROOT="$BUILD_DIR" scripts/pydeps.sh check
@@ -92,16 +99,17 @@ DIGEST="$(docker image inspect --format '{{.RepoDigests}}' "$IMAGE_TAG" 2>/dev/n
 # Procedencia y publicación
 # El estado se escribe una sola vez, después de build y digest exitosos.
 METADATA="$BUILD_DIR/image.json"
-python3 - "$METADATA" "$IMAGE_TAG" "$DIGEST" "$VERSION" "$BASE_IMAGE" "$ODOO_EDITION" "$TAG" "$ENTERPRISE_TAG" "$ENTERPRISE_COMMIT" "$ROOT" "$ENTORNO" "$MOMENTO" <<'PY'
+python3 - "$METADATA" "$IMAGE_TAG" "$DIGEST" "$VERSION" "$BASE_IMAGE" "$ODOO_EDITION" "$TAG" "$ENTERPRISE_TAG" "$ENTERPRISE_COMMIT" "$ENTERPRISE_MODULES" "$ROOT" "$ENTORNO" "$MOMENTO" <<'PY'
 import json, pathlib, subprocess, sys
-out, tag, digest, version, base, edition, edition_tag, ee_tag, ee_commit, root, env, built_at = sys.argv[1:]
+out, tag, digest, version, base, edition, edition_tag, ee_tag, ee_commit, ee_modules, root, env, built_at = sys.argv[1:]
 addons_root = pathlib.Path(root, "runtime", "addons", "custom", env)
 addons = {p.parent.name: p.read_text(encoding="utf-8").strip() for p in addons_root.glob("*/.candidate-commit")}
 infra = subprocess.check_output(["git", "-C", root, "rev-parse", "HEAD"], text=True).strip()
+enterprise_modules = sorted(filter(None, ee_modules.splitlines()))
 payload = {"tag": tag, "digest": digest, "odoo_version": version, "base_image": base, "infra_commit": infra,
            "edition": edition, "edition_tag": edition_tag,
            "enterprise_tag": ee_tag or None, "enterprise_commit": ee_commit or None,
-           "enterprise_modules": [], "addons": dict(sorted(addons.items())), "built_at": built_at}
+           "enterprise_modules": enterprise_modules, "addons": dict(sorted(addons.items())), "built_at": built_at}
 pathlib.Path(out).write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
 PY
 scripts/image-state.sh write-new "$METADATA"
