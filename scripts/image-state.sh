@@ -53,9 +53,9 @@ ensure_state() {
 transition() {
   local action="$1" argument="${2:-}"
   ensure_state
-  python3 - "$STATE_FILE" "$action" "$argument" "$ODOO_EDITION" <<'PY'
+  python3 - "$STATE_FILE" "$action" "$argument" "$ODOO_EDITION" "${EDITION_TRANSITION_VALIDATED:-0}" <<'PY'
 import datetime, json, os, pathlib, re, sys, tempfile
-state, action, argument, runtime_edition = sys.argv[1:]
+state, action, argument, runtime_edition, transition_validated = sys.argv[1:]
 path = pathlib.Path(state)
 data = json.loads(path.read_text(encoding="utf-8"))
 image_tag = re.compile(r"^[a-z0-9][a-z0-9./_-]*:[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -99,15 +99,29 @@ def validar_ranuras(value):
         if slot is not None and (not isinstance(slot, dict) or not isinstance(slot.get("tag"), str) or not image_tag.fullmatch(slot["tag"])):
             raise SystemExit(f"{key} tiene una referencia de imagen inválida")
 
-def validar_edicion(value):
+def validar_edicion(value, permitir_anterior=False, permitir_actual_transition=False):
     for key in ("Nueva", "Actual", "Anterior"):
         slot = value.get(key)
         if slot is not None and slot["edition"] != runtime_edition:
+            if key == "Anterior" and permitir_anterior:
+                continue
+            if (key == "Actual" and permitir_actual_transition and runtime_edition == "enterprise"
+                    and slot["edition"] == "community" and value.get("Nueva", {}).get("edition") == "enterprise"):
+                continue
             raise SystemExit(f"{key} de {slot['edition']} no coincide con ODOO_EDITION={runtime_edition}")
 
 for key, default in (("Nueva", None), ("Actual", None), ("Anterior", None), ("validation", None), ("rollback_blocked", False), ("module_operations", [])):
     data.setdefault(key, default)
 now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+validar_ranuras(data)
+if action == "apply":
+    validar_edicion(
+        data,
+        permitir_anterior=(data["Actual"] is not None and data["Nueva"] is not None
+                           and data["Actual"]["edition"] == runtime_edition
+                           and data["Nueva"]["edition"] == runtime_edition),
+        permitir_actual_transition=transition_validated == "1",
+    )
 if action == "apply":
     if data["Nueva"] is None: raise SystemExit("no hay Nueva para aplicar")
     data["Anterior"], data["Actual"], data["Nueva"] = data["Actual"], data["Nueva"], None
@@ -134,9 +148,8 @@ elif action == "restore-meta":
     data["Nueva"], data["rollback_blocked"] = None, False
     data["module_operations"] = []
 else: raise SystemExit("transición inválida")
-validar_ranuras(data)
 if action in ("apply", "rollback", "validate", "restore-meta"):
-    validar_edicion(data)
+    validar_edicion(data, permitir_anterior=action == "apply" and transition_validated == "1")
 if action != "require-actual":
     fd, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=str(path.parent))
     with os.fdopen(fd, "w", encoding="utf-8") as output:
@@ -163,6 +176,49 @@ else:
     lines.extend(["", "# Imagen Odoo", "# Referencia promovida por image-state.sh.", "ODOO_IMAGE=" + safe_tag])
 path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 PY
+}
+
+# Preflight de transición
+# Exige consulta ORM y backup asociado antes de cambiar la edición activa.
+validar_transicion_edicion() {
+  local actual nueva actual_edicion nueva_edicion metadata
+  actual=$("$0" get Actual 2>/dev/null || printf 'null')
+  nueva=$("$0" get Nueva 2>/dev/null || printf 'null')
+  [ "$actual" != null ] && [ "$nueva" != null ] || return 0
+
+  actual_edicion=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["edition"])' "$actual")
+  nueva_edicion=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["edition"])' "$nueva")
+  [ "$actual_edicion" != "$nueva_edicion" ] || return 0
+  if [ "$nueva_edicion" != "$ODOO_EDITION" ]; then
+    printf 'Nueva de %s no coincide con ODOO_EDITION=%s\n' "$nueva_edicion" "$ODOO_EDITION" >&2
+    return 1
+  fi
+
+  if ! ENTORNO="$ENTORNO" scripts/odoo-edition-check.sh --destino "$nueva_edicion"; then
+    printf 'el preflight bloqueó la transición hacia %s\n' "$nueva_edicion" >&2
+    return 1
+  fi
+
+  if [ "$ENTORNO" = produccion ]; then
+    metadata="$RUNTIME_STATE_DIR/meta/last-backup.json"
+    [ -f "$metadata" ] || {
+      printf 'falta backup asociado en %s\n' "$metadata" >&2
+      return 1
+    }
+    python3 - "$metadata" "$actual" <<'PY'
+import json, sys
+
+metadata = json.load(open(sys.argv[1], encoding='utf-8'))
+actual = json.loads(sys.argv[2])
+if (metadata.get('entorno') != 'produccion'
+        or not metadata.get('snapshot_id')
+        or metadata.get('edition') != actual.get('edition')
+        or metadata.get('actual_tag') != actual.get('tag')):
+    raise SystemExit(1)
+PY
+  fi
+  EDITION_TRANSITION_VALIDATED=1
+  export EDITION_TRANSITION_VALIDATED
 }
 
 case "${1:-}" in
@@ -265,6 +321,7 @@ print("estado de imágenes válido")
 PY
     ;;
   apply)
+    validar_transicion_edicion
     resultado=$(transition apply)
     tag=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["Actual"]["tag"])' <<<"$resultado")
     sync_compose_image "$tag"

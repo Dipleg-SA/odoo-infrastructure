@@ -90,6 +90,7 @@ printf 'COMPOSE_PROJECT_NAME=backup-context\nODOO_EDITION=community\nTAG=19.0-ce
   > "$ROOT/runtime/produccion/compose.env"
 printf '%s\n' 'RESTIC_REPOSITORY=s3:https://cuenta.r2.cloudflarestorage.com/bucket/restic' \
   > "$ROOT/stacks/backup/config/r2.env"
+printf '%s\n' '{"message_type":"summary","snapshot_id":"snap-context"}' > "$STUB_DIR/salida"
 definir_addons "$ROOT" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' 'dominio_ventas publicado abc123'

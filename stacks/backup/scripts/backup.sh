@@ -136,6 +136,65 @@ registrar_imagenes() {
   mv -f "$tmp" "$META_DIR/images.json"
 }
 
+# Metadata de backup asociado
+# Registra de forma atómica el snapshot y la imagen Actual que quedaron respaldados.
+registrar_backup_metadata() {
+  local backup_json="$1" snapshot_id actual_tag tmp
+  [ -n "${ENTORNO:-}" ] || return 0
+  [ -n "${ODOO_EDITION:-}" ] || return 0
+
+  snapshot_id=$(printf '%s\n' "$backup_json" | python3 -c '
+import json, sys
+
+ids = []
+for line in sys.stdin:
+    try:
+        value = json.loads(line)
+    except json.JSONDecodeError:
+        continue
+    values = value if isinstance(value, list) else [value]
+    ids.extend(item.get("snapshot_id") or item.get("id") for item in values if isinstance(item, dict))
+print(next((value for value in reversed(ids) if value), ""))
+')
+  if [ -z "$snapshot_id" ]; then
+    ui_bad "backup sin identificador de snapshot" "restic no devolvió snapshot_id; no se registra la transición" >&2
+    return 1
+  fi
+
+  actual_tag=$(python3 - "$META_DIR/images.json" <<'PY'
+import json, sys
+
+try:
+    state = json.load(open(sys.argv[1], encoding='utf-8'))
+except (OSError, json.JSONDecodeError):
+    state = {}
+actual = state.get('Actual')
+print(actual.get('tag', '') if isinstance(actual, dict) else '')
+PY
+  )
+  mkdir -p "$META_DIR"
+  tmp=$(mktemp "$META_DIR/.last-backup.XXXXXX")
+  python3 - "$tmp" "$snapshot_id" "$ENTORNO" "$ODOO_EDITION" "$actual_tag" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+
+path, snapshot_id, entorno, edition, actual_tag = sys.argv[1:]
+payload = {
+    'snapshot_id': snapshot_id,
+    'entorno': entorno,
+    'edition': edition,
+    'actual_tag': actual_tag or None,
+    'created_at': datetime.now(timezone.utc).isoformat(),
+}
+with open(path, 'w', encoding='utf-8') as output:
+    json.dump(payload, output, ensure_ascii=False, sort_keys=True)
+    output.write('\n')
+PY
+  chmod 644 "$tmp"
+  mv -f "$tmp" "$META_DIR/last-backup.json"
+  ui_ok "snapshot asociado registrado: $snapshot_id"
+}
+
 # --- Dump de la base ---
 # SIN COMPRIMIR, y no es un descuido: comprimido, zlib cambia el flujo de bytes
 # globalmente ante cualquier modificación y la deduplicación de restic cae a cero
@@ -171,7 +230,8 @@ case "$MODE" in
     dump_base
     registrar_addons
     registrar_imagenes
-    res backup /data/odoo /data/dump /data/meta --exclude=/data/odoo/sessions
+    backup_json=$(res backup --json /data/odoo /data/dump /data/meta --exclude=/data/odoo/sessions)
+    registrar_backup_metadata "$backup_json"
     res forget --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" \
                --keep-monthly "$KEEP_MONTHLY" --prune
     marcar_exito daily

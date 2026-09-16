@@ -8,22 +8,28 @@ Cuando un candidato de un entorno está listo para convertirse en una imagen inm
 
 Construir una fotografía trazable y promoverla manualmente después de validar el entorno anterior.
 
+## Flujo rápido
+
+1. Sincronizar candidatos y dependencias.
+2. Construir la fotografía y confirmar que Nueva tiene digest.
+3. Validar y aplicar la imagen en el entorno correspondiente.
+
 ## A mano
 
-Seleccioná el tag anotado de Enterprise y confirmá que el catálogo y los candidatos estén actualizados.
+La edición sale únicamente de `ODOO_EDITION` y `TAG` en el `compose.env` del entorno. Para Community no hace falta checkout Enterprise; para Enterprise seleccioná el tag anotado y confirmá que el catálogo y los candidatos estén actualizados.
 
 ## Comandos
 
 ```bash
 ENTORNO=desarrollo make repo-sync
 ENTORNO=desarrollo make addons-deps
-ENTORNO=desarrollo ENTERPRISE_TAG=19.0-ee-YYYY-MM-DD make build
+ENTORNO=desarrollo make build
 ENTORNO=desarrollo scripts/image-state.sh show
 ENTORNO=desarrollo make validate-image NOTE="validación manual"
 ENTORNO=desarrollo make apply-image
 ```
 
-Repetí el mismo recorrido en staging y producción usando el tag Enterprise inmutable aprobado. El build toma una fotografía bajo lock, copia Enterprise y dominios a la imagen y registra Nueva solo con build y digest exitosos.
+Para Enterprise, modificá esas dos variables en `runtime/desarrollo/compose.env` y repetí el build con el checkout privado disponible. Repetí el recorrido en staging y producción con el tag inmutable aprobado. El build toma una fotografía bajo lock, incorpora solo la edición seleccionada y registra Nueva después de confirmar build y digest exitosos. La instalación o actualización funcional de módulos Enterprise queda para una operación manual posterior.
 
 ## Verificación
 

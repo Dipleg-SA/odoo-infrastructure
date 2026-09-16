@@ -39,14 +39,14 @@
 
 ## Phase 5: US5 — Pasar de Community a Enterprise (P1)
 
-- [ ] T022 [US5] Crear `scripts/odoo-edition-check.sh` con la interfaz `ENTORNO=<entorno> scripts/odoo-edition-check.sh --destino <community|enterprise>`, consulta ORM de solo lectura, salida de módulos detectados y códigos `0` compatible, `1` bloqueado y `2` error.
-- [ ] T023 [US5] Integrar en `scripts/image-state.sh` y `stacks/backup/scripts/backup.sh` el preflight Community→Enterprise, el requisito de backup previo de producción, la metadata atómica `runtime/<entorno>/state/meta/last-backup.json` y el registro de la edición destino sin ejecutar operaciones funcionales.
-- [ ] T024 [P][US5] Documentar en `docs/modulos/construir-y-aplicar-imagen.md` el build Enterprise, la validación progresiva y la aplicación manual posterior de módulos.
-- [ ] T025 [P][US5] Documentar en `docs/modulos/validar-promocion.md` la transición Community→Enterprise como frontera de rollback y sus validaciones.
-- [ ] T026 [P][US5] Actualizar `docs/entorno/levantar-desarrollo.md` con el cambio de edición mediante configuración plana y validación aislada.
-- [ ] T027 [P][US5] Actualizar `docs/entorno/levantar-staging.md` con el flujo de validación Community→Enterprise antes de producción.
-- [ ] T028 [P][US5] Actualizar `docs/entorno/levantar-produccion.md` con el backup obligatorio y la aplicación controlada de una transición de edición.
-- [ ] T029 [TEST][US5] Agregar en `tests/test_edition_transition.sh` escenarios Community→Enterprise que verifiquen backup asociado, preflight de solo lectura, conservación de módulos Community, ausencia de cambios funcionales automáticos y recuperación por imagen anterior antes de operar módulos.
+- [x] T022 [US5] Crear `scripts/odoo-edition-check.sh` con la interfaz `ENTORNO=<entorno> scripts/odoo-edition-check.sh --destino <community|enterprise>`, consulta ORM de solo lectura, salida de módulos detectados y códigos `0` compatible, `1` bloqueado y `2` error.
+- [x] T023 [US5] Integrar en `scripts/image-state.sh` y `stacks/backup/scripts/backup.sh` el preflight Community→Enterprise, el requisito de backup previo de producción, la metadata atómica `runtime/<entorno>/state/meta/last-backup.json` y el registro de la edición destino sin ejecutar operaciones funcionales.
+- [x] T024 [P][US5] Documentar en `docs/modulos/construir-y-aplicar-imagen.md` el build Enterprise, la validación progresiva y la aplicación manual posterior de módulos.
+- [x] T025 [P][US5] Documentar en `docs/modulos/validar-promocion.md` la transición Community→Enterprise como frontera de rollback y sus validaciones.
+- [x] T026 [P][US5] Actualizar `docs/entorno/levantar-desarrollo.md` con el cambio de edición mediante configuración plana y validación aislada.
+- [x] T027 [P][US5] Actualizar `docs/entorno/levantar-staging.md` con el flujo de validación Community→Enterprise antes de producción.
+- [x] T028 [P][US5] Actualizar `docs/entorno/levantar-produccion.md` con el backup obligatorio y la aplicación controlada de una transición de edición.
+- [x] T029 [TEST][US5] Agregar en `tests/test_edition_transition.sh` escenarios Community→Enterprise que verifiquen backup asociado, preflight de solo lectura, conservación de módulos Community, ausencia de cambios funcionales automáticos y recuperación por imagen anterior antes de operar módulos.
 
 ## Phase 6: US6 — Pasar de Enterprise a Community (P1)
 
