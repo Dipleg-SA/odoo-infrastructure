@@ -50,12 +50,12 @@
 
 ## Phase 6: US6 — Pasar de Enterprise a Community (P1)
 
-- [ ] T030 [US6] Completar en `scripts/odoo-edition-check.sh` el bloqueo Enterprise→Community cuando la intersección entre módulos instalados y `enterprise_modules` no sea vacía, bloquear también si falta inventario histórico y permitir continuar solo con una base validada sin ellos.
-- [ ] T031 [US6] Completar en `scripts/image-state.sh` la guarda Enterprise→Community, evitando activar una imagen Community contra una base incompatible y conservando el backup asociado.
-- [ ] T032 [P][US6] Actualizar `docs/modulos/gestionar-enterprise.md` con el retiro manual de módulos Enterprise, la variante Community y la prohibición de conversión automática.
-- [ ] T033 [P][US6] Actualizar `docs/backup-restore/restore-staging.md` con la restauración de una copia sin módulos Enterprise para validar el destino Community.
-- [ ] T034 [P][US6] Actualizar `docs/backup-restore/restore-perdida-total.md` con la procedencia de edición y la recuperación segura de una transición Enterprise→Community.
-- [ ] T035 [TEST][US6] Completar `tests/test_edition_transition.sh` con base bloqueada por módulos Enterprise, base permitida sin ellos, backup asociado y rechazo de rollback cruzado.
+- [x] T030 [US6] Completar en `scripts/odoo-edition-check.sh` el bloqueo Enterprise→Community cuando la intersección entre módulos instalados y `enterprise_modules` no sea vacía, bloquear también si falta inventario histórico y permitir continuar solo con una base validada sin ellos.
+- [x] T031 [US6] Completar en `scripts/image-state.sh` la guarda Enterprise→Community, evitando activar una imagen Community contra una base incompatible y conservando el backup asociado.
+- [x] T032 [P][US6] Actualizar `docs/modulos/gestionar-enterprise.md` con el retiro manual de módulos Enterprise, la variante Community y la prohibición de conversión automática.
+- [x] T033 [P][US6] Actualizar `docs/backup-restore/restore-staging.md` con la restauración de una copia sin módulos Enterprise para validar el destino Community.
+- [x] T034 [P][US6] Actualizar `docs/backup-restore/restore-perdida-total.md` con la procedencia de edición y la recuperación segura de una transición Enterprise→Community.
+- [x] T035 [TEST][US6] Completar `tests/test_edition_transition.sh` con base bloqueada por módulos Enterprise, base permitida sin ellos, backup asociado y rechazo de rollback cruzado.
 
 ## Phase 7: US7 — Restaurar y conservar compatibilidad histórica (P2)
 

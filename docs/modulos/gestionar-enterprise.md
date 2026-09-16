@@ -127,3 +127,21 @@ Probá el flujo con cuidado y confirmá que llegó el correo si el cambio lo dis
 **Sin staging por git.** Sin `repo-sync` no hay forma de traer este cambio al servidor de staging antes de producción por el camino habitual. Si querés probarlo antes de tocar producción, repetí este mismo `unzip` + `addons-install`/`addons-update` a mano en el checkout de staging primero — es la única forma de validarlo con este mecanismo.
 
 La carpeta sigue gitignoreada por dentro, igual que cualquier otra categoría: el ZIP nunca se versiona.
+
+## Retirar Enterprise y pasar a Community
+
+No retires el checkout Enterprise antes de quitar sus módulos de la base. La imagen Community no puede arrancar de forma segura si la base conserva módulos Enterprise instalados.
+
+1. Conservá el backup asociado y restaurá una copia en staging.
+2. Identificá los módulos Enterprise instalados y desinstalalos manualmente en esa copia:
+
+   ```bash
+   ENTORNO=staging scripts/odoo-edition-check.sh --destino community
+   ENTORNO=staging make addons-uninstall MODULES=<nombre_tecnico>
+   ENTORNO=staging make verify
+   ```
+
+3. Cambiá únicamente `ODOO_EDITION=community` y `TAG=19.0-ce-YYYY-MM-DD` en el `compose.env`, retiră el ZIP Enterprise del checkout aislado y construí una imagen Community.
+4. Validá nuevamente staging. No desinstales, actualices ni conviertas módulos automáticamente durante `apply-image`.
+
+En producción, `apply-image` vuelve a ejecutar el preflight y exige el backup asociado antes de aceptar la transición. La imagen Enterprise anterior queda como frontera de recuperación; `rollback-image` no la reactiva contra el runtime Community. Si la base todavía tiene módulos Enterprise, el preflight bloquea el cambio.

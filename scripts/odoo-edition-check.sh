@@ -81,6 +81,7 @@ PY
     printf 'la base no es compatible con Community\n' >&2
     exit 1
   fi
+  printf 'base compatible con Community\n'
 fi
 
 exit 0

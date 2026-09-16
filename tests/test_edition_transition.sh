@@ -35,7 +35,7 @@ cat > "$TMP/bin/docker" <<'DOCKER'
 printf '%s\n' "$*" >> "$STUB_DIR/llamadas"
 case "$*" in
   *"run --rm --name odoo-edition-check"*)
-    printf '%s\n' 'ODOO_EDITION_CHECK_MODULES=base,ventas'
+    printf '%s\n' "ODOO_EDITION_CHECK_MODULES=${EDITION_CHECK_MODULES:-base,ventas}"
     ;;
   *"restic backup --json"*)
     printf '%s\n' '{"message_type":"summary","snapshot_id":"snap-transition-1"}'
@@ -129,6 +129,62 @@ rm -f "$ROOT/runtime/produccion/state/meta/last-backup.json"
 salida=$(cd "$ROOT" && ENTORNO=produccion scripts/image-state.sh apply 2>&1); codigo=$?
 igual "bloquea transición sin backup asociado" 1 "$codigo"
 igual "conserva Actual ante el bloqueo" "local/odoo:community" \
+  "$(cd "$ROOT" && ENTORNO=produccion scripts/image-state.sh get Actual | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag"])')"
+
+titulo "Enterprise a Community — compatibilidad y reversión"
+escribir_estado
+escribir_entorno community 19.0-ce-2026-09-16
+python3 - "$ROOT/runtime/produccion/state/images.json" <<'PY'
+import json, sys
+
+path = sys.argv[1]
+state = json.load(open(path, encoding='utf-8'))
+state['Actual'], state['Nueva'], state['Anterior'] = state['Nueva'], state['Actual'], None
+json.dump(state, open(path, 'w', encoding='utf-8'))
+PY
+python3 - "$ROOT/runtime/produccion/state/meta/last-backup.json" <<'PY'
+import json, sys
+
+json.dump({
+    'snapshot_id': 'snap-enterprise-1', 'entorno': 'produccion',
+    'edition': 'enterprise', 'actual_tag': 'local/odoo:enterprise',
+    'created_at': '2026-09-16T00:00:00+00:00',
+}, open(sys.argv[1], 'w', encoding='utf-8'))
+PY
+salida=$(cd "$ROOT" && ENTORNO=produccion scripts/image-state.sh apply 2>&1); codigo=$?
+igual "bloquea Community con módulo Enterprise instalado" 1 "$codigo"
+igual "conserva Enterprise ante el bloqueo" "local/odoo:enterprise" \
+  "$(cd "$ROOT" && ENTORNO=produccion scripts/image-state.sh get Actual | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag"])')"
+
+python3 - "$ROOT/runtime/produccion/state/images.json" <<'PY'
+import json, sys
+
+path = sys.argv[1]
+state = json.load(open(path, encoding='utf-8'))
+state['Actual'].pop('enterprise_modules')
+json.dump(state, open(path, 'w', encoding='utf-8'))
+PY
+salida=$(cd "$ROOT" && ENTORNO=produccion scripts/odoo-edition-check.sh --destino community 2>&1); codigo=$?
+igual "bloquea sin inventario Enterprise histórico" 1 "$codigo"
+
+python3 - "$ROOT/runtime/produccion/state/images.json" <<'PY'
+import json, sys
+
+path = sys.argv[1]
+state = json.load(open(path, encoding='utf-8'))
+state['Actual']['enterprise_modules'] = []
+json.dump(state, open(path, 'w', encoding='utf-8'))
+PY
+export EDITION_CHECK_MODULES=base
+salida=$(cd "$ROOT" && ENTORNO=produccion scripts/image-state.sh apply 2>&1); codigo=$?
+igual "permite Community sin módulos Enterprise" 0 "$codigo"
+igual "registra Community como Actual" "local/odoo:community" \
+  "$(cd "$ROOT" && ENTORNO=produccion scripts/image-state.sh get Actual | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag"])')"
+igual "conserva Enterprise como Anterior" "local/odoo:enterprise" \
+  "$(cd "$ROOT" && ENTORNO=produccion scripts/image-state.sh get Anterior | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag"])')"
+sale_con "bloquea rollback cruzado hacia Enterprise" 1 \
+  bash -c "cd '$ROOT' && ENTORNO=produccion scripts/image-state.sh rollback"
+igual "conserva Community ante rollback cruzado" "local/odoo:community" \
   "$(cd "$ROOT" && ENTORNO=produccion scripts/image-state.sh get Actual | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag"])')"
 
 resumen

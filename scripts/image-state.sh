@@ -105,8 +105,11 @@ def validar_edicion(value, permitir_anterior=False, permitir_actual_transition=F
         if slot is not None and slot["edition"] != runtime_edition:
             if key == "Anterior" and permitir_anterior:
                 continue
-            if (key == "Actual" and permitir_actual_transition and runtime_edition == "enterprise"
-                    and slot["edition"] == "community" and value.get("Nueva", {}).get("edition") == "enterprise"):
+            if (key == "Actual" and permitir_actual_transition
+                    and ((runtime_edition == "enterprise" and slot["edition"] == "community"
+                          and value.get("Nueva", {}).get("edition") == "enterprise")
+                         or (runtime_edition == "community" and slot["edition"] == "enterprise"
+                             and value.get("Nueva", {}).get("edition") == "community"))):
                 continue
             raise SystemExit(f"{key} de {slot['edition']} no coincide con ODOO_EDITION={runtime_edition}")
 
