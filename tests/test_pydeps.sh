@@ -101,6 +101,39 @@ pinear "$ROOT" "python_dateutil==2.9.0"
 igual "'Python-Dateutil' declarado == 'python_dateutil' pineado" "0" "$(check_code "$ROOT")"
 
 # =====================================================================
+# titulo "check: módulo importable y distribución con nombres distintos"
+# =====================================================================
+
+ROOT=$(crear_checkout caso_openssl)
+declarar_modulo "$ROOT" oca otro_modulo OpenSSL PIL yaml dateutil jwt magic ldap
+pinear "$ROOT" "pyOpenSSL==25.3.0"
+pinear "$ROOT" "Pillow==11.3.0"
+pinear "$ROOT" "PyYAML==6.0.2"
+pinear "$ROOT" "python-dateutil==2.9.0"
+pinear "$ROOT" "PyJWT==2.10.1"
+pinear "$ROOT" "python-magic==0.4.27"
+pinear "$ROOT" "python-ldap==3.4.4"
+
+igual "los módulos importables quedan cubiertos por sus distribuciones" "0" "$(check_code "$ROOT")"
+
+# =====================================================================
+# titulo "sync: resuelve la distribución de un módulo importable"
+# =====================================================================
+
+ROOT=$(crear_checkout caso_openssl_sync)
+declarar_modulo "$ROOT" oca otro_modulo OpenSSL
+STUB=$(mktemp -d)
+cat > "$STUB/salida" <<'JSON'
+{"version": "1", "install": [{"metadata": {"name": "pyOpenSSL", "version": "25.3.0"}}]}
+JSON
+
+igual "sale con 0" "0" "$(sync_code "$ROOT" "$STUB")"
+contiene "le pide a pip pyOpenSSL" "pyOpenSSL" "$(cat "$STUB/llamadas")"
+igual "guarda el pin de pyOpenSSL" "0" \
+  "$(grep -qx 'pyOpenSSL==25.3.0' "$ROOT/runtime/addons/requirements.txt"; echo $?)"
+rm -rf "$STUB"
+
+# =====================================================================
 titulo "check: un rango de versión queda cubierto por su pin"
 # =====================================================================
 
