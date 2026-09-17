@@ -2,7 +2,13 @@
 
 | Nombre | Código | Versión | Fecha | Estado |
 | --- | --- | --- | --- | --- |
-| gestion-addons-inmutables | PLAN-001 | R01 | 2026-09-14 | Approved |
+| gestion-addons-inmutables | PLAN-001 | R01 | 2026-09-14 | Converged |
+
+## Estado y contexto
+
+PLAN-001 queda convergido junto con SPEC-001. `runtime/<entorno>/`,
+`runtime/addons/` y `runtime/control/` son el diseño vigente; las menciones al
+selector `.env` y a `envs/` identifican el modelo reemplazado, no un procedimiento operativo.
 
 ## Enfoque
 
@@ -10,7 +16,7 @@ La migración sustituirá el selector implícito `.env` por `runtime/desarrollo/
 
 Los repositorios de dominio se materializarán como candidatos por entorno. Enterprise será un checkout privado único seleccionado por tag inmutable. Un build manual copiará una fotografía de ambas fuentes a rutas internas de la imagen Odoo y registrará Nueva; un receptor HTTP aislado solo reconciliará candidatos de dominio. El runtime de producción incluirá el receptor en su red edge y Nginx publicará exclusivamente su ruta de GitHub.
 
-## Verificación constitucional
+## Verificación de la constitución
 
 - **Stack tecnológico**: Conforme. Usa Bash, Make, Compose y Python estándar para el receptor; no incorpora frameworks ni gestores externos.
 - **Principios de código**: Conforme. Conserva un stack por contenedor, español y pruebas de contratos para cada script o composición modificada.
@@ -139,7 +145,7 @@ Cada `runtime/<entorno>/state/images.json` contendrá Nueva, Actual y Anterior. 
 
 El estado de webhook guarda identificador de entrega, repositorio, rama, commit, entorno, instante y resultado. Una entrega repetida para el mismo commit deja el candidato en el mismo estado.
 
-## Contratos de interfaces
+## Contratos de interfaz
 
 - **Contexto**: `ENTORNO=desarrollo|staging|produccion make <verbo>`; cualquier otro valor o ausencia falla antes de Compose.
 - **Catálogo**: cada línea no vacía contiene una URL de repositorio de dominio; entorno determina la rama y el destino.
@@ -152,7 +158,7 @@ El estado de webhook guarda identificador de entrega, repositorio, rama, commit,
 
 No se agregan paquetes de aplicación ni servicios de gestión. El receptor usa Python estándar dentro de una imagen Python con tag explícito; Compose, Git y Docker ya existen en el modelo operativo.
 
-## Riesgos e incógnitas
+## Riesgos y desconocidos
 
 - La transición de configuraciones y secretos existentes debe crear plantillas y rutas runtime antes de retirar las rutas globales.
 - El catálogo actual por categorías requiere una migración explícita a repositorios de dominio.

@@ -1,8 +1,14 @@
-# Spec: Gestión de addons inmutables
+# Especificación: Gestión de addons inmutables
 
 | Nombre | Código | Versión | Fecha | Estado |
 | --- | --- | --- | --- | --- |
 | gestion-addons-inmutables | SPEC-001 | R00 | 2026-09-15 | Converged |
+
+## Estado y contexto
+
+SPEC-001 está convergida. Las referencias a `.env` raíz, `envs/` y al modelo previo
+describen la migración histórica; las rutas vigentes son `runtime/<entorno>/`,
+`runtime/addons/` y `runtime/control/`.
 
 ## Resumen
 

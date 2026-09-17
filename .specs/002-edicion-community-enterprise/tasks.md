@@ -1,10 +1,16 @@
-# Tasks: Edición Community o Enterprise
+# Tareas: Edición Community o Enterprise
 
 | Nombre | Código | Versión | Fecha | Estado |
 | --- | --- | --- | --- | --- |
-| Edición Community o Enterprise | TASKS-002 | R00 | 2026-09-16 | Approved |
+| Edición Community o Enterprise | TASKS-002 | R00 | 2026-09-16 | Converged |
 
-## Phase 1: Setup y contrato de configuración
+## Estado y contexto
+
+TASKS-002 está completo y convergido. Las tareas verificadas describen el contrato
+vigente de `ODOO_EDITION` y `TAG`; las menciones a estados históricos registran
+compatibilidad de restore y no agregan rutas ejecutables actuales.
+
+## Fase 1: Preparación y contrato de configuración
 
 - [x] T001 [US1] Agregar a `scripts/lib/contexto.sh` la carga, exportación y validación de `ODOO_EDITION` y `TAG`, incluyendo la correspondencia entre edición y prefijo `19.0-ce-` o `19.0-ee-`.
 - [x] T002 [P][US1] Actualizar `runtime/desarrollo/compose.env.example` con la configuración plana Community (`ODOO_EDITION=community` y `TAG=19.0-ce-YYYY-MM-DD`).
@@ -12,7 +18,7 @@
 - [x] T004 [P][US1] Actualizar `runtime/produccion/compose.env.example` con la configuración plana Community (`ODOO_EDITION=community` y `TAG=19.0-ce-YYYY-MM-DD`).
 - [x] T005 [TEST][US1] Extender `tests/test_compose.sh` para comprobar configuración plana válida de Community y Enterprise y rechazar edición ausente, valor inválido, tag ausente, formato inválido y prefijo incompatible; actualizar los fixtures de `tests/test_contextos.sh`, `tests/test_addon_operations.sh`, `tests/test_addons.sh`, `tests/test_backup.sh`, `tests/test_build_odoo_image.sh`, `tests/test_report_config.sh` y `tests/test_scripts.sh` para declarar el contrato requerido.
 
-## Phase 2: US2 — Construir una imagen Community (P1)
+## Fase 2: US2 — Construir una imagen Community (P1)
 
 - [x] T006 [US2] Implementar en `scripts/build-odoo-image.sh` la rama Community sin exigir checkout, credencial ni tag Enterprise, ignorando cualquier checkout residual.
 - [x] T007 [US2] Registrar en `scripts/build-odoo-image.sh` la procedencia Community con `edition`, `edition_tag`, digest, línea de Odoo, commit de infraestructura, commits de addons y momento de construcción.
@@ -20,7 +26,7 @@
 - [x] T009 [P][US2] Ajustar `stacks/odoo/image/entrypoint.sh` para agregar Enterprise al `addons_path` únicamente cuando existan manifiestos Enterprise válidos.
 - [x] T010 [TEST][US2] Agregar en `tests/test_build_odoo_image.sh` un escenario Community con checkout Enterprise residual y verificar que la imagen y sus metadatos no lo incorporen.
 
-## Phase 3: US3 — Construir una imagen Enterprise (P1)
+## Fase 3: US3 — Construir una imagen Enterprise (P1)
 
 - [x] T011 [US3] Adaptar `scripts/addons.sh` para resolver el tag Enterprise desde `TAG`, conservar compatibilidad con la invocación positional existente y validar el tag anotado e inmutable.
 - [x] T012 [US3] Implementar en `scripts/build-odoo-image.sh` la rama Enterprise con checkout limpio, tag coherente con `TAG`, commit resoluble y publicación atómica de `Nueva` solo después del digest.
@@ -28,7 +34,7 @@
 - [x] T014 [TEST][US3] Extender `tests/test_build_odoo_image.sh` para cubrir checkout o tag ausente, tag liviano, tag inexistente, checkout inconsistente y build Enterprise válido.
 - [x] T015 [TEST][US3] Extender `tests/test_addons.sh` para comprobar que `TAG` selecciona el candidato Enterprise correcto y que los errores no publican un candidato parcial.
 
-## Phase 4: US4 — Promover y revertir sin mezclar ediciones (P1)
+## Fase 4: US4 — Promover y revertir sin mezclar ediciones (P1)
 
 - [x] T016 [US4] Extender `scripts/image-state.sh` con `edition`, `edition_tag` y los campos Enterprise opcionales u obligatorios según la edición, incluyendo inferencia de estados históricos Enterprise.
 - [x] T017 [US4] Agregar en `scripts/image-state.sh` las guardas de edición para `verify`, `apply-image`, `rollback-image`, rotación de `Nueva`/`Actual`/`Anterior` y sincronización del selector de Compose.
@@ -37,7 +43,7 @@
 - [x] T020 [TEST][US4] Extender `tests/test_image_state.sh` con estados Community y Enterprise, mismatch de ranuras, promoción válida, rollback cruzado bloqueado e inferencia histórica.
 - [x] T021 [TEST][US4] Extender `tests/test_verify.sh` para comprobar que `verify` detecta una imagen activa de edición distinta y una procedencia inconsistente.
 
-## Phase 5: US5 — Pasar de Community a Enterprise (P1)
+## Fase 5: US5 — Pasar de Community a Enterprise (P1)
 
 - [x] T022 [US5] Crear `scripts/odoo-edition-check.sh` con la interfaz `ENTORNO=<entorno> scripts/odoo-edition-check.sh --destino <community|enterprise>`, consulta ORM de solo lectura, salida de módulos detectados y códigos `0` compatible, `1` bloqueado y `2` error.
 - [x] T023 [US5] Integrar en `scripts/image-state.sh` y `stacks/backup/scripts/backup.sh` el preflight Community→Enterprise, el requisito de backup previo de producción, la metadata atómica `runtime/<entorno>/state/meta/last-backup.json` y el registro de la edición destino sin ejecutar operaciones funcionales.
@@ -48,7 +54,7 @@
 - [x] T028 [P][US5] Actualizar `docs/entorno/levantar-produccion.md` con el backup obligatorio y la aplicación controlada de una transición de edición.
 - [x] T029 [TEST][US5] Agregar en `tests/test_edition_transition.sh` escenarios Community→Enterprise que verifiquen backup asociado, preflight de solo lectura, conservación de módulos Community, ausencia de cambios funcionales automáticos y recuperación por imagen anterior antes de operar módulos.
 
-## Phase 6: US6 — Pasar de Enterprise a Community (P1)
+## Fase 6: US6 — Pasar de Enterprise a Community (P1)
 
 - [x] T030 [US6] Completar en `scripts/odoo-edition-check.sh` el bloqueo Enterprise→Community cuando la intersección entre módulos instalados y `enterprise_modules` no sea vacía, bloquear también si falta inventario histórico y permitir continuar solo con una base validada sin ellos.
 - [x] T031 [US6] Completar en `scripts/image-state.sh` la guarda Enterprise→Community, evitando activar una imagen Community contra una base incompatible y conservando el backup asociado.
@@ -57,7 +63,7 @@
 - [x] T034 [P][US6] Actualizar `docs/backup-restore/restore-perdida-total.md` con la procedencia de edición y la recuperación segura de una transición Enterprise→Community.
 - [x] T035 [TEST][US6] Completar `tests/test_edition_transition.sh` con base bloqueada por módulos Enterprise, base permitida sin ellos, backup asociado y rechazo de rollback cruzado.
 
-## Phase 7: US7 — Restaurar y conservar compatibilidad histórica (P2)
+## Fase 7: US7 — Restaurar y conservar compatibilidad histórica (P2)
 
 - [x] T036 [TEST][US7] Agregar en `tests/test_image_state.sh` un estado Enterprise histórico sin `edition` y comprobar que se normaliza al leerlo sin exigir una reescritura manual de sus metadatos.
 - [x] T037 [P][US7] Actualizar `docs/README.md` con el contrato único de `ODOO_EDITION` y `TAG`, incluyendo la migración de la documentación v2 a `docs/`.
@@ -65,7 +71,7 @@
 - [x] T039 [P][US7] Actualizar `docs/backup-restore/migrar-deployment-externo.md` para seleccionar Community o Enterprise y conservar la procedencia correspondiente.
 - [x] T040 [TEST][US7] Extender `tests/test_backup.sh` para ejecutar backup y restore de una fotografía Community nueva, conservar `edition` y `edition_tag` en `images.json` y comprobar que no se intenta recuperar código Enterprise.
 
-## Verification
+## Verificación
 
 - [x] VERIFY Ejecutar `make test` y comprobar todos los escenarios de aceptación de `spec.md`, incluidos ambos sentidos de transición.
 - [x] VERIFY Ejecutar `bash -n` sobre `scripts/lib/contexto.sh`, `scripts/addons.sh`, `scripts/build-odoo-image.sh`, `scripts/image-state.sh`, `scripts/odoo-edition-check.sh`, `stacks/odoo/image/entrypoint.sh`, `stacks/odoo/verify.sh` y los scripts de test modificados.
@@ -76,7 +82,7 @@
 - [x] VERIFY Confirmar que no se modificaron archivos privados `runtime/*/compose.env`, checkout Enterprise ni secretos, y que no se agregaron dependencias fuera de `plan.md`.
 - [x] VERIFY Confirmar que no se viola ningún principio `MUST` de `.specs/constitution.md` y que la documentación operativa permanece en español.
 
-## Phase 8: Convergencia
+## Fase 8: Convergencia
 
 - [x] T041 [US4] Completar `stacks/odoo/verify.sh` para validar `Nueva`, `Actual` y `Anterior` contra `ODOO_EDITION`, preservando la excepción explícita de una transición validada, y cubrir el rechazo de ranuras incompatibles en `tests/test_verify.sh` (partial; US4/AC1).
 - [x] T042 [US7] Ajustar `stacks/backup/scripts/restore.sh` para recuperar la metadata `/data/meta` desde el snapshot antes de reaplicar `images.json`, y agregar en `tests/test_backup.sh` un caso de checkout nuevo o metadata local obsoleta (partial; US7/AC2, plan de restore).
