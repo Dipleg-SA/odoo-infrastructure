@@ -11,7 +11,7 @@ CONTEXTO_COMPOSE := scripts/lib/contexto.sh compose
 include .make/main.mk
 
 .PHONY: help up down logs ps nuke reset build apply-image rollback-image validate-image promotion-verify \
-        secrets-init secrets-perms secrets-check config-init dev-workspace \
+        secrets-init secrets-perms secrets-check config-init runtime-workspace dev-workspace \
         odoo-report-config \
         host-init host-verify up-timers down-timers notify-test monitoring-role \
         cert-issue cert-renew \
@@ -24,7 +24,7 @@ include .make/main.mk
 
 # Selector de operaciones
 # Todos los comandos del runtime validan el entorno antes de ejecutar sus recetas.
-RUNTIME_TARGETS := secrets-init secrets-perms secrets-check config-init dev-workspace odoo-report-config \
+RUNTIME_TARGETS := secrets-init secrets-perms secrets-check config-init runtime-workspace dev-workspace odoo-report-config \
                    host-verify up-timers down-timers notify-test monitoring-role cert-issue cert-renew \
                    backup-run backup-integrity restore repo-sync repo-status \
                    integrity-check \
@@ -64,19 +64,24 @@ secrets-check: ## Verifica permisos de secrets
 	scripts/secrets-perms.sh --check
 
 # Mismo mecanismo que secrets-init, pero para los .conf/.ini/.yaml gitignoreados de
-# stacks/*/config/ y addons/: un cp idempotente desde el .example de cada uno.
+# stacks/*/config/: un cp idempotente desde el .example de cada uno.
 config-init: ## Bootstrapea los config reales desde su .example
 	scripts/config-init.sh
 
 odoo-report-config: ## Configura las URLs pública e interna de los reportes Odoo
 	scripts/odoo-report-config.sh
 
-# --- [HOST] Workspace de VS Code ---
-# Un folder por tipo de addon + la raíz de infra, generado desde el runtime — para
-# no mezclar edición de módulos con archivos de infraestructura en el mismo árbol.
 
-dev-workspace: ## Genera <entorno>.code-workspace: un folder por tipo de addon + infra
+# --- [HOST] Workspace de VS Code ---
+# Expone los candidatos operativos del entorno y la infraestructura sin presentar
+# el runtime derivado como un checkout de desarrollo de módulos.
+
+runtime-workspace: ## Genera el workspace operativo del entorno y sus candidatos
 	scripts/vscode-workspace.sh
+
+dev-workspace: ## Alias temporal de runtime-workspace
+	@. scripts/lib/ui.sh; ui_warn "dev-workspace está obsoleto" "usar make runtime-workspace"
+	@$(MAKE) runtime-workspace
 
 # Selector de runtime
 # Falla antes de Docker si falta el entorno, su composición o su archivo privado.
@@ -204,7 +209,7 @@ reset: TARGET=reset
 reset: require-not-production ## Borra los datos (volúmenes) y vuelve a levantar limpio — nunca en producción
 	@. scripts/lib/ui.sh; \
 	  ui_warn "esto borra los datos de este stack" \
-	    "volúmenes (base, filestore, dumps) — containers, imágenes y addons/ quedan igual"; \
+	    "volúmenes (base, filestore, dumps) — containers, imágenes y runtime/addons/ quedan igual"; \
 	  ui_confirm reset || exit 1; \
 	  ui_run "reset" bash -c '$(CONTEXTO_COMPOSE) down -v && $(CONTEXTO_COMPOSE) up -d'
 	@$(MAKE) odoo-report-config
