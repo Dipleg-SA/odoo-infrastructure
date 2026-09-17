@@ -27,13 +27,14 @@ GRAFANA_CONTAINER="odoo-smoke-grafana-$$"
 trap 'docker rm -f "$GRAFANA_CONTAINER" >/dev/null 2>&1 || true; docker image rm "$ODOO_IMAGE" >/dev/null 2>&1 || true; rm -rf "$TMP"' EXIT
 
 # Contexto real de Odoo
-# Enterprise, custom y requirements llegan como entradas separadas del contexto temporal.
+# Enterprise, custom y el lock llegan como entradas separadas del contexto temporal.
 mkdir -p "$TMP/odoo/enterprise" "$TMP/odoo/custom"
+mkdir -p "$TMP/odoo/requirements.sources"
 cp stacks/odoo/image/Dockerfile stacks/odoo/image/entrypoint.sh "$TMP/odoo/"
-: > "$TMP/odoo/requirements.txt"
+: > "$TMP/odoo/requirements.lock.txt"
 docker build --pull --tag "$ODOO_IMAGE" "$TMP/odoo"
 docker run --rm --entrypoint /bin/sh "$ODOO_IMAGE" -c \
-  'test -x /usr/local/bin/odoo-entrypoint.sh && test -d /opt/odoo/enterprise && test -d /opt/odoo/custom && test ! -e /tmp/requirements.txt'
+  'test -x /usr/local/bin/odoo-entrypoint.sh && test -d /opt/odoo/enterprise && test -d /opt/odoo/custom && test ! -e /tmp/requirements.txt && test ! -e /tmp/wheels && ! command -v swig >/dev/null 2>&1 && ! command -v gcc >/dev/null 2>&1'
 
 # Nginx
 # El hostname y el certificado se materializan en un árbol descartable antes de validar nginx -t.

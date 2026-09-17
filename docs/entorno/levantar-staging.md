@@ -16,14 +16,14 @@ Un runtime aislado que recibe exclusivamente `19.0-stag`, con SMTP desactivado y
 
 ## A mano
 
-Copiá las tres plantillas antes de iniciar el runtime. `runtime/staging/compose.env` declara `ADDONS_REF=19.0-stag`; esa rama debe existir en todos los dominios del catálogo y staging nunca la crea ni la sobrescribe.
+Copiá las tres plantillas antes de iniciar el runtime. `runtime/staging/compose.env` declara `ADDONS_REF=19.0-stag`; esa rama debe existir en todos los dominios del catálogo y staging nunca la crea ni la sobrescribe. Los repositorios aportan sus `requirements.txt`; el override local queda solo para excepciones.
 
 ## Comandos
 
 ```bash
 cp runtime/staging/compose.env.example runtime/staging/compose.env
 cp runtime/addons/catalogo.txt.example runtime/addons/catalogo.txt
-cp runtime/addons/requirements.txt.example runtime/addons/requirements.txt
+cp runtime/addons/requirements.override.txt.example runtime/addons/requirements.override.txt
 ENTORNO=staging make secrets-init config-init
 sudo ENTORNO=staging make secrets-perms
 ENTORNO=staging make host-verify

@@ -35,7 +35,7 @@ El checkout de Enterprise pertenece a una única línea mayor y se selecciona po
 - Toda operación usa `ENTORNO=desarrollo|staging|produccion`; sin esa variable falla antes de Compose.
 - Cada `compose.env` declara `ADDONS_REF`: desarrollo usa `feat/*` y la inicializa desde `19.0` cuando falta; staging consume `19.0-stag` y producción `19.0` sin crear ni sobrescribir ramas. `scripts/addons.sh` publica el SHA completo en `.candidate-commit`.
 - El webhook valida firma, catálogo y rama; actualiza solo el candidato y usa el lock del entorno.
-- `scripts/build-odoo-image.sh` toma el mismo lock, exporta SHAs desde clones bare, copia solo la edición seleccionada y los dominios a la fotografía, resuelve dependencias y registra Nueva después de obtener digest.
+- `scripts/build-odoo-image.sh` toma el mismo lock, exporta SHAs desde clones bare, copia solo la edición seleccionada y los dominios a la fotografía, compila sus `requirements.txt` con overrides locales, fija referencias Git y registra Nueva después de obtener digest.
 - `stacks/odoo/compose.yaml` consume `ODOO_IMAGE` y no monta addons del host. El entrypoint usa Enterprise, dominios propios y Community, en ese orden.
 - `scripts/image-state.sh` conserva `Nueva`, `Actual`, `Anterior`, validación y procedencia. `apply` promueve; `rollback` reactiva Anterior si no hubo operaciones de módulos.
 - `scripts/odoo-module-operation.sh` exige Actual y registra que el rollback solo de imagen quedó bloqueado después de una operación exitosa.

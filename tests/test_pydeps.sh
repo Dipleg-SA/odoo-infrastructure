@@ -1,36 +1,33 @@
 #!/usr/bin/env bash
-# check contra manifiestos reales, sin red ni Docker. sync solo stubea la
-# resolución vía Docker — es la única parte que sale de este proceso.
+# Contrato de dependencias de addons
+# Verifica descubrimiento, cobertura, overrides y fijación de referencias Git.
 
 cd "$(dirname "$0")/.."
 . tests/lib.sh
 
-REPO_ROOT="$(pwd)"
+REPO_ROOT="$PWD"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-# --- Checkout mínimo ---
-# Solo lo que pydeps.sh toca: requirements.txt y el FROM del Dockerfile para sync.
-
+# Checkout mínimo
+# Cada caso recibe el script real y un runtime aislado de staging.
 crear_checkout() {
   local root="$TMP/$1"
-  mkdir -p "$root/scripts/lib" "$root/stacks/odoo/image" "$root/runtime/addons/custom/staging"
+  mkdir -p "$root/scripts/lib" "$root/runtime/addons/custom/staging" "$root/runtime/staging"
   cp "$REPO_ROOT/scripts/pydeps.sh" "$root/scripts/"
   cp "$REPO_ROOT/scripts/lib/ui.sh" "$REPO_ROOT/scripts/lib/contexto.sh" "$root/scripts/lib/"
-  printf 'FROM odoo:19.0-20260810\n' > "$root/stacks/odoo/image/Dockerfile"
-  mkdir -p "$root/runtime/staging"
   printf 'name: prueba-staging\nservices: {}\n' > "$root/runtime/staging/compose.yaml"
-  printf 'COMPOSE_PROJECT_NAME=prueba-staging\nODOO_EDITION=community\nTAG=19.0-ce-2026-09-16\n' \
+  printf 'COMPOSE_PROJECT_NAME=prueba-staging\nODOO_EDITION=community\nTAG=19.0-ce-2026-09-16\nADDONS_REF=19.0-stag\n' \
     > "$root/runtime/staging/compose.env"
-  : > "$root/runtime/addons/requirements.txt"
+  : > "$root/runtime/addons/requirements.override.txt"
   printf '%s' "$root"
 }
 
-# --- Manifiesto de un módulo, con o sin external_dependencies ---
-
+# Fixtures de addons
+# Los requisitos pueden vivir en la raíz del repositorio o junto a un módulo.
 declarar_modulo() {
-  local root="$1" categoria="$2" modulo="$3"; shift 3
-  local dir="$root/runtime/addons/custom/staging/${modulo}_repo/$modulo" deps
+  local root="$1" repo="$2" modulo="$3"; shift 3
+  local dir="$root/runtime/addons/custom/staging/$repo/$modulo" deps
   mkdir -p "$dir"
   if [ "$#" -eq 0 ]; then
     printf "{'name': '%s'}\n" "$modulo" > "$dir/__manifest__.py"
@@ -41,217 +38,158 @@ declarar_modulo() {
   fi
 }
 
-pinear() { printf '%s\n' "$2" >> "$1/runtime/addons/requirements.txt"; }
+requisitos_repo() {
+  local root="$1" repo="$2"; shift 2
+  mkdir -p "$root/runtime/addons/custom/staging/$repo"
+  printf '%s\n' "$@" > "$root/runtime/addons/custom/staging/$repo/requirements.txt"
+}
 
-check()      { (cd "$1" && ENTORNO=staging ./scripts/pydeps.sh check 2>&1); }
+requisitos_modulo() {
+  local root="$1" repo="$2" modulo="$3"; shift 3
+  printf '%s\n' "$@" > "$root/runtime/addons/custom/staging/$repo/$modulo/requirements.txt"
+}
+
+check() { (cd "$1" && ENTORNO=staging ./scripts/pydeps.sh check 2>&1); }
 check_code() { (cd "$1" && ENTORNO=staging ./scripts/pydeps.sh check >/dev/null 2>&1; echo $?); }
-check_env_code() { (cd "$1" && ENTORNO="$2" ./scripts/pydeps.sh check >/dev/null 2>&1; echo $?); }
-sync_()      { (cd "$1" && ENTORNO=staging PATH="$REPO_ROOT/tests/stubs:$PATH" STUB_DIR="$2" ./scripts/pydeps.sh sync 2>&1); }
-sync_code()  { (cd "$1" && ENTORNO=staging PATH="$REPO_ROOT/tests/stubs:$PATH" STUB_DIR="$2" ./scripts/pydeps.sh sync >/dev/null 2>&1; echo $?); }
+compile() { (cd "$1" && ENTORNO=staging ./scripts/pydeps.sh compile 2>&1); }
+compile_code() { (cd "$1" && ENTORNO=staging ./scripts/pydeps.sh compile >/dev/null 2>&1; echo $?); }
+
+# Repositorio Git local
+# Permite probar refs móviles y SHAs sin depender de red.
+crear_remoto() {
+  local name="$1" root
+  root="$TMP/remotos/$name"
+  mkdir -p "$root"
+  git -c init.defaultBranch=main init -q "$root"
+  git -C "$root" config user.email test@example.invalid
+  git -C "$root" config user.name test
+  printf 'fixture\n' > "$root/contenido.txt"
+  git -C "$root" add contenido.txt
+  git -C "$root" commit -qm inicial
+  printf '%s' "$root"
+}
 
 # =====================================================================
-titulo "check: nada declarado, requirements.txt vacío"
+titulo "sin dependencias: valida y compila un lock vacío"
 # =====================================================================
 
-ROOT=$(crear_checkout caso1)
-declarar_modulo "$ROOT" custom-addons mi_modulo
-
-igual "sale con 0" "0" "$(check_code "$ROOT")"
-contiene "y lo dice" "cubre lo que declaran" "$(check "$ROOT")"
-
-# =====================================================================
-titulo "check: manifiestos bajo runtime/addons"
-# =====================================================================
-
-ROOT=$(crear_checkout caso_runtime)
-mkdir -p "$ROOT/runtime/addons/custom/staging/ventas"
-printf "{'name': 'ventas', 'external_dependencies': {'python': ['httpx']}}\n" \
-  > "$ROOT/runtime/addons/custom/staging/ventas/__manifest__.py"
-pinear "$ROOT" "httpx==0.28.1"
-mkdir -p "$ROOT/addons/custom-addons/legado_repo/legado"
-printf "{'name': 'legado', 'external_dependencies': {'python': ['paquete_que_no_debe_leerse']}}\n" \
-  > "$ROOT/addons/custom-addons/legado_repo/legado/__manifest__.py"
-igual "staging lee el candidato del runtime" "0" "$(check_env_code "$ROOT" staging)"
+ROOT=$(crear_checkout vacio)
+declarar_modulo "$ROOT" repo modulo
+igual "check termina bien" "0" "$(check_code "$ROOT")"
+igual "compile termina bien" "0" "$(compile_code "$ROOT")"
+igual "el lock queda vacío" "0" "$([ ! -s "$ROOT/runtime/addons/requirements.lock.txt" ]; echo $?)"
 
 # =====================================================================
-titulo "check: falta un pin"
+titulo "descubrimiento: conserva rangos desde raíz y módulo"
 # =====================================================================
 
-ROOT=$(crear_checkout caso2)
-declarar_modulo "$ROOT" custom-addons mi_modulo phonenumbers
-
-igual "sale con 1" "1" "$(check_code "$ROOT")"
-contiene "y nombra el paquete que falta" "phonenumbers" "$(check "$ROOT")"
-
-# =====================================================================
-titulo "check: cubierto, pasa"
-# =====================================================================
-
-pinear "$ROOT" "phonenumbers==8.13.42"
-igual "sale con 0" "0" "$(check_code "$ROOT")"
+ROOT=$(crear_checkout descubrimiento)
+declarar_modulo "$ROOT" repo servidor 'authlib>=1.6.12,<1.7.0' packaging
+requisitos_repo "$ROOT" repo 'authlib>=1.6.12,<1.7.0'
+requisitos_modulo "$ROOT" repo servidor packaging
+igual "los dos requirements cubren el manifiesto" "0" "$(check_code "$ROOT")"
+igual "compile termina bien" "0" "$(compile_code "$ROOT")"
+LOCK=$(cat "$ROOT/runtime/addons/requirements.lock.txt")
+contiene "conserva el rango de authlib" 'authlib>=1.6.12,<1.7.0' "$LOCK"
+contiene "conserva el requisito del módulo" 'packaging' "$LOCK"
+contiene "registra la procedencia" '# Fuente: custom/staging/repo/requirements.txt' "$LOCK"
 
 # =====================================================================
-titulo "check: normaliza mayúsculas y guion/guion bajo"
+titulo "override: cubre aliases que el repositorio no declara"
 # =====================================================================
 
-ROOT=$(crear_checkout caso3)
-declarar_modulo "$ROOT" oca otro_modulo Python-Dateutil
-pinear "$ROOT" "python_dateutil==2.9.0"
+ROOT=$(crear_checkout override)
+declarar_modulo "$ROOT" repo afip OpenSSL
+printf 'pyOpenSSL==25.3.0\n' > "$ROOT/runtime/addons/requirements.override.txt"
+igual "pyOpenSSL cubre el import OpenSSL" "0" "$(check_code "$ROOT")"
+compile "$ROOT" >/dev/null
+contiene "el override llega al lock" 'pyOpenSSL==25.3.0' \
+  "$(cat "$ROOT/runtime/addons/requirements.lock.txt")"
 
-igual "'Python-Dateutil' declarado == 'python_dateutil' pineado" "0" "$(check_code "$ROOT")"
-
-# =====================================================================
-# titulo "check: módulo importable y distribución con nombres distintos"
-# =====================================================================
-
-ROOT=$(crear_checkout caso_openssl)
-declarar_modulo "$ROOT" oca otro_modulo OpenSSL PIL yaml dateutil jwt magic ldap
-pinear "$ROOT" "pyOpenSSL==25.3.0"
-pinear "$ROOT" "Pillow==11.3.0"
-pinear "$ROOT" "PyYAML==6.0.2"
-pinear "$ROOT" "python-dateutil==2.9.0"
-pinear "$ROOT" "PyJWT==2.10.1"
-pinear "$ROOT" "python-magic==0.4.27"
-pinear "$ROOT" "python-ldap==3.4.4"
-
-igual "los módulos importables quedan cubiertos por sus distribuciones" "0" "$(check_code "$ROOT")"
+ROOT=$(crear_checkout reemplazo_override)
+declarar_modulo "$ROOT" repo afip pysimplesoap
+requisitos_repo "$ROOT" repo 'git+https://example.invalid/pysimplesoap.git@0123456789012345678901234567890123456789'
+printf 'pysimplesoap==1.8.22\n' > "$ROOT/runtime/addons/requirements.override.txt"
+igual "el override puede reemplazar una fuente del repositorio" "0" "$(compile_code "$ROOT")"
+LOCK=$(cat "$ROOT/runtime/addons/requirements.lock.txt")
+contiene "conserva el reemplazo local" 'pysimplesoap==1.8.22' "$LOCK"
+no_contiene "descarta la fuente reemplazada" 'example.invalid' "$LOCK"
 
 # =====================================================================
-# titulo "sync: resuelve la distribución de un módulo importable"
+titulo "VCS: fija HEAD y ramas a commits completos"
 # =====================================================================
 
-ROOT=$(crear_checkout caso_openssl_sync)
-declarar_modulo "$ROOT" oca otro_modulo OpenSSL
-STUB=$(mktemp -d)
-cat > "$STUB/salida" <<'JSON'
-{"version": "1", "install": [{"metadata": {"name": "pyOpenSSL", "version": "25.3.0"}}]}
-JSON
-
-igual "sale con 0" "0" "$(sync_code "$ROOT" "$STUB")"
-contiene "le pide a pip pyOpenSSL" "pyOpenSSL" "$(cat "$STUB/llamadas")"
-igual "guarda el pin de pyOpenSSL" "0" \
-  "$(grep -qx 'pyOpenSSL==25.3.0' "$ROOT/runtime/addons/requirements.txt"; echo $?)"
-rm -rf "$STUB"
-
-# =====================================================================
-titulo "check: un rango de versión queda cubierto por su pin"
-# =====================================================================
-
-ROOT=$(crear_checkout caso_rango)
-declarar_modulo "$ROOT" custom-addons mi_modulo 'authlib>=1.6.12,<1.7.0'
-pinear "$ROOT" "Authlib==1.6.12"
-
-igual "Authlib pineado cubre la declaración con rango" "0" "$(check_code "$ROOT")"
-
-# =====================================================================
-titulo "sync: conserva el rango literal al resolver"
-# =====================================================================
-
-ROOT=$(crear_checkout caso_rango_sync)
-declarar_modulo "$ROOT" custom-addons mi_modulo 'authlib>=1.6.12,<1.7.0'
-STUB=$(mktemp -d)
-cat > "$STUB/salida" <<'JSON'
-{"version": "1", "install": [{"metadata": {"name": "Authlib", "version": "1.6.12"}}]}
-JSON
-
-igual "sale con 0" "0" "$(sync_code "$ROOT" "$STUB")"
-contiene "le pasa a pip el rango original" "authlib>=1.6.12,<1.7.0" "$(cat "$STUB/llamadas")"
-no_contiene "no transforma los puntos del rango" "authlib>=1-6-12,<1-7-0" "$(cat "$STUB/llamadas")"
-igual "queda pineado con la versión resuelta" "0" \
-  "$(grep -qx 'Authlib==1.6.12' "$ROOT/runtime/addons/requirements.txt"; echo $?)"
-rm -rf "$STUB"
+ROOT=$(crear_checkout vcs)
+PYAFIP=$(crear_remoto pyafipws)
+SIMPLE=$(crear_remoto pysimplesoap)
+git -C "$SIMPLE" branch stable_py3k
+PYAFIP_SHA=$(git -C "$PYAFIP" rev-parse HEAD)
+SIMPLE_SHA=$(git -C "$SIMPLE" rev-parse HEAD)
+declarar_modulo "$ROOT" localizacion afip pyafipws pysimplesoap
+requisitos_repo "$ROOT" localizacion \
+  "git+file://$PYAFIP" \
+  "git+file://$SIMPLE@stable_py3k" \
+  "git+file://$PYAFIP@$PYAFIP_SHA#egg=otro_paquete"
+igual "check reconoce nombres desde las URL" "0" "$(check_code "$ROOT")"
+igual "compile resuelve las refs locales" "0" "$(compile_code "$ROOT")"
+LOCK=$(cat "$ROOT/runtime/addons/requirements.lock.txt")
+contiene "HEAD queda fijado" "# VCS: file://$PYAFIP@$PYAFIP_SHA" "$LOCK"
+contiene "la rama queda fijada" "# VCS: file://$SIMPLE@$SIMPLE_SHA" "$LOCK"
+contiene "un SHA completo se conserva" "# VCS: file://$PYAFIP@$PYAFIP_SHA#egg=otro_paquete" "$LOCK"
+contiene "pip recibe fuentes locales" 'file:///tmp/requirements.sources/' "$LOCK"
+igual "genera un archivo por repositorio" "2" \
+  "$(find "$ROOT/runtime/addons/requirements.sources" -type f | wc -l | tr -d ' ')"
+no_contiene "el lock no conserva la rama móvil" '@stable_py3k' "$LOCK"
 
 # =====================================================================
-titulo "check: huérfano — avisa, no falla"
+titulo "cobertura: una dependencia sin requirements falla"
 # =====================================================================
 
-ROOT=$(crear_checkout caso4)
-declarar_modulo "$ROOT" custom-addons mi_modulo
-pinear "$ROOT" "requests==2.31.0"
-
-igual "sigue en 0" "0" "$(check_code "$ROOT")"
-contiene "pero avisa del pin sin dueño" "requests" "$(check "$ROOT")"
-
-# =====================================================================
-titulo "sync: nada que resolver, no toca Docker"
-# =====================================================================
-
-ROOT=$(crear_checkout caso5)
-declarar_modulo "$ROOT" custom-addons mi_modulo
-STUB=$(mktemp -d)
-
-igual "sale con 0" "0" "$(sync_code "$ROOT" "$STUB")"
-contiene "y lo dice" "nada nuevo que pinear" "$(sync_ "$ROOT" "$STUB")"
-igual "no invocó Docker" "1" "$([ -f "$STUB/llamadas" ]; echo $?)"
-rm -rf "$STUB"
+ROOT=$(crear_checkout faltante)
+declarar_modulo "$ROOT" repo modulo phonenumbers
+igual "check falla" "1" "$(check_code "$ROOT")"
+contiene "nombra la dependencia faltante" 'phonenumbers' "$(check "$ROOT")"
+printf 'phonenumbers==9.0.0\n' > "$ROOT/runtime/addons/requirements.txt"
+igual "el archivo legacy no cubre el manifiesto" "1" "$(check_code "$ROOT")"
 
 # =====================================================================
-titulo "sync: resuelve lo que falta contra la imagen base"
+titulo "conflictos: dos pines exactos distintos fallan"
 # =====================================================================
 
-ROOT=$(crear_checkout caso6)
-declarar_modulo "$ROOT" custom-addons mi_modulo phonenumbers
-STUB=$(mktemp -d)
-cat > "$STUB/salida" <<'JSON'
-{"version": "1", "install": [{"metadata": {"name": "phonenumbers", "version": "8.13.42"}}]}
-JSON
+ROOT=$(crear_checkout conflicto)
+declarar_modulo "$ROOT" repo_a modulo_a bokeh
+declarar_modulo "$ROOT" repo_b modulo_b bokeh
+requisitos_repo "$ROOT" repo_a 'bokeh==3.9.0'
+requisitos_repo "$ROOT" repo_b 'bokeh==3.10.0'
+igual "check rechaza el conflicto" "1" "$(check_code "$ROOT")"
+contiene "explica los pines incompatibles" 'pines incompatibles' "$(check "$ROOT")"
 
-igual "sale con 0" "0" "$(sync_code "$ROOT" "$STUB")"
-contiene "invocó la imagen del Dockerfile" "odoo:19.0-20260810" "$(cat "$STUB/llamadas")"
-contiene "y le pidió el paquete que faltaba" "phonenumbers" "$(cat "$STUB/llamadas")"
-igual "quedó pineado con la versión resuelta" "0" \
-  "$(grep -qx 'phonenumbers==8.13.42' "$ROOT/runtime/addons/requirements.txt"; echo $?)"
-rm -rf "$STUB"
-
-# =====================================================================
-titulo "sync: nunca reescribe un pin ya puesto"
-# =====================================================================
-
-ROOT=$(crear_checkout caso7)
-declarar_modulo "$ROOT" custom-addons mi_modulo phonenumbers requests
-pinear "$ROOT" "requests==2.28.0"
-STUB=$(mktemp -d)
-cat > "$STUB/salida" <<'JSON'
-{"version": "1", "install": [{"metadata": {"name": "phonenumbers", "version": "8.13.42"}}]}
-JSON
-
-sync_code "$ROOT" "$STUB" >/dev/null
-no_contiene "no le pidió a Docker resolver lo ya pineado" "requests" \
-  "$(grep -o 'requests' "$STUB/llamadas" || true)"
-igual "el pin viejo de requests sigue intacto" "0" \
-  "$(grep -qx 'requests==2.28.0' "$ROOT/runtime/addons/requirements.txt"; echo $?)"
-igual "y el nuevo de phonenumbers se agregó" "0" \
-  "$(grep -qx 'phonenumbers==8.13.42' "$ROOT/runtime/addons/requirements.txt"; echo $?)"
-rm -rf "$STUB"
+ROOT=$(crear_checkout conflicto_fuente)
+declarar_modulo "$ROOT" repo modulo pyafipws
+requisitos_repo "$ROOT" repo 'git+https://example.invalid/pyafipws.git@0123456789012345678901234567890123456789'
+requisitos_modulo "$ROOT" repo modulo pyafipws
+igual "check rechaza índice junto a fuente directa" "1" "$(check_code "$ROOT")"
+contiene "explica la mezcla de fuentes" 'mezcla una fuente directa' "$(check "$ROOT")"
 
 # =====================================================================
-titulo "falta el archivo — aborta y dice cómo bootstrapearlo"
+titulo "formatos: las directivas no aplanables fallan explícitamente"
 # =====================================================================
 
-# No se versiona: un checkout nuevo tiene la plantilla y no el archivo. Sin este
-# corte, check leería cero pines y diría que está todo cubierto.
-ROOT=$(crear_checkout caso8)
-rm -f "$ROOT/runtime/addons/requirements.txt"
-declarar_modulo "$ROOT" custom-addons mi_modulo phonenumbers
-STUB=$(mktemp -d)
-
-igual "check sale con 1" "1" "$(check_code "$ROOT")"
-contiene "y nombra el cp" "cp runtime/addons/requirements.txt.example runtime/addons/requirements.txt" "$(check "$ROOT")"
-igual "sync sale con 1" "1" "$(sync_code "$ROOT" "$STUB")"
-igual "y no invocó Docker" "1" "$([ -f "$STUB/llamadas" ]; echo $?)"
-rm -rf "$STUB"
+ROOT=$(crear_checkout directiva)
+declarar_modulo "$ROOT" repo modulo requests
+requisitos_repo "$ROOT" repo '-r requirements-base.txt'
+igual "check rechaza includes relativos" "1" "$(check_code "$ROOT")"
+contiene "explica la directiva no soportada" 'directiva no soportada' "$(check "$ROOT")"
 
 # =====================================================================
-titulo "contrato: exige ENTORNO y rechaza manifiestos inválidos"
+titulo "contrato: exige entorno y manifiestos literales válidos"
 # =====================================================================
 
-ROOT=$(crear_checkout caso_invalido)
-mkdir -p "$ROOT/runtime/addons/custom/staging/incompleto"
-printf "{'name': 'incompleto'" > "$ROOT/runtime/addons/custom/staging/incompleto/__manifest__.py"
-igual "un manifiesto inválido detiene check" "1" \
-  "$(cd "$ROOT" && ENTORNO=staging ./scripts/pydeps.sh check >/dev/null 2>&1; echo $?)"
-contiene "explica el manifiesto inválido" "manifiesto inválido" \
-  "$(cd "$ROOT" && ENTORNO=staging ./scripts/pydeps.sh check 2>&1 || true)"
+ROOT=$(crear_checkout invalido)
+mkdir -p "$ROOT/runtime/addons/custom/staging/repo/modulo"
+printf "{'name': 'incompleto'" > "$ROOT/runtime/addons/custom/staging/repo/modulo/__manifest__.py"
+igual "un manifiesto inválido detiene check" "1" "$(check_code "$ROOT")"
+contiene "explica el manifiesto inválido" 'manifiestos inválidos' "$(check "$ROOT")"
 igual "sin ENTORNO falla antes de leer addons" "2" \
   "$(cd "$ROOT" && env -u ENTORNO ./scripts/pydeps.sh check >/dev/null 2>&1; echo $?)"
 

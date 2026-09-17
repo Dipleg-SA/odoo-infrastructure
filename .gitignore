@@ -26,7 +26,7 @@ runtime/produccion/*
 
 runtime/addons/*
 !runtime/addons/catalogo.txt.example
-!runtime/addons/requirements.txt.example
+!runtime/addons/requirements.override.txt.example
 runtime/control/*
 !runtime/control/compose.yaml
 

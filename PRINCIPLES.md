@@ -73,6 +73,7 @@ Una regla enuncia una **restricción**, no una forma del árbol. Un principio qu
 ## Dependencias
 
 - **Obligatorio.** Verificá si un servicio ya elegido, una feature nativa o un script cubre la necesidad antes de sumar algo nuevo.
+- **Obligatorio.** Cada repositorio de addons declara sus dependencias Python en `requirements.txt`; `external_dependencies.python` solo valida que estén cubiertas. El build compila esos archivos desde la fotografía, agrega overrides explícitos del deployment y fija toda referencia Git a un commit antes de invocar Docker.
 - **Obligatorio.** No introduzcas un secrets manager dedicado, una UI de gestión con privilegio sobre el socket de Docker, un mecanismo de auto-update, ni una herramienta de backup adicional a la ya elegida.
 - **Recomendado.** Ante dos alternativas que resuelven lo mismo, preferí la que tenga respaldo de comunidad o vendor activo.
 
@@ -88,6 +89,6 @@ Una regla enuncia una **restricción**, no una forma del árbol. Un principio qu
 - Config de runtime, plantillas, `Dockerfile`, scripts y units de systemd de un stack: **adentro de la carpeta de ese stack**, incluidas las que se instalan fuera del checkout. Arriba solo lo que sirve a más de uno.
 - Estado que no es un archivo del repositorio —certificados, datos— vive en volúmenes nombrados, así que un cambio de checkout no lo toca.
 - Extensiones: la que nombra cada herramienta. Donde hay elección entre `.yml` y `.yaml`, se usa `.yaml`.
-- Árbol de addons: un clon bare por repo y un worktree por categoría bajo `runtime/addons/`. **Un árbol por checkout**, no un subdirectorio por entorno dentro del clon: qué entorno es lo dice `ENTORNO`, y superponer los dos aislamientos deja uno que no aísla nada. Todo va gitignoreado; lo versionado son las plantillas del catálogo y de los pines Python que se derivan de él.
+- Árbol de addons: un clon bare por repo y un worktree por categoría bajo `runtime/addons/`. **Un árbol por checkout**, no un subdirectorio por entorno dentro del clon: qué entorno es lo dice `ENTORNO`, y superponer los dos aislamientos deja uno que no aísla nada. Todo va gitignoreado; lo versionado son las plantillas del catálogo y de los overrides Python del deployment.
 - Rol y base de datos de la aplicación: **`odoo`**, fijo. Aparece en los archivos de Compose, en la config de Postgres, en la de la propia aplicación y en los scripts. Varios de esos formatos no interpolan variables, así que parametrizarlo dejaría la mitad configurable y la otra mitad no — peor que un valor fijo y consistente.
 - `compose.env` vive junto al `compose.yaml` de cada runtime. `scripts/lib/contexto.sh` pasa ambos explícitamente a Compose y falla si falta el entorno, su composición o su configuración privada. No se resuelve producción por defecto ni se usa un `.env` raíz.

@@ -255,14 +255,12 @@ promotion-verify: ## Verifica que producción equivale a staging validado antes 
 	scripts/promotion-verify.sh
 
 # --- [STACK:addons] Dependencias Python ---
-# check es puro host (corre en 'make test'); sync necesita Docker para resolver
-# versión contra la imagen base. Ninguno de los dos rebuildea la imagen.
-# El '-' en check: Make aborta el target ante cualquier línea que falle, y un
-# check con faltantes es justo el caso en el que sync tiene que correr igual.
+# check es puro host; compile fija referencias Git y genera el lock operativo.
+# El build repite ambos contra su propia fotografía antes de invocar Docker.
 
-addons-deps: ## Verifica requirements.txt contra las external_dependencies y pinea lo que falte
-	-scripts/pydeps.sh check
-	scripts/pydeps.sh sync
+addons-deps: ## Valida requisitos de addons y compila el lock del entorno
+	scripts/pydeps.sh check
+	scripts/pydeps.sh compile
 
 # ============================================================
 # STACKS — sexteto genérico + lo puntual de cada uno, agrupado
