@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Contrato de fotografía Odoo
-# Construye con clones locales falsos y confirma que Nueva aparece solo al final.
+# Construye con clones locales falsos y confirma el selector único al final.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 . tests/lib.sh
@@ -13,7 +13,7 @@ cp -R "$REPO_ROOT/stacks/odoo" "$ROOT/stacks/odoo"
 cp "$REPO_ROOT/runtime/desarrollo/compose.env.example" "$ROOT/runtime/desarrollo/compose.env"
 printf 'services: {}\n' > "$ROOT/runtime/desarrollo/compose.yaml"
 printf 'requests==2.32.5\n' > "$ROOT/runtime/addons/requirements.override.txt"
-tar -cf "$TMP/runtime-before.tar" -C "$REPO_ROOT" runtime
+RUNTIME_TEMPLATE_BEFORE="$(shasum -a 256 "$REPO_ROOT/runtime/desarrollo/compose.env.example")"
 trap 'rm -rf "$TMP"' EXIT
 cd "$ROOT"
 git init -q
@@ -45,8 +45,11 @@ export ENTORNO=desarrollo ADDONS_REF=feat/prueba ENTERPRISE_TAG=19.0-ee-2026-09-
 printf '%s\n' 'ODOO_EDITION=enterprise' 'TAG=19.0-ee-2026-09-14' >> runtime/desarrollo/compose.env
 salida=$(scripts/build-odoo-image.sh 2>&1); codigo=$?
 igual "build exitoso" 0 "$codigo"
-contiene "registra Nueva con tag inmutable" 'Nueva registrada: local/odoo:19.0-desarrollo-' "$salida"
-CONTENIDO_EE="$(scripts/image-state.sh get Nueva)"
+contiene "publica el selector con tag inmutable" 'Imagen Odoo seleccionada: local/odoo:19.0-desarrollo-' "$salida"
+IMAGEN_DESARROLLO="$(sed -n 's/^ODOO_IMAGE=//p' runtime/desarrollo/compose.env)"
+contiene "selector de desarrollo usa su entorno" 'local/odoo:19.0-desarrollo-' "$IMAGEN_DESARROLLO"
+METADATA_EE="$(find runtime/addons/builds/desarrollo -name image.json -type f -print | head -1)"
+CONTENIDO_EE="$(cat "$METADATA_EE")"
 contiene "conserva digest" 'sha256:build-digest' "$CONTENIDO_EE"
 contiene "registra edición Enterprise" '"edition": "enterprise"' "$CONTENIDO_EE"
 contiene "registra tag Enterprise configurado" '"edition_tag": "19.0-ee-2026-09-14"' "$CONTENIDO_EE"
@@ -68,40 +71,34 @@ contiene "copia wheels a la imagen final" 'COPY --from=python-deps /tmp/wheels/'
 # Fallos de selección Enterprise
 # Ningún tag o checkout inválido puede publicar Nueva.
 printf '%s\n' 'TAG=' >> runtime/desarrollo/compose.env
-rm -f runtime/desarrollo/state/images.json
 sale_con "tag Enterprise ausente falla antes del build" 2 scripts/build-odoo-image.sh
 printf '%s\n' 'TAG=19.0-ee-2026-09-14' >> runtime/desarrollo/compose.env
-rm -f runtime/desarrollo/state/images.json
 rm -rf runtime/addons/enterprise
 sale_con "checkout Enterprise ausente falla" 1 scripts/build-odoo-image.sh
 git clone -q "$TMP/ee" runtime/addons/enterprise
 printf '%s\n' 'TAG=19.0-ee-2026-09-16' >> runtime/desarrollo/compose.env
-rm -f runtime/desarrollo/state/images.json
 sale_con "tag Enterprise inexistente falla" 1 scripts/build-odoo-image.sh
 printf '%s\n' 'TAG=19.0-ee-2026-09-17' >> runtime/desarrollo/compose.env
-rm -f runtime/desarrollo/state/images.json
 sale_con "tag Enterprise liviano falla" 1 scripts/build-odoo-image.sh
 printf '%s\n' 'TAG=19.0-ee-2026-09-14' >> runtime/desarrollo/compose.env
 touch runtime/addons/enterprise/edicion.local
-rm -f runtime/desarrollo/state/images.json
 sale_con "checkout Enterprise sucio falla" 1 scripts/build-odoo-image.sh
 rm -f runtime/addons/enterprise/edicion.local
-igual "los fallos no publican Nueva" 'null' "$(scripts/image-state.sh get Nueva)"
+igual "los fallos conservan la imagen seleccionada" "$IMAGEN_DESARROLLO" "$(sed -n 's/^ODOO_IMAGE=//p' runtime/desarrollo/compose.env)"
 
 export BUILD_FAIL=1
-rm -f runtime/desarrollo/state/images.json
 sale_con "build fallido no publica Nueva" 1 scripts/build-odoo-image.sh
-igual "estado queda sin Nueva" 'null' "$(scripts/image-state.sh get Nueva)"
+igual "build fallido conserva el selector" "$IMAGEN_DESARROLLO" "$(sed -n 's/^ODOO_IMAGE=//p' runtime/desarrollo/compose.env)"
 
 # Community con residual Enterprise
 # El checkout privado permanece para demostrar que no se copia ni se registra.
 export BUILD_FAIL=0
 printf '%s\n' 'ODOO_EDITION=community' 'TAG=19.0-ce-2026-09-16' >> runtime/desarrollo/compose.env
-rm -f runtime/desarrollo/state/images.json
 salida=$(scripts/build-odoo-image.sh 2>&1); codigo=$?
 igual "build Community exitoso con residual Enterprise" 0 "$codigo"
-contiene "registra Nueva Community" 'Nueva registrada: local/odoo:19.0-desarrollo-' "$salida"
-CONTENIDO="$(scripts/image-state.sh get Nueva)"
+contiene "publica el selector Community" 'Imagen Odoo seleccionada: local/odoo:19.0-desarrollo-' "$salida"
+METADATA_CE="$(find runtime/addons/builds/desarrollo -name image.json -type f -print | while IFS= read -r metadata; do grep -q '"edition": "community"' "$metadata" && printf '%s\n' "$metadata" && break; done)"
+CONTENIDO="$(cat "$METADATA_CE")"
 contiene "registra edición Community" '"edition": "community"' "$CONTENIDO"
 contiene "registra tag Community" '"edition_tag": "19.0-ce-2026-09-16"' "$CONTENIDO"
 contiene "omite tag Enterprise" '"enterprise_tag": null' "$CONTENIDO"
@@ -111,7 +108,20 @@ CE_BUILD="$(find runtime/addons/builds/desarrollo -mindepth 2 -maxdepth 2 -name 
 igual "Community no exporta código Enterprise" '' "$(find "$CE_BUILD/enterprise" -name __manifest__.py -type f -print)"
 no_contiene "Community no registra código Enterprise" 'enterprise/__manifest__.py' "$CONTENIDO"
 
-tar -cf "$TMP/runtime-after.tar" -C "$REPO_ROOT" runtime
-igual "el test no modifica runtime preexistente" "0" "$(cmp -s "$TMP/runtime-before.tar" "$TMP/runtime-after.tar"; echo $?)"
+# Aislamiento entre runtimes
+# El tag y el selector de cada entorno deben conservar su propia identidad.
+mkdir -p runtime/staging runtime/addons/custom/staging/ventas
+cp "$REPO_ROOT/runtime/staging/compose.env.example" runtime/staging/compose.env
+printf 'services: {}\n' > runtime/staging/compose.yaml
+printf '%s\n' "$COMMIT" > runtime/addons/custom/staging/ventas/.candidate-commit
+export ENTORNO=staging ADDONS_REF=19.0-stag
+salida=$(scripts/build-odoo-image.sh 2>&1); codigo=$?
+igual "build staging exitoso" 0 "$codigo"
+IMAGEN_STAGING="$(sed -n 's/^ODOO_IMAGE=//p' runtime/staging/compose.env)"
+contiene "selector de staging usa su entorno" 'local/odoo:19.0-staging-' "$IMAGEN_STAGING"
+no_contiene "los selectores de entornos no se pisan" "$IMAGEN_STAGING" "$IMAGEN_DESARROLLO"
+
+RUNTIME_TEMPLATE_AFTER="$(shasum -a 256 "$REPO_ROOT/runtime/desarrollo/compose.env.example")"
+igual "el test no modifica runtime preexistente" "$RUNTIME_TEMPLATE_BEFORE" "$RUNTIME_TEMPLATE_AFTER"
 
 resumen

@@ -10,11 +10,11 @@
 
 ## Fase 2: Construir una única imagen seleccionada (US1) (P1)
 
-- [ ] T002 [US1] Reemplazar los tags `bootstrap` y las instrucciones de promoción en `runtime/desarrollo/compose.env.example`, `runtime/staging/compose.env.example` y `runtime/produccion/compose.env.example` por el selector único `ODOO_IMAGE`.
-- [ ] T003 [US1] Adaptar `scripts/build-odoo-image.sh` para derivar un tag explícito por build, construirlo y actualizar atómicamente el `ODOO_IMAGE` del `compose.env` solo después de obtener una identidad Docker válida.
-- [ ] T004 [US1] Adaptar `Makefile` para que `build` construya la imagen Odoo y las imágenes propias auxiliares sin depender de `image-state.sh` ni exponer targets de promoción o rollback.
-- [ ] T005 [US1] Mantener en `stacks/odoo/compose.yaml` el consumo directo del único `ODOO_IMAGE` y actualizar sus comentarios para describir el contrato nuevo.
-- [ ] T006 [TEST][US1] Actualizar `tests/test_build_odoo_image.sh` para cubrir la escritura atómica del selector, la conservación del selector ante un build fallido y la separación entre los tres entornos.
+- [x] T002 [US1] Reemplazar los tags `bootstrap` y las instrucciones de promoción en `runtime/desarrollo/compose.env.example`, `runtime/staging/compose.env.example` y `runtime/produccion/compose.env.example` por el selector único `ODOO_IMAGE`.
+- [x] T003 [US1] Adaptar `scripts/build-odoo-image.sh` para derivar un tag explícito por build, construirlo y actualizar atómicamente el `ODOO_IMAGE` del `compose.env` solo después de obtener una identidad Docker válida.
+- [x] T004 [US1] Adaptar `Makefile` para que `build` construya la imagen Odoo y las imágenes propias auxiliares sin depender de `image-state.sh` ni exponer targets de promoción o rollback.
+- [x] T005 [US1] Mantener en `stacks/odoo/compose.yaml` el consumo directo del único `ODOO_IMAGE` y actualizar sus comentarios para describir el contrato nuevo.
+- [x] T006 [TEST][US1] Actualizar `tests/test_build_odoo_image.sh` para cubrir la escritura atómica del selector, la conservación del selector ante un build fallido y la separación entre los tres entornos.
 
 ## Fase 3: Levantar Odoo sin promoción ni rollback (US2) (P1)
 

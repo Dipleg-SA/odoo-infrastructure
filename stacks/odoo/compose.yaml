@@ -4,7 +4,7 @@ volumes:
 services:
   odoo:
     # Imagen declarada por el estado del runtime
-    # La aplicación manual fija ODOO_IMAGE antes de levantar Compose.
+    # make build deja ODOO_IMAGE apuntando a la imagen construida del entorno.
     image: ${ODOO_IMAGE:?falta ODOO_IMAGE}
     # Nombre derivado del proyecto: predecible y sin el sufijo -1 del autonaming,
     # pero sin colisionar si se levanta un segundo stack con otro nombre de proyecto.

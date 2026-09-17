@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Construcción de imagen Odoo inmutable
-# Fotografía Community o Enterprise y candidatos bajo el lock compartido antes de publicar Nueva.
+# Fotografía Community o Enterprise y candidatos bajo el lock compartido antes de publicar el selector.
 set -euo pipefail
 shopt -s nullglob
 
@@ -90,14 +90,14 @@ PYDEPS_SNAPSHOT_ROOT="$BUILD_DIR" scripts/pydeps.sh check
 PYDEPS_SNAPSHOT_ROOT="$BUILD_DIR" PYDEPS_OUTPUT="$BUILD_DIR/requirements.lock.txt" scripts/pydeps.sh compile
 
 # Build y digest
-# Nueva no cambia si Docker no construye o no devuelve una identidad.
+# El selector no cambia si Docker no construye o no devuelve una identidad.
 docker build --tag "$IMAGE_TAG" "$BUILD_DIR"
 DIGEST="$(docker image inspect --format '{{.RepoDigests}}' "$IMAGE_TAG" 2>/dev/null | tr -d '[]' | awk '{print $1}')"
 [[ -n "$DIGEST" ]] || DIGEST="$(docker image inspect --format '{{.Id}}' "$IMAGE_TAG" 2>/dev/null || true)"
-[[ -n "$DIGEST" ]] || fail 'el build terminó sin digest identificable; Nueva no fue modificada'
+[[ -n "$DIGEST" ]] || fail 'el build terminó sin digest identificable; ODOO_IMAGE no fue modificado'
 
 # Procedencia y publicación
-# El estado se escribe una sola vez, después de build y digest exitosos.
+# La procedencia queda junto a la fotografía para facilitar diagnóstico.
 METADATA="$BUILD_DIR/image.json"
 python3 - "$METADATA" "$IMAGE_TAG" "$DIGEST" "$VERSION" "$BASE_IMAGE" "$ODOO_EDITION" "$TAG" "$ENTERPRISE_TAG" "$ENTERPRISE_COMMIT" "$ENTERPRISE_MODULES" "$ROOT" "$ENTORNO" "$MOMENTO" <<'PY'
 import json, pathlib, subprocess, sys
@@ -112,5 +112,32 @@ payload = {"tag": tag, "digest": digest, "odoo_version": version, "base_image": 
            "enterprise_modules": enterprise_modules, "addons": dict(sorted(addons.items())), "built_at": built_at}
 pathlib.Path(out).write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
 PY
-scripts/image-state.sh write-new "$METADATA"
-printf 'Nueva registrada: %s\n' "$IMAGE_TAG"
+
+# Selector único del runtime
+# La sustitución atómica conserva la referencia anterior si el build falló.
+python3 - "$RUNTIME_ENV_FILE" "$IMAGE_TAG" <<'PY'
+import os
+import pathlib
+import tempfile
+import sys
+
+path, tag = map(pathlib.Path, sys.argv[1:])
+lines = path.read_text(encoding="utf-8").splitlines()
+replacement = f"ODOO_IMAGE={tag}"
+for index, line in enumerate(lines):
+    if line.startswith("ODOO_IMAGE="):
+        lines[index] = replacement
+        break
+else:
+    lines.extend(["", "# Imagen Odoo", "# Referencia seleccionada por make build.", replacement])
+
+fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as output:
+        output.write("\n".join(lines) + "\n")
+    os.replace(temporary, path)
+except BaseException:
+    os.unlink(temporary)
+    raise
+PY
+printf 'Imagen Odoo seleccionada: %s\n' "$IMAGE_TAG"

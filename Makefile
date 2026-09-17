@@ -10,14 +10,14 @@ CONTEXTO_COMPOSE := scripts/lib/contexto.sh compose
 
 include .make/main.mk
 
-.PHONY: help up down logs ps nuke reset build apply-image rollback-image validate-image promotion-verify \
+.PHONY: help up down logs ps nuke reset build promotion-verify \
         secrets-init secrets-perms secrets-check config-init workspace \
         odoo-report-config \
         host-init host-verify up-timers down-timers notify-test monitoring-role \
         cert-issue cert-renew \
         backup-run backup-integrity restore integrity-check \
         repo-sync repo-status addons-install addons-update addons-uninstall addons-modules addons-deps \
-        require-entorno require-edition-transition require-modules require-backups require-restore require-root require-systemd require-not-production test test-smoke verify \
+        require-entorno require-modules require-backups require-restore require-root require-systemd require-not-production test test-smoke verify \
         $(foreach s,$(STACKS),$(s)-up $(s)-down $(s)-restart $(s)-logs $(s)-ps $(s)-verify) \
         $(foreach s,$(STACKS_ONESHOT),$(s)-logs $(s)-ps $(s)-verify)
 .DEFAULT_GOAL := help
@@ -29,8 +29,8 @@ RUNTIME_TARGETS := secrets-init secrets-perms secrets-check config-init workspac
                    backup-run backup-integrity restore repo-sync repo-status \
                    integrity-check \
                    addons-install addons-update addons-uninstall addons-modules addons-deps \
-                   require-edition-transition require-backups require-restore require-not-production verify \
-                   up down logs ps nuke reset build apply-image rollback-image validate-image promotion-verify
+                   require-backups require-restore require-not-production verify \
+                   up down logs ps nuke reset build promotion-verify
 RUNTIME_TARGETS += $(foreach s,$(STACKS),$(s)-up $(s)-down $(s)-restart $(s)-logs $(s)-ps $(s)-verify)
 RUNTIME_TARGETS += $(foreach s,$(STACKS_ONESHOT),$(s)-logs $(s)-ps $(s)-verify)
 $(RUNTIME_TARGETS): require-entorno
@@ -226,30 +226,12 @@ integrity-check: ## Comprueba adjuntos de Odoo contra el filestore
 # Todo stack construye la suya, aunque el Dockerfile sea un FROM pineado y nada más.
 # El build de odoo no clona nada: los addons entran por la fotografía inmutable.
 
-build: ## Construye la imagen Odoo desde la fotografía del entorno
+# --- Construcción de imágenes propias ---
+# Odoo se fotografía y las imágenes auxiliares se construyen desde sus stacks.
+
+build: ## Construye las imágenes propias del runtime
 	scripts/build-odoo-image.sh
-
-require-edition-transition: ## Detecta un cambio de edición antes de aplicar Nueva
-	@actual=$$(scripts/image-state.sh get Actual 2>/dev/null || echo null); \
-	 nueva=$$(scripts/image-state.sh get Nueva 2>/dev/null || echo null); \
-	 if [ "$$actual" != null ] && [ "$$nueva" != null ] && \
-	    ! python3 -c 'import json,sys; actual,nueva=(json.loads(value) for value in sys.argv[1:]); raise SystemExit(0 if actual.get("edition") == nueva.get("edition") else 1)' "$$actual" "$$nueva"; then \
-	   . scripts/lib/ui.sh; ui_warn "cambio de edición detectado" \
-	     "se conservará el backup de producción antes de aplicar Nueva"; \
-	 fi
-
-apply-image: require-edition-transition ## Promueve Nueva a Actual y levanta Odoo con esa referencia
-	@servicios=$$($(CONTEXTO_COMPOSE) config --services 2>/dev/null) || exit $$?; \
-	if grep -qx backup <<< "$$servicios"; then $(MAKE) backup-run; fi
-	scripts/image-state.sh apply
-	@. scripts/lib/ui.sh; ui_run "aplicar imagen" $(CONTEXTO_COMPOSE) up -d odoo
-
-rollback-image: ## Reactiva Anterior y levanta Odoo con esa referencia
-	scripts/image-state.sh rollback
-	@. scripts/lib/ui.sh; ui_run "revertir imagen" $(CONTEXTO_COMPOSE) up -d odoo
-
-validate-image: ## Registra la validación manual de Actual
-	scripts/image-state.sh validate-image "$(NOTE)"
+	@. scripts/lib/ui.sh; ui_run "construir imágenes auxiliares" $(CONTEXTO_COMPOSE) build postgres nginx
 
 promotion-verify: ## Verifica que producción equivale a staging validado antes del build
 	scripts/promotion-verify.sh
