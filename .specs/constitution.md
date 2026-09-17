@@ -2,7 +2,7 @@
 
 | Nombre | Versión | Fecha | Estado |
 | --- | --- | --- | --- |
-| odoo-infrastructure | R00 | 2026-09-14 | Approved |
+| odoo-infrastructure | R01 | 2026-09-17 | Approved |
 
 ## Propósito
 
@@ -35,8 +35,8 @@ Este repositorio provee infraestructura Docker autoalojada para una instancia de
 ## Principios operativos
 
 - **MUST**: Conservar base de datos y filestore en el mismo snapshot de backup.
-- **MUST**: Mantener la aplicación de imágenes y las operaciones de módulos como decisiones explícitas del operador.
-- **MUST**: Preservar la reversibilidad: sin operaciones de módulos se puede reactivar la imagen anterior; con operaciones de módulos se restaura el backup asociado.
+- **MUST**: Mantener la construcción, el levantamiento y las operaciones de módulos como decisiones explícitas del operador.
+- **MUST**: Recuperar un entorno mediante backup de datos y reconstrucción explícita de la imagen; no se mantiene un mecanismo operativo de rollback de imágenes.
 - **MUST**: Mantener desarrollo y staging descartables y validar los cambios riesgosos antes de producción.
 - **MUST**: Mantener la separación real de secretos, configuraciones, volúmenes, estado e identidad Compose entre entornos que convivan en un checkout.
 - **SHOULD**: Mantener procedimientos simples de ejecutar y de diagnosticar para una sola persona operadora.
@@ -46,7 +46,7 @@ Este repositorio provee infraestructura Docker autoalojada para una instancia de
 - **MUST**: Conservar métricas de host, contenedores, base de datos y aplicación, además de logs centralizados y alertas efectivas.
 - **MUST**: Mantener retención explícita y acotada para métricas y logs.
 - **MUST**: Hacer que cada stack conserve su propia verificación y que `make verify` las orqueste sin duplicar expectativas.
-- **SHOULD**: Registrar la procedencia completa de una imagen y asociarla a los metadatos de backup para facilitar diagnóstico y restauración.
+- **SHOULD**: Registrar la procedencia de la imagen construida para facilitar diagnóstico y restauración, sin convertirla en una ranura operativa de promoción o rollback.
 
 ## Rendimiento
 
@@ -64,7 +64,7 @@ Este repositorio provee infraestructura Docker autoalojada para una instancia de
 
 - Los servicios y stacks usan minúsculas y el mismo nombre para carpeta, servicio y operación.
 - Los archivos Compose usan extensión `.yaml`.
-- Las imágenes usan referencias explícitas e identidades inmutables; no se utiliza `latest`.
+- Las imágenes usan referencias explícitas y no flotantes por entorno; no se utiliza `latest` ni se mantienen ranuras operativas de promoción o rollback.
 - Los archivos privados y mutables de cada entorno viven bajo su `runtime/` y las plantillas versionadas quedan junto a ellos.
 
 ## Restricciones
@@ -80,3 +80,5 @@ Este repositorio provee infraestructura Docker autoalojada para una instancia de
 - Crear una interfaz, dashboard o sistema de notificaciones específico para la gestión de candidatos e imágenes.
 
 ## Registro de enmiendas
+
+- R01 (2026-09-17): eliminar el rollback de imágenes y establecer una única referencia Odoo por entorno, con recuperación mediante backup y reconstrucción explícita.
