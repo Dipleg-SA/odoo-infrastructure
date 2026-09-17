@@ -335,6 +335,15 @@ la imagen Odoo en `/opt/odoo/enterprise/` y `/opt/odoo/custom/`. Por eso el Odoo
 no monta código de addons desde el host: cambiar un candidato no cambia la imagen
 `Actual`. `Nueva`, `Actual`, `Anterior`, digest y procedencia se registran por entorno.
 
+Cada repositorio de addons declara cómo instalar sus dependencias Python mediante sus
+propios `requirements.txt`, tanto en la raíz como dentro de módulos. `pydeps` los descubre
+en la fotografía, comprueba que cubran `external_dependencies.python`, agrega únicamente
+los overrides del deployment y fija ramas o tags Git a commits completos. El lock resultante
+es el único archivo que recibe Docker; los manifiestos validan cobertura, no inventan nombres
+de distribuciones ni versiones. Las fuentes Git fijadas se archivan junto al lock y una etapa
+temporal instala las herramientas nativas necesarias para compilar todos los wheels; la imagen
+final recibe esos wheels, pero no los compiladores.
+
 Enterprise se administra fuera del catálogo de dominios, desde el checkout privado
 `runtime/addons/enterprise/`, y se selecciona mediante un tag anotado e inmutable.
 Community no exige ese checkout. Ambos caminos usan el mismo contrato `ODOO_EDITION` y
@@ -998,7 +1007,7 @@ odoo-infrastructure/
 │   ├── desarrollo/{compose.yaml,compose.env.example}
 │   ├── staging/{compose.yaml,compose.env.example}
 │   ├── produccion/{compose.yaml,compose.env.example}
-│   ├── addons/{catalogo.txt.example,requirements.txt.example}
+│   ├── addons/{catalogo.txt.example,requirements.override.txt.example}
 │   └── control/compose.yaml     ← composición aislada del receptor
 ├── stacks/                      ← un stack por contenedor, con imagen, config y verify
 │   ├── nginx/ · cloudflared/ · dnsmasq/ · certbot/

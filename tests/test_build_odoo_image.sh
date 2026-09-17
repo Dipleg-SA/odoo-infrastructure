@@ -12,6 +12,7 @@ cp -R "$REPO_ROOT/scripts" "$ROOT/"
 cp -R "$REPO_ROOT/stacks/odoo" "$ROOT/stacks/odoo"
 cp "$REPO_ROOT/runtime/desarrollo/compose.env.example" "$ROOT/runtime/desarrollo/compose.env"
 printf 'services: {}\n' > "$ROOT/runtime/desarrollo/compose.yaml"
+printf 'requests==2.32.5\n' > "$ROOT/runtime/addons/requirements.override.txt"
 tar -cf "$TMP/runtime-before.tar" -C "$REPO_ROOT" runtime
 trap 'rm -rf "$TMP"' EXIT
 cd "$ROOT"
@@ -28,7 +29,9 @@ mkdir -p "$TMP/ee/ventas"; printf "{'name': 'ventas'}\n" > "$TMP/ee/ventas/__man
 git clone -q "$TMP/ee" runtime/addons/enterprise
 git -c init.defaultBranch=main init -q "$TMP/domain"
 git -C "$TMP/domain" config user.email test@example.invalid; git -C "$TMP/domain" config user.name test
-printf "{'name': 'ventas'}\n" > "$TMP/domain/__manifest__.py"; git -C "$TMP/domain" add .; git -C "$TMP/domain" commit -qm inicial
+printf "{'name': 'ventas', 'external_dependencies': {'python': ['authlib']}}\n" > "$TMP/domain/__manifest__.py"
+printf 'authlib>=1.6.12,<1.7.0\n' > "$TMP/domain/requirements.txt"
+git -C "$TMP/domain" add .; git -C "$TMP/domain" commit -qm inicial
 COMMIT=$(git -C "$TMP/domain" rev-parse HEAD); git clone --bare -q "$TMP/domain" runtime/addons/.repos/ventas.git
 mkdir -p runtime/addons/custom/desarrollo/ventas; printf '%s\n' "$COMMIT" > runtime/addons/custom/desarrollo/ventas/.candidate-commit
 mkdir -p "$TMP/bin"
@@ -51,6 +54,16 @@ contiene "registra commit Enterprise" '"enterprise_commit": "' "$CONTENIDO_EE"
 contiene "registra módulo Enterprise" '"enterprise_modules": ["ventas"]' "$CONTENIDO_EE"
 contiene "exporta Enterprise" 'enterprise/ventas/__manifest__.py' "$(find runtime/addons/builds/desarrollo -path '*/enterprise/ventas/__manifest__.py' -print)"
 contiene "exporta dominio" 'custom/ventas/__manifest__.py' "$(find runtime/addons/builds/desarrollo -path '*/custom/ventas/__manifest__.py' -print)"
+LOCK_EE="$(find runtime/addons/builds/desarrollo -name requirements.lock.txt -type f -print | head -1)"
+contiene "compila requisitos del dominio" 'authlib>=1.6.12,<1.7.0' "$(cat "$LOCK_EE")"
+contiene "aplica overrides del deployment" 'requests==2.32.5' "$(cat "$LOCK_EE")"
+
+# Contrato de instalación Python
+# Las dependencias nativas se compilan aparte y la imagen final solo recibe wheels.
+DOCKERFILE="$(cat stacks/odoo/image/Dockerfile)"
+contiene "usa una etapa para compilar wheels" 'AS python-deps' "$DOCKERFILE"
+contiene "instala wheels sin desinstalar paquetes Debian" '--ignore-installed' "$DOCKERFILE"
+contiene "copia wheels a la imagen final" 'COPY --from=python-deps /tmp/wheels/' "$DOCKERFILE"
 
 # Fallos de selección Enterprise
 # Ningún tag o checkout inválido puede publicar Nueva.

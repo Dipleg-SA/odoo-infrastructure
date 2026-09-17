@@ -1,0 +1,2 @@
+# Overrides Python del deployment
+# Los requisitos normales viven en cada repositorio de addons; este archivo queda vacío salvo excepción documentada.

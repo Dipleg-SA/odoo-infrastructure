@@ -64,7 +64,9 @@ Los procedimientos están agrupados en `entorno/`, `modulos/`, `backup-restore/`
 rápido cuando corresponde, comandos y verificación. La procedencia de edición, los
 backups y los restores forman parte del procedimiento, no de una configuración paralela.
 La credencial de [gestión de ramas de desarrollo](credenciales/configurar-credencial-git-desarrollo.md)
-es distinta de las credenciales de solo lectura de staging y producción.
+es distinta de las credenciales de solo lectura de staging y producción. La
+[gestión de dependencias Python](modulos/gestionar-dependencias-python.md) toma los
+requisitos de cada repositorio y reserva el archivo local para overrides.
 
 ## Verificaciones
 

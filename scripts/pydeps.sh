@@ -1,258 +1,396 @@
 #!/usr/bin/env bash
-# --- Dependencias Python de los addons ---
-# check: ¿requirements.txt cubre lo que declaran los manifiestos? Puro host, sin red.
-# sync: resuelve versión contra la imagen base y pinea lo que falte — nunca reescribe un pin ya puesto.
+# Dependencias Python de los addons
+# Los repositorios deciden cómo instalar; los manifiestos solo comprueban cobertura.
 
 set -euo pipefail
-shopt -s nullglob
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 . scripts/lib/ui.sh
 . scripts/lib/contexto.sh
 contexto_iniciar
 
-REQUIREMENTS="${PYDEPS_REQUIREMENTS:-runtime/addons/requirements.txt}"
+OVERRIDE="${PYDEPS_OVERRIDE:-runtime/addons/requirements.override.txt}"
+OUTPUT="${PYDEPS_OUTPUT:-runtime/addons/requirements.lock.txt}"
 
 # Snapshot del runtime
-# Los comandos manuales leen candidatos del entorno; el build puede inyectar otra raíz.
+# Los comandos manuales leen candidatos; el build inyecta la fotografía exportada.
 if [ -n "${PYDEPS_SNAPSHOT_ROOT:-}" ]; then
-  SNAPSHOT_ENTERPRISE_ROOT="$PYDEPS_SNAPSHOT_ROOT/enterprise"
-  SNAPSHOT_CUSTOM_ROOT="$PYDEPS_SNAPSHOT_ROOT/custom"
+  ENTERPRISE_ROOT="$PYDEPS_SNAPSHOT_ROOT/enterprise"
+  CUSTOM_ROOT="$PYDEPS_SNAPSHOT_ROOT/custom"
 else
-  SNAPSHOT_ENTERPRISE_ROOT="runtime/addons/enterprise"
-  SNAPSHOT_CUSTOM_ROOT="runtime/addons/custom/$ENTORNO"
+  ENTERPRISE_ROOT="runtime/addons/enterprise"
+  CUSTOM_ROOT="runtime/addons/custom/$ENTORNO"
 fi
 
-# --- Bootstrap desde la plantilla ---
-# No se versiona —es local al deployment—, así que se copia una vez desde runtime/addons.
-
-require_requirements() {
-  if [ ! -f "$REQUIREMENTS" ]; then
-    ui_bad "no existe $REQUIREMENTS" "cp $REQUIREMENTS.example $REQUIREMENTS — y después 'make addons-deps'"
-    exit 1
-  fi
-}
-
-# --- Manifiestos ---
-# Una fila por __manifest__.py bajo cada snapshot; el layout lo fija entrypoint.sh.
-
-manifest_files() {
-  local root
-  for root in "$SNAPSHOT_ENTERPRISE_ROOT" "$SNAPSHOT_CUSTOM_ROOT"; do
-    [ -d "$root" ] || continue
-    find "$root" -name __manifest__.py -type f -print 2>/dev/null || true
-  done
-}
-
-# Validación de manifiestos
-# Un archivo inválido detiene check y sync; nunca se interpreta como un addon sin dependencias.
-validar_manifiestos() {
-  local files=() f
-  while IFS= read -r f; do files+=("$f"); done < <(manifest_files)
-  [ "${#files[@]}" -gt 0 ] || return 0
-  python3 - "${files[@]}" <<'PY'
+# Analizador y compilador
+# Python valida los formatos sin ejecutar manifiestos y conserva cada requisito literal.
+run_pydeps() {
+  local command="$1"
+  python3 - "$command" "$ENTERPRISE_ROOT" "$CUSTOM_ROOT" "$OVERRIDE" "$OUTPUT" <<'PY'
 import ast
+import hashlib
+import os
+import pathlib
+import re
+import shutil
+import subprocess
 import sys
+import tarfile
+import tempfile
 
-invalid = False
-for path in sys.argv[1:]:
-    try:
-        with open(path, encoding="utf-8") as source:
-            manifest = ast.literal_eval(source.read())
-    except (OSError, SyntaxError, UnicodeError, ValueError) as error:
-        print(f"pydeps: manifiesto inválido: {path}: {error}", file=sys.stderr)
-        invalid = True
-        continue
-    if not isinstance(manifest, dict):
-        print(f"pydeps: manifiesto inválido: {path}: debe ser un diccionario", file=sys.stderr)
-        invalid = True
-        continue
-    dependencies = manifest.get("external_dependencies", {})
-    if not isinstance(dependencies, dict):
-        print(f"pydeps: manifiesto inválido: {path}: external_dependencies debe ser un diccionario", file=sys.stderr)
-        invalid = True
-        continue
-    python_dependencies = dependencies.get("python", [])
-    if not isinstance(python_dependencies, (list, tuple)) or not all(isinstance(item, str) for item in python_dependencies):
-        print(f"pydeps: manifiesto inválido: {path}: external_dependencies.python debe ser una lista de textos", file=sys.stderr)
-        invalid = True
-if invalid:
+command, enterprise_arg, custom_arg, override_arg, output_arg = sys.argv[1:]
+roots = [pathlib.Path(enterprise_arg), pathlib.Path(custom_arg)]
+override = pathlib.Path(override_arg)
+output = pathlib.Path(output_arg)
+
+ALIASES = {
+    "openssl": "pyopenssl",
+    "pil": "pillow",
+    "yaml": "pyyaml",
+    "dateutil": "python-dateutil",
+    "jwt": "pyjwt",
+    "magic": "python-magic",
+    "ldap": "python-ldap",
+}
+NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")
+EXACT_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*==\s*([^,;\s]+)")
+
+
+def normalize(name):
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def source_label(path):
+    for root in roots:
+        try:
+            return str(path.relative_to(root.parent))
+        except ValueError:
+            pass
+    return str(path)
+
+
+def requirements_files():
+    files = []
+    for root in roots:
+        if root.is_dir():
+            files.extend(root.rglob("requirements.txt"))
+    files = sorted(set(files), key=lambda path: str(path))
+    if override.is_file():
+        files.append(override)
+    return files
+
+
+def requirement_lines(path):
+    lines = []
+    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith(("-r ", "--requirement ", "-c ", "--constraint ", "-e ", "--editable ")):
+            raise ValueError(
+                f"{path}:{number}: directiva no soportada; declarar el requisito directamente"
+            )
+        if line.startswith("-"):
+            raise ValueError(f"{path}:{number}: opción de pip no soportada: {line}")
+        lines.append((line, path, number))
+    return lines
+
+
+def split_marker(line):
+    requirement, separator, marker = line.partition(";")
+    suffix = f";{marker}" if separator else ""
+    return requirement.strip(), suffix
+
+
+def vcs_parts(requirement):
+    prefix = ""
+    vcs = requirement
+    if " @ git+" in requirement:
+        prefix, vcs = requirement.split(" @ ", 1)
+        prefix = prefix.strip() + " @ "
+    if not vcs.startswith("git+"):
+        return None
+
+    url_and_ref, hash_separator, fragment = vcs[4:].partition("#")
+    at = url_and_ref.rfind("@")
+    last_slash = url_and_ref.rfind("/")
+    if at > last_slash:
+        url, ref = url_and_ref[:at], url_and_ref[at + 1 :]
+    else:
+        url, ref = url_and_ref, "HEAD"
+    suffix = f"#{fragment}" if hash_separator else ""
+    return prefix, url, ref, suffix
+
+
+def requirement_name(line):
+    requirement, _marker = split_marker(line)
+    vcs = vcs_parts(requirement)
+    if vcs:
+        prefix, url, _ref, fragment = vcs
+        if prefix:
+            return normalize(prefix[:-3].strip())
+        egg = re.search(r"(?:^|&)egg=([^&]+)", fragment.lstrip("#"))
+        if egg:
+            return normalize(egg.group(1))
+        repository = url.rstrip("/").rsplit("/", 1)[-1]
+        return normalize(repository.removesuffix(".git"))
+    if " @ " in requirement:
+        return normalize(requirement.split(" @ ", 1)[0].strip())
+    if requirement.startswith(("http://", "https://")):
+        return None
+    match = NAME_RE.match(requirement)
+    return normalize(match.group(0)) if match else None
+
+
+def manifest_dependencies():
+    declared = {}
+    invalid = []
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("__manifest__.py")):
+            try:
+                manifest = ast.literal_eval(path.read_text(encoding="utf-8"))
+            except (OSError, SyntaxError, UnicodeError, ValueError) as error:
+                invalid.append(f"{path}: {error}")
+                continue
+            if not isinstance(manifest, dict):
+                invalid.append(f"{path}: debe ser un diccionario")
+                continue
+            dependencies = manifest.get("external_dependencies", {})
+            if not isinstance(dependencies, dict):
+                invalid.append(f"{path}: external_dependencies debe ser un diccionario")
+                continue
+            python_dependencies = dependencies.get("python", [])
+            if not isinstance(python_dependencies, (list, tuple)) or not all(
+                isinstance(item, str) for item in python_dependencies
+            ):
+                invalid.append(
+                    f"{path}: external_dependencies.python debe ser una lista de textos"
+                )
+                continue
+            for dependency in python_dependencies:
+                match = NAME_RE.match(dependency.strip())
+                if not match:
+                    invalid.append(f"{path}: dependencia Python inválida: {dependency}")
+                    continue
+                imported = normalize(match.group(0))
+                installed = ALIASES.get(imported, imported)
+                declared.setdefault(installed, []).append(path)
+    if invalid:
+        raise ValueError("manifiestos inválidos:\n" + "\n".join(invalid))
+    return declared
+
+
+def collect_requirements():
+    collected = []
+    files = requirements_files()
+    repository_files = [path for path in files if path != override]
+    for path in repository_files:
+        for line, source, number in requirement_lines(path):
+            name = requirement_name(line)
+            if not name:
+                raise ValueError(f"{source}:{number}: requisito no reconocido: {line}")
+            collected.append((line, name, source, number))
+    if override.is_file():
+        override_requirements = []
+        for line, source, number in requirement_lines(override):
+            name = requirement_name(line)
+            if not name:
+                raise ValueError(f"{source}:{number}: requisito no reconocido: {line}")
+            override_requirements.append((line, name, source, number))
+        overridden = {name for _line, name, _source, _number in override_requirements}
+        collected = [item for item in collected if item[1] not in overridden]
+        collected.extend(override_requirements)
+    return collected
+
+
+def validate(declared, collected):
+    installed = {name for _line, name, _source, _number in collected}
+    missing = sorted(set(declared) - installed)
+    if missing:
+        details = []
+        for name in missing:
+            sources = ", ".join(sorted({str(path) for path in declared[name]}))
+            details.append(f"{name} (declarada en {sources})")
+        raise ValueError("dependencias sin requirements.txt: " + "; ".join(details))
+
+    exact = {}
+    direct = {}
+    indexed = set()
+    for line, name, source, number in collected:
+        requirement, _marker = split_marker(line)
+        match = EXACT_RE.match(requirement)
+        if match:
+            exact.setdefault(name, {}).setdefault(match.group(2), []).append((source, number))
+        if vcs_parts(requirement) or " @ " in requirement:
+            direct.setdefault(name, {}).setdefault(requirement, []).append((source, number))
+        else:
+            indexed.add(name)
+    conflicts = []
+    for name, versions in exact.items():
+        if len(versions) > 1:
+            conflicts.append(f"{name}: pines incompatibles {', '.join(sorted(versions))}")
+    for name, references in direct.items():
+        if len(references) > 1:
+            conflicts.append(f"{name}: fuentes directas incompatibles")
+        if name in indexed:
+            conflicts.append(f"{name}: mezcla una fuente directa con un requisito de índice")
+    if conflicts:
+        raise ValueError("requisitos incompatibles: " + "; ".join(conflicts))
+
+
+def resolve_vcs(line, sources_dir, checkout_root, mirrors):
+    requirement, marker = split_marker(line)
+    vcs = vcs_parts(requirement)
+    if not vcs:
+        return line, None
+    prefix, url, ref, fragment = vcs
+    if re.fullmatch(r"[0-9a-fA-F]{40}", ref):
+        sha = ref.lower()
+    else:
+        patterns = ["HEAD"] if ref == "HEAD" else [
+            f"refs/heads/{ref}",
+            f"refs/tags/{ref}^{{}}",
+            f"refs/tags/{ref}",
+        ]
+        environment = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+        result = subprocess.run(
+            ["git", "ls-remote", url, *patterns],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=environment,
+        )
+        if result.returncode != 0:
+            message = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "sin detalle"
+            raise ValueError(f"no se pudo resolver {url}@{ref}: {message}")
+        references = {}
+        for row in result.stdout.splitlines():
+            sha_value, remote_ref = row.split("\t", 1)
+            references[remote_ref] = sha_value
+        preferred = ["HEAD"] if ref == "HEAD" else [
+            f"refs/tags/{ref}^{{}}",
+            f"refs/heads/{ref}",
+            f"refs/tags/{ref}",
+        ]
+        sha = next((references[item] for item in preferred if item in references), None)
+        if not sha:
+            raise ValueError(f"no existe la referencia Git {url}@{ref}")
+
+    mirror = mirrors.get(url)
+    if mirror is None:
+        mirror = checkout_root / hashlib.sha256(url.encode()).hexdigest()
+        environment = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+        result = subprocess.run(
+            ["git", "clone", "--mirror", "--quiet", url, str(mirror)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=environment,
+        )
+        if result.returncode != 0:
+            message = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "sin detalle"
+            raise ValueError(f"no se pudo descargar {url}: {message}")
+        mirrors[url] = mirror
+
+    repository = normalize(url.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git"))
+    filename = f"{repository}-{sha[:12]}-{hashlib.sha256(url.encode()).hexdigest()[:8]}.tar.gz"
+    archive = sources_dir / filename
+    result = subprocess.run(
+        ["git", f"--git-dir={mirror}", "archive", "--format=tar.gz", f"--output={archive}", sha],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        message = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "sin detalle"
+        raise ValueError(f"no se pudo archivar {url}@{sha}: {message}")
+    with tarfile.open(archive, "r:gz") as source_archive:
+        if any(member.name == ".gitmodules" for member in source_archive.getmembers()):
+            raise ValueError(f"{url}@{sha} usa submódulos Git, formato todavía no soportado")
+
+    local = f"file:///tmp/requirements.sources/{filename}{fragment}"
+    compiled = f"{prefix}{local}{marker}" if prefix else f"{local}{marker}"
+    return compiled, f"{url}@{sha}{fragment}"
+
+
+try:
+    declared = manifest_dependencies()
+    collected = collect_requirements()
+    validate(declared, collected)
+    if command == "compile":
+        compiled = []
+        seen = set()
+        current_source = None
+        sources_dir = output.parent / "requirements.sources"
+        if sources_dir.exists():
+            shutil.rmtree(sources_dir)
+        sources_dir.mkdir(parents=True)
+        with tempfile.TemporaryDirectory(prefix="pydeps-") as checkout:
+            checkout_root = pathlib.Path(checkout)
+            mirrors = {}
+            for line, _name, source, _number in collected:
+                resolved, provenance = resolve_vcs(line, sources_dir, checkout_root, mirrors)
+                if resolved in seen:
+                    continue
+                if source != current_source:
+                    compiled.append(f"# Fuente: {source_label(source)}")
+                    current_source = source
+                if provenance:
+                    compiled.append(f"# VCS: {provenance}")
+                compiled.append(resolved)
+                seen.add(resolved)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text("\n".join(compiled) + ("\n" if compiled else ""), encoding="utf-8")
+        print(f"{len(seen)} requisito(s) compilados en {output}")
+    elif command == "check":
+        print(f"{len(collected)} requisito(s) cubren {len(declared)} dependencia(s) declaradas")
+    else:
+        raise ValueError(f"comando desconocido: {command}")
+except (OSError, subprocess.TimeoutExpired, ValueError) as error:
+    print(f"pydeps: {error}", file=sys.stderr)
     raise SystemExit(1)
 PY
 }
 
-# --- external_dependencies.python ---
-# ast.literal_eval, no exec: un manifiesto es un dict literal, nunca hace falta correrlo.
-
-declared_deps() {
-  [ "$#" -eq 0 ] && return 0
-  python3 - "$@" <<'PY'
-import ast, sys
-
-names = set()
-for path in sys.argv[1:]:
-    with open(path, encoding="utf-8") as f:
-        manifest = ast.literal_eval(f.read())
-    names.update(manifest.get("external_dependencies", {}).get("python", []))
-
-for n in sorted(names):
-    print(n)
-PY
-}
-
-# --- Normalización de nombre (PEP 503, simplificada) ---
-# 'Pillow' y 'pillow', o 'python-dateutil' y 'python_dateutil', se tratan igual.
-
-norm() { tr 'A-Z_.' 'a-z--'; }
-
-# Un requisito puede traer un rango (``authlib>=1.6.12``), pero ese rango no
-# forma parte de su identidad. Se conserva literal para pasarlo a pip; solo el
-# nombre se normaliza al comparar contra requirements.txt.
-requirement_name() {
-  sed -E 's/^[[:space:]]*([A-Za-z0-9][A-Za-z0-9._-]*).*/\1/' | norm
-}
-
-# Distribuciones instalables
-# Los manifiestos declaran módulos importables; pip recibe el nombre de su distribución.
-distribution_requirement() {
-  local requirement="$1" name suffix
-  name=$(printf '%s\n' "$requirement" | sed -E 's/^[[:space:]]*([A-Za-z0-9][A-Za-z0-9._-]*).*/\1/')
-  suffix=$(printf '%s\n' "$requirement" | sed -E 's/^[[:space:]]*[A-Za-z0-9][A-Za-z0-9._-]*//')
-  case "$(printf '%s\n' "$name" | norm)" in
-    openssl) printf 'pyOpenSSL%s\n' "$suffix" ;;
-    pil) printf 'Pillow%s\n' "$suffix" ;;
-    yaml) printf 'PyYAML%s\n' "$suffix" ;;
-    dateutil) printf 'python-dateutil%s\n' "$suffix" ;;
-    jwt) printf 'PyJWT%s\n' "$suffix" ;;
-    magic) printf 'python-magic%s\n' "$suffix" ;;
-    ldap) printf 'python-ldap%s\n' "$suffix" ;;
-    *) printf '%s\n' "$requirement" ;;
-  esac
-}
-
-declared_pairs() {
-  local files=() f requirement distribution
-  while IFS= read -r f; do files+=("$f"); done < <(manifest_files)
-  [ "${#files[@]}" -eq 0 ] && return 0
-
-  while IFS= read -r requirement; do
-    distribution=$(distribution_requirement "$requirement")
-    printf '%s\t%s\n' "$(printf '%s\n' "$distribution" | requirement_name)" "$distribution"
-  done < <(declared_deps "${files[@]}")
-}
-
-declared_names() {
-  declared_pairs | cut -f1 | sort -u
-}
-
-pinned_names() {
-  [ -f "$REQUIREMENTS" ] || return 0
-  grep -vE '^[[:space:]]*(#|$)' "$REQUIREMENTS" | sed -E 's/^([A-Za-z0-9._-]+).*/\1/' | norm | sort -u
-}
-
-# --- Comparación declarado vs pineado ---
-# Un solo cómputo de cada lado; deja MISSING/ORPHANS para no recalcularlos una segunda vez.
-
-comparar_nombres() {
-  local declared pinned
-  declared=$(declared_names) || true
-  pinned=$(pinned_names) || true
-  MISSING=$(comm -23 <(printf '%s' "$declared") <(printf '%s' "$pinned"))
-  ORPHANS=$(comm -13 <(printf '%s' "$declared") <(printf '%s' "$pinned"))
-}
-
-# MISSING contiene nombres normalizados. Para resolver, recuperar los requisitos
-# originales: pip necesita los puntos de la versión y cualquier otro specifier.
-missing_requirements() {
-  [ -n "$MISSING" ] || return 0
-  awk -F '\t' 'NR == FNR { missing[$1] = 1; next } missing[$1] { print $2 }' \
-    <(printf '%s\n' "$MISSING") <(declared_pairs)
-}
-
-# --- check: sin red, sin Docker ---
-# Falla si requirements.txt no cubre lo declarado en los manifiestos; avisa si sobran pines.
-
+# Verificación offline
+# Confirma sintaxis, cobertura de manifiestos y ausencia de conflictos evidentes.
 cmd_check() {
-  require_requirements
-  validar_manifiestos
-  comparar_nombres
+  local report
   ui_plan_start "pydeps check"
-  ui_step 1 "Verificación de que $REQUIREMENTS cubra las external_dependencies declaradas."
-  ui_plan_end
-  if [ -n "$MISSING" ]; then
-    ui_bad "pydeps check: faltan en $REQUIREMENTS" "$(tr '\n' ' ' <<<"$MISSING")"
-    echo
+  ui_step 1 "Validación de requirements.txt de los repositorios y overrides del entorno."
+  if ! report=$(run_pydeps check 2>&1); then
+    ui_bad "pydeps check: requisitos inválidos" "$report"
+    ui_plan_end
     return 1
   fi
-  ui_ok "pydeps check: $REQUIREMENTS cubre lo que declaran los addons"
-  [ -n "$ORPHANS" ] && ui_warn "pineados de más, ningún addon los declara" "$(tr '\n' ' ' <<<"$ORPHANS")"
-  echo
-  return 0
-}
-
-# --- sync: resuelve contra la imagen base y pinea lo que falte ---
-# --no-deps a propósito: pinea solo lo declarado, las transitivas las resuelve pip en build time.
-
-cmd_sync() {
-  local missing image reporte resueltos pedidos resueltos_n requirement
-  local requests=()
-
-  require_requirements
-  validar_manifiestos
-  comparar_nombres
-  missing=$(missing_requirements)
-  ui_plan_start "pydeps sync"
-  if [ -z "$missing" ]; then
-    ui_step 1 "Nada nuevo que pinear en $REQUIREMENTS."
-    ui_ok "pydeps sync: nada nuevo que pinear"
-  else
-    image=$(sed -n 's/^FROM \(.*\)$/\1/p' stacks/odoo/image/Dockerfile | head -1)
-    while IFS= read -r requirement; do requests+=("$requirement"); done <<<"$missing"
-    pedidos="${#requests[@]}"
-    ui_step 1 "Resolución de $pedidos paquete(s) contra $image."
-
-    # --- --ignore-installed ---
-    # Sin esto, un paquete que ya trae la imagen base (vía apt) queda "satisfied" y no se pinea.
-
-    if ! reporte=$(docker run --rm "$image" \
-        pip install --break-system-packages --dry-run --quiet --no-deps --ignore-installed \
-          --report - "${requests[@]}" 2>&1); then
-      ui_bad "pydeps sync: no se pudo resolver contra $image" "$(tail -1 <<<"$reporte")"
-      ui_plan_end
-      return 1
-    fi
-
-    resueltos=$(echo "$reporte" | python3 -c '
-import json, sys
-
-data = json.load(sys.stdin)
-for item in data["install"]:
-    m = item["metadata"]
-    print(m["name"] + "==" + m["version"])
-' | sort)
-
-    [ -n "$resueltos" ] && echo "$resueltos" >> "$REQUIREMENTS"
-    resueltos_n=$([ -n "$resueltos" ] && wc -l <<<"$resueltos" | tr -d ' ' || echo 0)
-
-    ui_ok "pydeps sync: $resueltos_n paquete(s) agregados a $REQUIREMENTS"
-    if [ "$resueltos_n" -lt "$pedidos" ]; then
-      ui_warn "pip no resolvió todo lo pedido" "revisar nombres en: $(tr '\n' ' ' <<<"$missing")"
-    fi
-  fi
-
   ui_plan_end
-  [ -n "$ORPHANS" ] && ui_warn "pineados de más, ningún addon los declara" "$(tr '\n' ' ' <<<"$ORPHANS")"
+  ui_ok "pydeps check: $report"
   echo
-  return 0
 }
 
-# --- Sourceado desde los tests ---
-# Sin esto, importar los helpers correría el comando entero y su exit code.
-
-[ "${BASH_SOURCE[0]}" = "$0" ] || return 0
+# Compilación reproducible
+# Fija ramas y tags Git a commits completos antes de escribir el lock del build.
+cmd_compile() {
+  local report
+  ui_plan_start "pydeps compile"
+  ui_step 1 "Compilación de requirements.txt desde la fotografía de addons."
+  if ! report=$(run_pydeps compile 2>&1); then
+    ui_bad "pydeps compile: no se pudo generar el lock" "$report"
+    ui_plan_end
+    return 1
+  fi
+  ui_plan_end
+  ui_ok "pydeps compile: $report"
+  echo
+}
 
 case "${1:-}" in
   check) cmd_check ;;
-  sync)  cmd_sync ;;
-  *) echo "uso: $(basename "$0") check|sync" >&2; exit 2 ;;
+  compile) cmd_compile ;;
+  *) echo "uso: $(basename "$0") check|compile" >&2; exit 2 ;;
 esac
