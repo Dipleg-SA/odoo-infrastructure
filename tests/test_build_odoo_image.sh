@@ -5,19 +5,30 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 . tests/lib.sh
 TMP=$(mktemp -d)
-CREADO_ENV=0
-trap 'rm -rf "$TMP" runtime/addons/enterprise runtime/addons/.repos runtime/addons/custom/desarrollo runtime/addons/builds/desarrollo runtime/desarrollo/state/images.json; [ "$CREADO_ENV" -eq 0 ] || rm -f runtime/desarrollo/compose.env' EXIT
-if [ ! -f runtime/desarrollo/compose.env ]; then cp runtime/desarrollo/compose.env.example runtime/desarrollo/compose.env; CREADO_ENV=1; fi
-rm -rf runtime/addons/enterprise runtime/addons/.repos runtime/addons/custom/desarrollo runtime/addons/builds/desarrollo runtime/desarrollo/state/images.json
+REPO_ROOT="$PWD"
+ROOT="$TMP/repo"
+mkdir -p "$ROOT/runtime/desarrollo" "$ROOT/runtime/addons" "$ROOT/stacks"
+cp -R "$REPO_ROOT/scripts" "$ROOT/"
+cp -R "$REPO_ROOT/stacks/odoo" "$ROOT/stacks/odoo"
+cp "$REPO_ROOT/runtime/desarrollo/compose.env.example" "$ROOT/runtime/desarrollo/compose.env"
+printf 'services: {}\n' > "$ROOT/runtime/desarrollo/compose.yaml"
+tar -cf "$TMP/runtime-before.tar" -C "$REPO_ROOT" runtime
+trap 'rm -rf "$TMP"' EXIT
+cd "$ROOT"
+git init -q
+git config user.email test@example.invalid
+git config user.name test
+git add scripts stacks runtime
+git commit -qm base
 mkdir -p runtime/addons/.repos runtime/addons/custom/desarrollo
 
 git -c init.defaultBranch=main init -q "$TMP/ee"
 git -C "$TMP/ee" config user.email test@example.invalid; git -C "$TMP/ee" config user.name test
-mkdir -p "$TMP/ee/ventas"; echo "enterprise" > "$TMP/ee/ventas/__manifest__.py"; git -C "$TMP/ee" add .; git -C "$TMP/ee" commit -qm inicial; git -C "$TMP/ee" tag -a 19.0-ee-2026-09-14 -m inmutable; git -C "$TMP/ee" tag 19.0-ee-2026-09-17
+mkdir -p "$TMP/ee/ventas"; printf "{'name': 'ventas'}\n" > "$TMP/ee/ventas/__manifest__.py"; git -C "$TMP/ee" add .; git -C "$TMP/ee" commit -qm inicial; git -C "$TMP/ee" tag -a 19.0-ee-2026-09-14 -m inmutable; git -C "$TMP/ee" tag 19.0-ee-2026-09-17
 git clone -q "$TMP/ee" runtime/addons/enterprise
 git -c init.defaultBranch=main init -q "$TMP/domain"
 git -C "$TMP/domain" config user.email test@example.invalid; git -C "$TMP/domain" config user.name test
-echo "domain" > "$TMP/domain/__manifest__.py"; git -C "$TMP/domain" add .; git -C "$TMP/domain" commit -qm inicial
+printf "{'name': 'ventas'}\n" > "$TMP/domain/__manifest__.py"; git -C "$TMP/domain" add .; git -C "$TMP/domain" commit -qm inicial
 COMMIT=$(git -C "$TMP/domain" rev-parse HEAD); git clone --bare -q "$TMP/domain" runtime/addons/.repos/ventas.git
 mkdir -p runtime/addons/custom/desarrollo/ventas; printf '%s\n' "$COMMIT" > runtime/addons/custom/desarrollo/ventas/.candidate-commit
 mkdir -p "$TMP/bin"
@@ -86,5 +97,8 @@ contiene "registra inventario Enterprise vacío" '"enterprise_modules": []' "$CO
 CE_BUILD="$(find runtime/addons/builds/desarrollo -mindepth 2 -maxdepth 2 -name image.json -type f -print | while IFS= read -r metadata; do grep -q '"edition": "community"' "$metadata" && dirname "$metadata" && break; done)"
 igual "Community no exporta código Enterprise" '' "$(find "$CE_BUILD/enterprise" -name __manifest__.py -type f -print)"
 no_contiene "Community no registra código Enterprise" 'enterprise/__manifest__.py' "$CONTENIDO"
+
+tar -cf "$TMP/runtime-after.tar" -C "$REPO_ROOT" runtime
+igual "el test no modifica runtime preexistente" "0" "$(cmp -s "$TMP/runtime-before.tar" "$TMP/runtime-after.tar"; echo $?)"
 
 resumen

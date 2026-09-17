@@ -1,18 +1,24 @@
 #!/usr/bin/env bash
 # Qué se espera del stack certbot. Dueño único de estos valores: el runbook
 # nombra el comando, los valores viven acá.
-#
-# No lleva `sano`: corre bajo profiles y nunca está levantado. Lo que se verifica
-# es su producto —el certificado— y lo que necesita para producirlo: el token.
 
 . "$(dirname "${BASH_SOURCE[0]}")/../../scripts/lib/verify.sh"
 
 v_certbot() {
   titulo "certbot"
 
+  # --- Perfil declarable ---
+  # Certbot corre como one-off, pero su fragmento debe existir en la composición.
+
+  if perfil_declarado cert; then
+    ok "perfil cert declarado"
+  else
+    bad "perfil cert declarado" "falta el fragmento de certbot en la composición"
+    return
+  fi
+
   # --- Certificado ---
-  # Lo emite certbot, no nginx: si falta, nginx ni siquiera arranca. Se avisa
-  # antes de que el timer sea el que descubra el problema.
+  # La presencia y vigencia del certificado preceden al arranque de nginx.
 
   local venc epoch ahora dias
   venc=$(COMPOSE_PROFILES="${COMPOSE_PROFILES:+$COMPOSE_PROFILES,}cert" contexto_compose run --rm -T certbot certificates 2>/dev/null \
@@ -28,17 +34,12 @@ v_certbot() {
   fi
 
   # --- Renovación automática ---
-  # Sin el timer, la emisión inicial es la única que hubo: el certificado vence a
-  # los 90 días y el chequeo de arriba lo descubre cuando faltan 15.
+  # El timer evita que el certificado emitido quede vencido.
 
   timer_activo cert-renew
 
   # --- Token de Cloudflare ---
-  # Valor y alcance de una sola vez, contra la API real. Lo consume certbot para
-  # el desafío DNS-01: un token inválido no se nota hasta que el cert no renueva.
-  #
-  # /user/tokens/verify rechaza los tokens nuevos con prefijo cfut_ aunque sean
-  # válidos — se prueba contra /zones, lo mismo que usa certbot de verdad.
+  # Se comprueba contra la API de zonas, que es el acceso requerido por DNS-01.
 
   local token resp
   if token=$(cat secrets/cloudflare_api_token 2>/dev/null) && [ -n "$token" ]; then

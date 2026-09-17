@@ -50,3 +50,6 @@ van en español, en imperativo, con el área que tocan adelante (`docs:`, `make:
 `scripts/addons.sh:`, etc.) — mirá el historial reciente para el tono exacto. Un PR
 grande que mezcla áreas sin relación se separa en varios: el diff acotado es lo que hace
 auditable de un vistazo qué cambió y por qué.
+
+Las notas de cambios se redactan en el release al integrar la entrega; no se agrega ni
+se actualiza un `CHANGELOG.md` versionado.

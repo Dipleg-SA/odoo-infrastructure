@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-# Stub de systemctl. Registra cada invocación con su nombre adelante —el de docker
-# no lo lleva— y devuelve el fixture del caso; nunca habla con el init del host.
+# Stub de systemctl
+# Cada invocación requiere el fixture systemctl y nunca habla con el init del host.
+# Un archivo vacío representa deliberadamente una respuesta vacía.
 
 printf 'systemctl %s\n' "$*" >> "$STUB_DIR/llamadas"
 
-[ -f "$STUB_DIR/systemctl" ] && cat "$STUB_DIR/systemctl"
+if [ ! -f "$STUB_DIR/systemctl" ]; then
+  printf 'stub systemctl: falta fixture systemctl para: %s\n' "$*" >&2
+  exit 99
+fi
+cat "$STUB_DIR/systemctl"
 exit "$(cat "$STUB_DIR/exit-systemctl" 2>/dev/null || echo 0)"

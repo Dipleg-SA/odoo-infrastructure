@@ -28,8 +28,8 @@ Este procedimiento es para recuperar producción. Para sembrar staging, seguí
 
 ## A mano
 
-Antes de empezar, el checkout tiene que estar bootstrapeado: `.env` con su
-`COMPOSE_PROJECT_NAME`, los configs reales copiados de sus `.example`, y los secrets
+Antes de empezar, el checkout tiene que estar bootstrapeado: `runtime/produccion/compose.env`
+con su `COMPOSE_PROJECT_NAME`, los configs reales copiados de sus `.example`, y los secrets
 cargados —incluidos `restic_password` y `restic_r2_credentials`, que tienen que ser
 **los del repositorio de origen**, o no hay nada que leer.
 
@@ -39,22 +39,24 @@ original: restic agrupa los snapshots por ese nombre y `backup-verify` lo usa pa
 encontrar los de este stack.
 
 El snapshot guarda la base, el filestore, la procedencia de imágenes con edición y un
-inventario informativo de ramas y commits de addons en `state/meta/addons.txt`; no guarda los repositorios ni el manifiesto
-`addons/addons.txt`. Recuperá el manifiesto y el ZIP de Enterprise, si se usa, desde su
-copia externa. Los commits de addons que registra el inventario tienen que seguir
+inventario informativo de ramas y commits de addons en `runtime/<entorno>/state/meta/`; no guarda los repositorios ni el catálogo.
+Recuperá `runtime/addons/catalogo.txt` y, si la edición es Enterprise, el checkout
+privado etiquetado desde su copia externa. Los commits de addons que registra el inventario tienen que seguir
 disponibles en sus repositorios remotos. Odoo aborta si levantás sin addons.
 
-Antes de levantar Odoo, leé `state/meta/images.json` y configurá `ODOO_EDITION` y `TAG` con la edición registrada en la fotografía `Actual`. No elijas Community solo porque el checkout no tenga el ZIP Enterprise: la base puede conservar módulos Enterprise.
+Antes de levantar Odoo, leé `runtime/produccion/state/images.json` y configurá
+`ODOO_EDITION` y `TAG` con la edición registrada en la fotografía `Actual`. No elijas
+Community solo porque el checkout no tenga Enterprise: la base puede conservar módulos Enterprise.
 
 Si se perdió el servidor entero, primero reconstruí Docker y los prerrequisitos del
 host con [configurar-docker-host](../operacion/configurar-docker-host.md). En el
 checkout nuevo, seguí [levantar-produccion](../entorno/levantar-produccion.md) hasta
-completar el bootstrap, incluido `sudo make host-init`, y recuperar `.env`, secrets,
+completar el bootstrap, incluido `sudo make host-init`, y recuperar `runtime/produccion/compose.env`, secrets,
 configs, el manifiesto de addons y las imágenes. Detenete antes de levantar Odoo.
 
 ## Comandos
 
-Completá `addons/addons.txt` antes de sincronizar. Si no tenés la copia externa, podés
+Completá `runtime/addons/catalogo.txt` antes de sincronizar. Si no tenés la copia externa, podés
 consultar el inventario que guarda el snapshot. Si vas a restaurar uno concreto, poné
 el mismo ID en `SNAPSHOT` para ambos comandos:
 
@@ -66,7 +68,7 @@ docker compose run --rm --entrypoint restic -T backup dump "$SNAPSHOT" /data/met
 ```bash
 make postgres-up                 # el motor tiene que estar arriba: el dump entra por psql
 make restore SNAPSHOT="$SNAPSHOT"
-make repo-sync                   # primero completar addons/addons.txt
+make repo-sync                   # primero completar runtime/addons/catalogo.txt
 make addons-deps
 make build                       # solo si addons-deps agregó o cambió pines
 make cert-issue                  # el volumen de certificados no está en el backup

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Stub de docker. Registra cada invocación en $STUB_DIR/llamadas y devuelve el
-# fixture que preparó el caso; nunca habla con un daemon.
+# Stub de docker
+# Cada comando requiere un fixture explícito en $STUB_DIR y nunca habla con un daemon.
 #
-# El registro es la mitad útil: es lo que permite afirmar qué argumentos le
-# llegaron de verdad a certbot, que es donde vivía el bug de --force-renewal.
+# Fixtures: servicios, servicios-sin-perfil, config, ps-q, ps, port, imagenes,
+# rmi y salida; un archivo vacío representa deliberadamente una respuesta vacía.
+# servicios-sin-perfil puede reutilizar servicios cuando el caso no distingue perfiles.
 
 printf '%s\n' "$*" >> "$STUB_DIR/llamadas"
 
@@ -23,9 +24,15 @@ case "$*" in
 esac
 
 # El caso que no distingue perfiles fija un solo fixture: 'servicios' sirve para las dos.
-[ "$archivo" = servicios-sin-perfil ] && [ ! -f "$STUB_DIR/servicios-sin-perfil" ] && archivo=servicios
+if [ "$archivo" = servicios-sin-perfil ] && [ ! -f "$STUB_DIR/servicios-sin-perfil" ]; then
+  archivo=servicios
+fi
 
-[ -f "$STUB_DIR/$archivo" ] && cat "$STUB_DIR/$archivo"
+if [ ! -f "$STUB_DIR/$archivo" ]; then
+  printf 'stub docker: falta fixture %s para: %s\n' "$archivo" "$*" >&2
+  exit 99
+fi
+cat "$STUB_DIR/$archivo"
 
 # Exit code: el global ($STUB_DIR/exit), o uno propio del subcomando si el caso lo
 # preparó — hace falta para fallar UN paso de una secuencia y no la secuencia entera.

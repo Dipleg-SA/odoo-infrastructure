@@ -8,24 +8,23 @@ shopt -s nullglob
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 . scripts/lib/ui.sh
+. scripts/lib/contexto.sh
+contexto_iniciar
 
-REQUIREMENTS="${PYDEPS_REQUIREMENTS:-addons/requirements.txt}"
+REQUIREMENTS="${PYDEPS_REQUIREMENTS:-runtime/addons/requirements.txt}"
 
 # Snapshot del runtime
 # Los comandos manuales leen candidatos del entorno; el build puede inyectar otra raíz.
 if [ -n "${PYDEPS_SNAPSHOT_ROOT:-}" ]; then
   SNAPSHOT_ENTERPRISE_ROOT="$PYDEPS_SNAPSHOT_ROOT/enterprise"
   SNAPSHOT_CUSTOM_ROOT="$PYDEPS_SNAPSHOT_ROOT/custom"
-elif [ -n "${ENTORNO:-}" ]; then
+else
   SNAPSHOT_ENTERPRISE_ROOT="runtime/addons/enterprise"
   SNAPSHOT_CUSTOM_ROOT="runtime/addons/custom/$ENTORNO"
-else
-  SNAPSHOT_ENTERPRISE_ROOT="addons/enterprise"
-  SNAPSHOT_CUSTOM_ROOT="addons/custom"
 fi
 
 # --- Bootstrap desde la plantilla ---
-# No se versiona —es local al deployment, como addons.txt—, así que se copia una vez.
+# No se versiona —es local al deployment—, así que se copia una vez desde runtime/addons.
 
 require_requirements() {
   if [ ! -f "$REQUIREMENTS" ]; then
@@ -35,21 +34,51 @@ require_requirements() {
 }
 
 # --- Manifiestos ---
-# Una fila por __manifest__.py bajo cada categoría; el layout lo fija entrypoint.sh.
+# Una fila por __manifest__.py bajo cada snapshot; el layout lo fija entrypoint.sh.
 
 manifest_files() {
-  local root category
-  local modernos=0
+  local root
   for root in "$SNAPSHOT_ENTERPRISE_ROOT" "$SNAPSHOT_CUSTOM_ROOT"; do
     [ -d "$root" ] || continue
-    modernos=1
     find "$root" -name __manifest__.py -type f -print 2>/dev/null || true
   done
-  if [ "$modernos" -eq 0 ]; then
-    for category in $(sed -n 's/^for category in \(.*\); do/\1/p' stacks/odoo/image/entrypoint.sh); do
-      find "addons/$category" -name __manifest__.py -type f -print 2>/dev/null || true
-    done
-  fi
+}
+
+# Validación de manifiestos
+# Un archivo inválido detiene check y sync; nunca se interpreta como un addon sin dependencias.
+validar_manifiestos() {
+  local files=() f
+  while IFS= read -r f; do files+=("$f"); done < <(manifest_files)
+  [ "${#files[@]}" -gt 0 ] || return 0
+  python3 - "${files[@]}" <<'PY'
+import ast
+import sys
+
+invalid = False
+for path in sys.argv[1:]:
+    try:
+        with open(path, encoding="utf-8") as source:
+            manifest = ast.literal_eval(source.read())
+    except (OSError, SyntaxError, UnicodeError, ValueError) as error:
+        print(f"pydeps: manifiesto inválido: {path}: {error}", file=sys.stderr)
+        invalid = True
+        continue
+    if not isinstance(manifest, dict):
+        print(f"pydeps: manifiesto inválido: {path}: debe ser un diccionario", file=sys.stderr)
+        invalid = True
+        continue
+    dependencies = manifest.get("external_dependencies", {})
+    if not isinstance(dependencies, dict):
+        print(f"pydeps: manifiesto inválido: {path}: external_dependencies debe ser un diccionario", file=sys.stderr)
+        invalid = True
+        continue
+    python_dependencies = dependencies.get("python", [])
+    if not isinstance(python_dependencies, (list, tuple)) or not all(isinstance(item, str) for item in python_dependencies):
+        print(f"pydeps: manifiesto inválido: {path}: external_dependencies.python debe ser una lista de textos", file=sys.stderr)
+        invalid = True
+if invalid:
+    raise SystemExit(1)
+PY
 }
 
 # --- external_dependencies.python ---
@@ -62,11 +91,8 @@ import ast, sys
 
 names = set()
 for path in sys.argv[1:]:
-    try:
-        with open(path) as f:
-            manifest = ast.literal_eval(f.read())
-    except (SyntaxError, ValueError):
-        continue
+    with open(path, encoding="utf-8") as f:
+        manifest = ast.literal_eval(f.read())
     names.update(manifest.get("external_dependencies", {}).get("python", []))
 
 for n in sorted(names):
@@ -129,6 +155,7 @@ missing_requirements() {
 
 cmd_check() {
   require_requirements
+  validar_manifiestos
   comparar_nombres
   ui_plan_start "pydeps check"
   ui_step 1 "Verificación de que $REQUIREMENTS cubra las external_dependencies declaradas."
@@ -152,6 +179,7 @@ cmd_sync() {
   local requests=()
 
   require_requirements
+  validar_manifiestos
   comparar_nombres
   missing=$(missing_requirements)
   ui_plan_start "pydeps sync"

@@ -2,7 +2,7 @@
 
 ## Cuándo se usa
 
-Tres momentos del mismo repositorio: **crearlo** (vas a incorporar un módulo cuyo código no arranca de un `make addons-install` sobre algo que ya existe en el árbol), **actualizarlo** (salió una versión nueva del original y la querés traer a tu fork) o **eliminarlo** (ya no lo usás y querés sacarlo del árbol). Los tres comparten el mismo modelo: un repositorio declarado en `addons/addons.txt`, del que el checkout es dueño de su propia copia.
+Tres momentos del mismo repositorio: **crearlo**, **actualizarlo** o **eliminarlo**. Los tres comparten el mismo modelo: un repositorio declarado en `runtime/addons/catalogo.txt`, del que el checkout es dueño de su propia copia.
 
 Crear aplica a dos orígenes distintos, con el mismo procedimiento salvo por el primer paso:
 
@@ -19,10 +19,9 @@ Un repositorio declarado en el manifiesto de este checkout, con su worktree sinc
 
 Este es el recorrido completo para incorporar, actualizar o retirar un repositorio de addons. Las secciones siguientes explican los comandos Git y los casos de excepción.
 
-1. **Crear o forkear el repositorio** en tu organización y declararlo en `addons/addons.txt`. En desarrollo, si la rama de `ADDONS_BRANCH` todavía no existe en el repo nuevo:
+1. **Crear o forkear el repositorio** en tu organización y declararlo en `runtime/addons/catalogo.txt`. La rama del repositorio debe coincidir con la línea mayor seleccionada por el runtime:
 
    ```bash
-   make repo-branch
    make repo-sync
    ```
 
@@ -53,7 +52,7 @@ Este es el recorrido completo para incorporar, actualizar o retirar un repositor
    make verify
    ```
 
-5. **Retirar un repositorio.** Desinstalar antes todos sus módulos instalados en cada base y sacar su línea de `addons/addons.txt` en cada checkout. Luego, en cada entorno:
+5. **Retirar un repositorio.** Desinstalar antes todos sus módulos instalados en cada base y sacar su línea de `runtime/addons/catalogo.txt` en cada checkout. Luego, en cada entorno:
 
    ```bash
    make repo-status
@@ -82,7 +81,7 @@ de este bloque.
 
 ### Crear
 
-**A mano.** **Origen propio:** creá el repositorio vacío en tu organización, con al menos la rama de versión que usa este stack (`ADDONS_BRANCH` en `.env`; su default es la versión del tag `FROM odoo:` del Dockerfile).
+**A mano.** **Origen propio:** creá el repositorio vacío en tu organización, con al menos la rama de versión que usa este stack (`TAG` y la versión mayor de Odoo del runtime).
 
 **Origen de terceros:** forkealo a tu organización, en tu proveedor git. No se agrega el repositorio ajeno directo al manifiesto: sin fork no se puede parchear un módulo sin salirse del modelo, y sin un remote propio no hay dónde pushear la integración a staging.
 
@@ -90,26 +89,25 @@ de este bloque.
 
 ```bash
 # origen propio
-echo "<url-de-tu-repo> custom-addons" >> addons/addons.txt
+echo "<url-de-tu-repo> custom-addons" >> runtime/addons/catalogo.txt
 ```
 
 ```bash
 # origen de terceros (categoría "oca" o "third-party" según corresponda)
-echo "<url-de-tu-fork> oca" >> addons/addons.txt
+echo "<url-de-tu-fork> oca" >> runtime/addons/catalogo.txt
 ```
 
-En un checkout de desarrollo, si `ADDONS_BRANCH` es una rama de feature que todavía no existe en este repo nuevo, `repo-sync` falla al armar el worktree — creala primero con `make repo-branch` (ver [levantar-desarrollo § 5](../entorno/levantar-desarrollo.md)).
+En un checkout de desarrollo, si la rama de feature todavía no existe en el repositorio nuevo, creala primero en el repositorio remoto; después `repo-sync` podrá armar el worktree.
 
 ```bash
-make repo-branch   # solo si esa rama de feature todavía no existe
 make repo-sync
 ```
 
 Solo si el origen es de terceros, para poder traer versiones nuevas del original más adelante (ver [Actualizar](#actualizar) más abajo):
 
 ```bash
-git -C addons/.repos/<repo>.git remote add upstream <url-del-original>
-git -C addons/.repos/<repo>.git fetch upstream
+git -C runtime/addons/.repos/<repo>.git remote add upstream <url-del-original>
+git -C runtime/addons/.repos/<repo>.git fetch upstream
 ```
 
 #### Verificación
@@ -121,7 +119,7 @@ make repo-status
 Tiene que mostrar el repositorio, limpio, en la rama declarada. Si es de terceros:
 
 ```bash
-git -C addons/.repos/<repo>.git remote -v
+git -C runtime/addons/.repos/<repo>.git remote -v
 ```
 
 Tiene que listar `upstream` además de `origin`.
@@ -135,7 +133,7 @@ Requiere haber trackeado `upstream` al crear el fork (ver [Crear](#crear) más a
 #### Comandos
 
 ```bash
-git -C addons/.repos/<repo>.git fetch upstream
+git -C runtime/addons/.repos/<repo>.git fetch upstream
 
 git checkout <rama>-stag
 git merge upstream/<rama>
@@ -201,23 +199,23 @@ make verify
 
 ### Eliminar
 
-**Objetivo** — el repo fuera de `addons/addons.txt`, su worktree y su clon bare borrados, y —si el módulo estaba instalado— desinstalado de la base antes de tocar el código.
+**Objetivo** — el repo fuera de `runtime/addons/catalogo.txt`, su worktree y su clon bare borrados, y —si el módulo estaba instalado— desinstalado de la base antes de tocar el código.
 
 #### A mano
 
 Si alguno de los módulos del repo está instalado en una base, desinstalalo desde ahí antes de seguir con `make addons-uninstall MODULES=<nombre_tecnico>`. El comando usa la API ORM interna de Odoo, muestra los módulos dependientes que también serán afectados y exige confirmación explícita. Dejar registros en `ir_module_module` apuntando a código que ya no existe puede romper el próximo arranque o `make addons-update`.
 
-Repetí la desinstalación y la baja de la línea del manifiesto en desarrollo, staging y producción: `addons/addons.txt` es local a cada checkout y no se promueve por Git.
+Repetí la desinstalación y la baja de la línea del catálogo en desarrollo, staging y producción: `runtime/addons/catalogo.txt` es local a cada checkout y no se promueve por Git.
 
 #### Comandos
 
 ```bash
-nano addons/addons.txt   # sacar la línea del repo
+nano runtime/addons/catalogo.txt   # sacar la línea del repo
 ```
 
 ```bash
-git -C addons/.repos/<repo>.git worktree remove --force addons/<categoria>/<repo>
-rm -rf addons/.repos/<repo>.git
+git -C runtime/addons/.repos/<repo>.git worktree remove --force runtime/addons/<categoria>/<repo>
+rm -rf runtime/addons/.repos/<repo>.git
 ```
 
 Nada que reconstruir: el `addons_path` sale de un glob en runtime sobre lo que hay en disco, así que alcanza con reiniciar el contenedor para que deje de verlo.
@@ -243,4 +241,4 @@ debe seguir disponible para futuras actualizaciones.
 
 ---
 
-**Nota de contexto — precedencia entre categorías.** Si dos módulos comparten nombre técnico, gana el de la categoría que va primero: `enterprise > custom-addons > oca > third-party > core de Odoo`. El `addons_path` se arma recorriendo las categorías en ese orden — vale la pena tenerlo presente al elegir el nombre técnico de un módulo nuevo. Odoo no documenta esta precedencia; el orden se apoya en la convención de los despliegues con módulos propietarios, no en una fuente normativa.
+**Nota de contexto — precedencia entre categorías.** Si dos módulos comparten nombre técnico, gana el de la categoría que va primero: `enterprise > custom > oca > third-party > core de Odoo`. El `addons_path` se arma recorriendo las categorías en ese orden — vale la pena tenerlo presente al elegir el nombre técnico de un módulo nuevo.

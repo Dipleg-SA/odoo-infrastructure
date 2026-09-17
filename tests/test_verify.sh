@@ -9,6 +9,12 @@
 cd "$(dirname "$0")/.."
 
 STUB_DIR=$(mktemp -d); export STUB_DIR
+: > "$STUB_DIR/servicios"
+: > "$STUB_DIR/config"
+: > "$STUB_DIR/ps"
+: > "$STUB_DIR/port"
+: > "$STUB_DIR/salida"
+: > "$STUB_DIR/systemctl"
 RUNTIME_ENV_CREADO=0
 STATE_FILE="runtime/desarrollo/state/images.json"
 STATE_EXISTIA=0
@@ -46,6 +52,20 @@ igual "sin coincidencia parcial"              "1" "$(declarado ngin; echo $?)"
 # que no, verify omitiría el stack entero y daría verde sobre nada.
 SERVICIOS=""
 igual "sin composición legible responde que sí a todo" "0" "$(declarado backup; echo $?)"
+
+# Perfiles opcionales
+# Un perfil conocido pero sin servicio activo se informa como inactivo.
+PERFILES_DECLARADOS=$'cert\nlan\nrestore'
+SERVICIOS=$'nginx\ncertbot\nbackup'
+igual "reconoce el perfil declarado" "0" "$(perfil_declarado lan; echo $?)"
+igual "detecta lan declarado pero inactivo" "0" "$(perfil_inactivo dnsmasq lan; echo $?)"
+igual "cert activo no se confunde con inactivo" "1" "$(perfil_inactivo certbot cert; echo $?)"
+
+. stacks/backup/verify.sh
+printf '%s\n' backup > "$STUB_DIR/servicios"
+rm -f "$STUB_DIR/servicios-sin-perfil"
+igual "restore resuelve el servicio bajo su perfil" "0" "$(restaura; echo $?)"
+PERFILES_DECLARADOS=""
 
 # =====================================================================
 titulo "motivo — por qué se omite"
@@ -340,6 +360,9 @@ veredicto() { if rotacion_aplicada; then echo pasa; else echo falla; fi; }
 cp host/daemon.json "$DAEMON_JSON"
 igual "el archivo del repo pasa"           "pasa"  "$(veredicto)"
 
+printf '{incompleto\n' > "$DAEMON_JSON"
+igual "JSON inválido no pasa" "falla" "$(veredicto)"
+
 # El caso caro: el daemon por defecto usa json-file igual, pero sin cap. Verlo
 # recién con el stack arriba obliga a recrear los once contenedores.
 echo '{}' > "$DAEMON_JSON"
@@ -349,6 +372,9 @@ igual "un daemon.json sin límite falla"    "falla" "$(veredicto)"
 printf '{"data-root":"/mnt/docker","log-opts":{"max-size":"10m"}}\n' > "$DAEMON_JSON"
 igual "y con claves propias del host pasa" "pasa"  "$(veredicto)"
 
+printf '{"log-driver":"json-file","log-opts":{"max-size":"10m","max-file":"3"},"data-root":"/mnt/docker"}\n' > "$DAEMON_JSON"
+igual "las tres opciones efectivas pasan aunque haya extras" "pasa" "$(veredicto)"
+
 rm -f "$DAEMON_JSON"
 igual "sin archivo también falla"          "falla" "$(veredicto)"
 
@@ -357,6 +383,9 @@ titulo "rotacion_host — /etc/docker/daemon.json solo se chequea en Linux"
 # =====================================================================
 
 . scripts/verify-host.sh
+printf '{incompleto\n' > "$DAEMON_JSON"
+contiene "verify-host informa JSON inválido" "no es JSON válido" \
+  "$(verificar_rotacion_daemon Linux 2>&1)"
 salida=$(verificar_rotacion_daemon Darwin 2>&1)
 contiene "macOS omite el chequeo de Linux" "solo aplica a Linux" "$salida"
 no_contiene "macOS no sugiere host-init" "sudo make host-init" "$salida"
@@ -375,8 +404,11 @@ titulo "timer_activo — la unit sale de timers.sh, no de una lista de acá"
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-production}"
 printf 'postgres\nodoo\nbackup\ncertbot\n' > "$STUB_DIR/servicios"
 
-UNIDAD=$(scripts/timers.sh units | grep -- '-backup-daily$')
-{ scripts/timers.sh units | sed 's/$/.timer activa/'
+UNIDADES=$(scripts/timers.sh units); codigo=$?
+igual "el parser de units termina correctamente" "0" "$codigo"
+UNIDAD=$(printf '%s\n' "$UNIDADES" | grep -- '-backup-daily$'); codigo=$?
+igual "el parser encuentra la unit diaria" "0" "$codigo"
+{ printf '%s\n' "$UNIDADES" | sed 's/$/.timer activa/'
   printf 'OnFailure=%s%%n.service\n' "$(scripts/timers.sh notify)"; } > "$STUB_DIR/systemctl"
 
 : > "$STUB_DIR/llamadas"
@@ -407,7 +439,9 @@ titulo "alloy_salud — el parser que decide si un componente dejó de emitir"
 . stacks/alloy/verify.sh
 
 SANOS='{"name":"a","health":{"state":"healthy"}},{"name":"b","health":{"state":"healthy"}}'
-igual "cuenta los componentes y ninguno roto" "2 0" "$(alloy_salud "$SANOS")"
+SALIDA_ALLOY=$(alloy_salud "$SANOS"); codigo=$?
+igual "el parser Alloy termina correctamente" "0" "$codigo"
+igual "cuenta los componentes y ninguno roto" "2 0" "$SALIDA_ALLOY"
 
 # 'healthy' suelto matchea DENTRO de "unhealthy": sin anclar el valor entero, este
 # caso devolvía 0 rotos y el chequeo declaraba sano justo lo que existe para atrapar.

@@ -48,7 +48,7 @@ Cubre el servicio `healthy`, que acepte conexiones, los logs sin errores de perm
 
 ---
 
-**Destructivo — sin target, a mano.** Tampoco sobrevivió un nuke acotado a esta capa: el único que queda es `make nuke`, **global** — se lleva `pgdata` junto con los volúmenes de todos los demás stacks, `addons/` y `state/` enteros. Pide tipear `nuke`, sin imprimir ningún nombre de volumen antes: la palabra es la única confirmación que hay.
+**Destructivo — sin target, a mano.** Tampoco sobrevivió un nuke acotado a esta capa: el único que queda es `make nuke`, **global** — se lleva `pgdata` junto con los volúmenes de todos los demás stacks y el estado operativo del runtime seleccionado. Pide tipear `nuke`, sin imprimir ningún nombre de volumen antes: la palabra es la única confirmación que hay.
 
 En producción o staging esto es indistinguible de perder la base —y todo lo demás—: antes de correrlo, confirmá que hay un backup reciente y probado (ver [realizar-backup](../backup-restore/realizar-backup.md)). Para borrar solo `pgdata`:
 

@@ -6,7 +6,7 @@ set -euo pipefail
 # Ruta del bloqueo
 # En el host vive bajo runtime/control/state; en el receptor usa el montaje equivalente.
 candidate_lock_path() {
-  local tipo="$1" clave="$2" raiz script_dir
+  local tipo="$1" clave="$2" raiz script_dir proyecto
   case "$tipo" in
     entorno)
       case "$clave" in desarrollo|staging|produccion) ;; *) return 2 ;; esac
@@ -17,12 +17,19 @@ candidate_lock_path() {
     *) return 2 ;;
   esac
 
+  proyecto="${CANDIDATE_LOCK_PROJECT:-${COMPOSE_PROJECT_NAME:-}}"
+  [[ "$proyecto" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || {
+    printf '%s\n' 'candidate-lock: falta un COMPOSE_PROJECT_NAME válido' >&2
+    return 2
+  }
+
   if [[ -n "${ADDONS_STATE_DIR:-}" ]]; then
     raiz="$ADDONS_STATE_DIR"
   else
     script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)" || return 2
     raiz="$(cd -- "$script_dir/../.." && pwd -P)/runtime/control/state"
   fi
+  raiz="$raiz/locks/$proyecto"
   if [[ "$tipo" == repositorio ]]; then
     raiz="$raiz/locks/repos"
   else

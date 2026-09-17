@@ -18,7 +18,7 @@ Docker Engine y Compose ≥ 2.20 instalados, el daemon arrancando solo tras un r
 
 Instalación: seguí la documentación oficial de Docker para tu distribución — este repositorio no la reproduce, cambia por sistema operativo y versión. Confirmá que el plugin Compose (`docker compose`, no el standalone `docker-compose`) quedó instalado: lo trae el paquete `docker-compose-plugin` en las distros basadas en Debian/Ubuntu.
 
-`envs/production.yaml` usa la directiva `include:`, que exige Compose ≥ 2.20 — versiones más viejas fallan al resolver la composición, no al arrancar un contenedor.
+`runtime/produccion/compose.yaml` usa la directiva `include:`, que exige Compose ≥ 2.20 — versiones más viejas fallan al resolver la composición, no al arrancar un contenedor.
 
 ## Comandos
 
@@ -38,6 +38,15 @@ systemctl is-enabled docker
 ```
 
 El primero tiene que dar `2.20` o superior; el segundo, `enabled`. `make host-verify` (una vez clonado el repositorio, ver [levantar-produccion](../entorno/levantar-produccion.md)) vuelve a chequear los dos junto con el resto de la config.
+
+`make test` corre la suite estática sin daemon levantado ni red; necesita el comando
+`docker compose` para validar contratos de Compose, pero no necesita que Docker Engine
+esté ejecutando contenedores. `make verify` es distinto: requiere el runtime levantado
+y comprueba el estado real del deploy.
+
+Después de editar `host/daemon.json`, aplicá la rotación con `sudo make host-init` y
+volvé a correr `make host-verify`. La inicialización no reemplaza silenciosamente una
+configuración existente con claves propias del host.
 
 ---
 

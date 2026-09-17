@@ -13,6 +13,23 @@ supusieron. Donde es el caso, está el resultado de la prueba.
 
 ## Qué es esto
 
+### Modelo vigente
+
+La composición canónica vive bajo `runtime/`: cada entorno tiene su propio
+`runtime/<entorno>/compose.yaml` y su `runtime/<entorno>/compose.env`. El archivo
+privado carga la identidad del proyecto, las rutas locales y la selección de edición
+mediante `ODOO_EDITION` y `TAG`; no existe un `.env` raíz ni un manifiesto de entorno
+paralelo.
+
+Los addons se declaran en `runtime/addons/catalogo.txt`, se sincronizan en el host y
+se fotografían desde `runtime/addons/`. `enterprise`, `custom-addons`, `oca` y
+`third-party` son categorías del árbol, no stacks de Compose. `addons-webhook` sí es
+un stack porque tiene imagen, configuración, verificación y targets propios de Make;
+la composición lo incluye únicamente donde corresponde.
+
+El inventario actual es: `nginx`, `cloudflared`, `dnsmasq`, `certbot`, `postgres`,
+`odoo`, `addons-webhook`, `backup`, `prometheus`, `loki`, `grafana` y `alloy`.
+
 Un **producto**: un catálogo de stacks —contenedores— más una forma de componerlos en
 un deploy, para correr Odoo autoalojado, operado por una sola persona sobre un único
 servidor.
@@ -45,11 +62,11 @@ a este.
 
 La relación entre ambos es de **orquestación, no de contención**: este repo no
 incorpora ese código a su propia historia — lo clona, lo actualiza y lo monta. Lo único
-que sabe de cada módulo es una línea en `addons/addons.txt`: su URL y su categoría
+que sabe de cada módulo es una línea en `runtime/addons/catalogo.txt`: su URL y su categoría
 (`enterprise` · `custom-addons` · `oca` · `third-party`, el mismo orden que resuelve el
-`addons_path` — ver «Gestión de addons: bind-mount» más abajo). `make repo-sync` recorre ese
-manifiesto, clona cada repo en bare y arma un worktree por módulo sobre la rama que
-declara el checkout — el mecanismo completo está en los comentarios de
+`addons_path` — ver «Gestión de addons: candidatos y fotografía inmutable» más abajo).
+`make repo-sync` recorre ese manifiesto, clona cada repo en bare y publica un candidato
+por entorno sobre la rama correspondiente — el mecanismo completo está en los comentarios de
 [`scripts/addons.sh`](scripts/addons.sh). El resultado es un árbol en disco que el
 contenedor de Odoo monta `:ro`; el contenedor nunca clona nada, y el entrypoint arma el
 `addons_path` recorriendo ese árbol por glob.
@@ -62,8 +79,9 @@ sin el otro.
 **Qué no es este repositorio:**
 
 - No versiona código de módulos de Odoo, ni siquiera pineado por commit.
-- No es el lugar para desarrollar un módulo — eso pasa en el repo de ese módulo,
-  clonado como worktree bajo `addons/`; ver [`docs/modulos/gestionar-modulo.md`](docs/modulos/gestionar-modulo.md).
+- No es el lugar para desarrollar un módulo — eso pasa en el repositorio de ese módulo;
+  este repo solo conserva el candidato sincronizado bajo `runtime/addons/`. Ver
+  [`docs/modulos/gestionar-modulo.md`](docs/modulos/gestionar-modulo.md).
 - No guarda datos ni estado del deployment: eso vive en volúmenes nombrados y en los
   backups, no en el checkout — un `git pull` acá nunca toca datos.
 - No es específico de ningún cliente: valores que solo sirven a un deployment concreto
@@ -85,7 +103,7 @@ servidor, así que ninguna decisión se toma para acercarse a ella.
 ## La unidad: un stack = un contenedor con cosas propias
 
 Un stack es **una carpeta con un contenedor** y todo lo suyo adentro: su `compose.yaml`,
-su imagen, sus configs, su `.env`, sus scripts y sus units.
+su imagen, su configuración, sus scripts y sus units.
 
 ```
 odoo · postgres · nginx · certbot · cloudflared · backup
@@ -118,7 +136,7 @@ relación con los repositorios de módulos descripta arriba.
 ### Modularización de Compose
 
 Cada entrypoint de entorno compone los stacks con `include:`, listando **todos** los que
-lleva, explícitamente — un archivo por stack, nunca uno monolítico. `envs/production.yaml`
+lleva, explícitamente — un archivo por stack, nunca uno monolítico. `runtime/produccion/compose.yaml`
 no declara servicios propios: declara los recursos compartidos —`networks:`, `secrets:`
 y los volúmenes que dos stacks comparten— y suma **un archivo por stack** con `include:`.
 
@@ -147,9 +165,9 @@ leen igual y cada uno es un manifiesto de exactamente qué corre ese entorno.
 nuevo reabre la discusión de a qué grupo pertenece.
 
 **Cada entorno tiene su propio entrypoint completo**, no un archivo chico que pise al de
-producción: `envs/staging.yaml` y `envs/development.yaml` listan sus propios `include:`,
+producción: `runtime/staging/compose.yaml` y `runtime/desarrollo/compose.yaml` listan sus propios `include:`,
 sus propios secrets y sus propios ajustes con `!override`. Cuál se levanta lo dice
-`COMPOSE_FILE` en el `.env` del checkout, así que no existe una cadena por defecto de la
+`runtime/<entorno>/compose.env` del checkout, así que no existe una cadena por defecto de la
 que un entorno pueda quedar dentro por descuido.
 
 ### Qué declara cada quién
@@ -160,7 +178,7 @@ que un entorno pueda quedar dentro por descuido.
 | Recurso | Dueño |
 |---|---|
 | Redes, secrets, volúmenes compartidos entre stacks (`letsencrypt`) | entrypoint del entorno |
-| Volúmenes propios, imagen, config, `.env`, scripts | el stack |
+| Volúmenes propios, imagen, configuración, scripts | el stack |
 | Qué stacks entran, y qué se les ajusta (`!reset`, `!override`) | entrypoint del entorno |
 
 Compose **fusiona** las declaraciones de nivel superior que llegan por distintos
@@ -195,17 +213,17 @@ necesitó arrancar sola.
 
 ## Configuración
 
-**En el `.env` va solo lo que Compose necesita interpolar** — tags de imagen, puertos,
+**En `runtime/<entorno>/compose.env` va solo lo que Compose necesita interpolar** — tags de imagen, puertos,
 límites de recursos, nombres. Todo lo demás va **literal en el archivo de config de la
 herramienta que lo usa**.
 
 La pregunta "¿dónde va este valor?" queda mecánica, sin juicio de por medio:
 
-- ¿Lo interpola Compose? → `.env` del stack.
+- ¿Lo interpola Compose? → `runtime/<entorno>/compose.env`.
 - ¿No? → el archivo de config de su herramienta.
 
 El efecto buscado es que los valores compartidos desaparezcan. El hostname público deja
-de ser un valor en un `.env` que tres stacks leen, y pasa a ser tres literales: uno en el
+de ser un valor en una configuración compartida que tres stacks leen, y pasa a ser tres literales: uno en el
 `.conf` de nginx, uno en el `config.yaml` de cloudflared, uno en `odoo.conf`. No son
 copias de un valor que puedan divergir: son tres herramientas configuradas cada una en
 su idioma.
@@ -215,7 +233,7 @@ bootstrapea con `cp`. `include:` acepta que cada stack nombre su propio archivo 
 entorno, y el mismo stack corriendo solo lee ese mismo archivo desde su carpeta —
 probado, incluyendo dos stacks con distinto valor para la misma clave sin pisarse.
 
-Se descartaron dos niveles de `.env` (uno común del entorno más uno por stack). Evita la
+Se descartaron dos niveles de configuración (uno común del entorno más uno por stack). Evita la
 duplicación, pero devuelve la pregunta "¿este valor es transversal?" en cada decisión, y
 obliga a mirar dos archivos para saber con qué valor corre un stack.
 
@@ -305,56 +323,28 @@ migración de la comunidad, porque el fabricante no ofrece servicio oficial para
 edición. Detalle práctico: los scripts de migración suelen tardar cerca de un año en
 madurar tras cada release, lo que conviene tener en cuenta al planificar.
 
-### Gestión de addons: bind-mount
+### Gestión de addons: candidatos y fotografía inmutable
 
-Los módulos **no se hornean en la imagen**: se montan `:ro` desde el árbol en disco que
-arma `make repo-sync` (ver «Dos tipos de repositorio, una sola orquestación» arriba).
+Los módulos se sincronizan en el host desde `runtime/addons/catalogo.txt`. Los clones
+bare compartidos viven en `runtime/addons/.repos/` y cada entorno publica sus candidatos
+en `runtime/addons/custom/<entorno>/`. El webhook solo actualiza esos candidatos; no
+construye imágenes, no reinicia Odoo y no modifica la base.
 
-**El motivo es el costo de deploy.** Con los repos pineados a commit dentro de la
-imagen, cambiar una línea de un módulo propio costaba cinco pasos —commit en el módulo,
-bump del hash, commit acá, rebuild, restart—, o sea un ciclo de build completo por cada
-corrección. Con bind-mount son dos: sincronizar el árbol y actualizar el módulo en la
-base. El pineo era proporcionado para módulos de terceros, que casi no se mueven, y
-desproporcionado para los propios en desarrollo activo.
+El build toma una fotografía bajo lock, exporta los commits seleccionados y los copia a
+la imagen Odoo en `/opt/odoo/enterprise/` y `/opt/odoo/custom/`. Por eso el Odoo activo
+no monta código de addons desde el host: cambiar un candidato no cambia la imagen
+`Actual`. `Nueva`, `Actual`, `Anterior`, digest y procedencia se registran por entorno.
 
-**El pineo no se pierde: cambia de naturaleza.** Deja de ser una declaración mantenida a
-mano y pasa a ser una **observación registrada automáticamente** — la corrida de backup
-vuelca repo, rama y commit de cada worktree dentro del snapshot, así que un restore sabe
-a qué código volver sin que nadie tenga que acordarse en cada deploy.
+Enterprise se administra fuera del catálogo de dominios, desde el checkout privado
+`runtime/addons/enterprise/`, y se selecciona mediante un tag anotado e inmutable.
+Community no exige ese checkout. Ambos caminos usan el mismo contrato `ODOO_EDITION` y
+`TAG`; la transición entre ediciones conserva la imagen anterior y exige preflight,
+backup y validación manual cuando corresponde.
 
-**Un repo por módulo, dos ramas fijas por entorno.** Producción y staging, con el
-desarrollo en ramas de feature. La rama de staging se resetea a la de producción antes
-de cada feature, así que staging es siempre *producción más exactamente un cambio* y
-queda **descartable en todo momento**: nunca contiene nada que no exista además en una
-rama de feature o en producción. Eso permite serializar features sin cherry-picks,
-porque promover sube exactamente lo que se validó.
-
-**Los módulos de terceros se forkean a la organización propia**, con el original como
-segundo remote. Un solo modelo para todos los repos, y habilita parchear un módulo ajeno
-sin salir de él — que era el argumento fuerte a favor de una herramienta agregadora y la
-razón por la que se habían descartado los submodules. Lo que se pierde a conciencia es
-combinar una rama base con PRs sueltos sin mergear; con forks eso se resuelve mergeando
-el PR en la rama propia: más trabajo manual, sin una herramienta que mantener, y con el
-resultado visible en el historial.
-
-**El servidor es réplica de solo lectura.** Todos los merges ocurren en la máquina del
-operador; el servidor solo trae cambios. Nada de lo que hay en ese disco es
-irrecuperable, y por eso la credencial de git es de solo lectura.
-
-**Sobrevive un Dockerfile mínimo.** Se evaluó eliminar el build por completo y se
-descartó: los módulos declaran dependencias de Python, y sin imagen propia no hay dónde
-instalarlas. El build queda disparado solo por un cambio de dependencias o del
-entrypoint, nunca por un addon — que es exactamente lo que se buscaba.
-
-**Las operaciones de módulos pasan por la API ORM de Odoo.** `make addons-install`,
-`make addons-update` y `make addons-uninstall` comparten un runner en el host que detiene
-Odoo, ejecuta `odoo shell --no-http` y llama a `button_immediate_install`,
-`button_immediate_upgrade` o `button_immediate_uninstall` sobre `ir.module.module`.
-No se escriben estados de módulos mediante SQL ni se agregan endpoints HTTP. El runner
-serializa operaciones en el host y conserva el contenedor one-off con nombre fijo como
-segunda guarda ante procesos huérfanos. El código del addon debe seguir montado durante
-la operación; por eso la desinstalación precede a `repo-sync` o a quitar el worktree. Al
-terminar, el runner vuelve a levantar Odoo y revalida la configuración de reportes.
+Las operaciones de módulos pasan por la API ORM de Odoo mediante los targets
+`addons-install`, `addons-update` y `addons-uninstall`. Se ejecutan manualmente contra
+la imagen `Actual`, y una operación funcional bloquea el rollback de imagen hasta
+restaurar el backup asociado. La instalación o actualización no se dispara por webhook.
 
 **Precedencia si dos módulos coinciden en nombre:** `enterprise` > `custom-addons` >
 `oca` > `third-party` > core. La arma el entrypoint recorriendo las categorías en ese
@@ -459,12 +449,12 @@ desarrollo nunca llevan ninguno de los dos.
 └── SÍ  (in-house)  → + dnsmasq + certbot
 ```
 
-Se resuelve con **`profiles: [lan]` en dnsmasq y `COMPOSE_PROFILES=lan` en el `.env` del
-cliente** — probado:
+Se resuelve con **`profiles: [lan]` en dnsmasq y `COMPOSE_PROFILES=lan` en el
+`runtime/produccion/compose.env`** — probado:
 
 ```
-.env sin COMPOSE_PROFILES      →  nginx
-.env con COMPOSE_PROFILES=lan  →  nginx, dnsmasq
+compose.env sin COMPOSE_PROFILES      →  nginx
+compose.env con COMPOSE_PROFILES=lan  →  nginx, dnsmasq
 ```
 
 El entrypoint de producción sigue siendo **uno solo, versionado e idéntico para todos**;
@@ -474,7 +464,7 @@ la diferencia de nginx entre los dos casos —servir TLS o servir plano al túne
 resuelve **cuál config monta**, que es un archivo real del cliente.
 
 Se descartó un cuarto entrypoint (producción en VPS y producción con servidor local):
-duplica un archivo versionado para expresar lo que una línea del `.env` ya expresa.
+duplica un archivo versionado para expresar lo que una línea de `compose.env` ya expresa.
 
 ### Cuándo `profiles` y cuándo composición
 
@@ -564,7 +554,7 @@ distintas.
 
 Respaldar y restaurar son la misma herramienta sobre el mismo repositorio, en
 direcciones opuestas. Un solo stack, `backup`, hace las dos: separarlos duplicaba el
-repositorio de restic en dos `.env` sin comprar nada.
+repositorio de restic en dos configuraciones sin comprar nada.
 
 Corren con usuarios distintos, y eso se resuelve en la invocación, no en el árbol: el
 servicio se declara **`100:101`** —el uid de Odoo, porque el filestore es 750 y ningún
@@ -817,10 +807,10 @@ cumple y por qué, en vez de darlo por hecho.
 ## Entornos
 
 Un **entorno** es una combinación de tres cosas: un checkout del repositorio, un nombre
-de proyecto de Compose, y el entrypoint de `envs/` que elige qué stacks entran. Cambiar
+de proyecto de Compose y el `compose.yaml` de `runtime/<entorno>/` que elige qué stacks entran. Cambiar
 cualquiera de las tres da un entorno distinto.
 
-**Un entorno por checkout.** Cuál es lo dice el `.env` del checkout, no la ruta de un
+**Un entorno por checkout.** Cuál es lo dice `ENTORNO` y `runtime/<entorno>/compose.env`, no la ruta de un
 archivo. No existe `config/production/` ni ningún otro subdirectorio por entorno: los
 stacks quedan idénticos en forma, sin excepciones. Se descartó el subdirectorio por
 entorno dentro de cada stack: superpone dos aislamientos —el del checkout y el de la
@@ -830,22 +820,17 @@ addons es uno por checkout.
 Los entrypoints **difieren en composición**, porque la naturaleza de cada entorno es
 distinta:
 
-|                    | Producción                | Prueba                  | Development             |
+|                    | Producción                | Staging                 | Desarrollo              |
 |--------------------|---------------------------|-------------------------|-------------------------|
-| Naturaleza | Datos reales. Todo resguardado y monitoreado. | Sandbox controlado: validar features antes de producción. | Construcción de módulos e ideas. Servidor o máquina del desarrollador. |
-| Dónde corre        | Servidor                  | Servidor                | Máquina del operador    |
-| Checkout           | propio                    | propio                  | uno por feature         |
-| Nombre de proyecto | `production`              | `staging`               | `development-<feature>` |
-| Entrypoint         | `envs/production.yaml`    | `envs/staging.yaml`     | `envs/development.yaml` |
-| Rama de addons     | default del Dockerfile    | `<versión>-stag`        | `feat/*`                |
-| Proxy              | nginx con TLS, en la LAN  | nginx con TLS, en loopback  | nginx sin TLS, loopback |
-| Túnel y certbot    | sí                        | sí                      | no                      |
-| DNS local          | solo con servidor local   | no                      | no                      |
-| Respalda           | sí                        | **no**, solo restaura   | no                      |
-| Observabilidad     | sí                        | no                      | no                      |
-| Secrets            | 9                         | 7                       | 2, los dos generados    |
+| Naturaleza | Datos reales y monitoreados | Validación y restore   | Construcción y pruebas  |
+| Composición        | `runtime/produccion/compose.yaml` | `runtime/staging/compose.yaml` | `runtime/desarrollo/compose.yaml` |
+| Nombre de proyecto | `odoo-produccion`         | `odoo-staging`          | `odoo-desarrollo`       |
+| Entrypoint         | `runtime/produccion/compose.yaml` | `runtime/staging/compose.yaml` | `runtime/desarrollo/compose.yaml` |
+| Addons             | candidatos de producción | candidatos de staging  | candidatos de desarrollo |
+| Backup              | activo                    | solo restore            | no                      |
+| Observabilidad     | activa                    | no                      | no                      |
 
-Prueba no lleva observabilidad. Sí lleva `backup`, porque se siembra restaurando el
+Staging no lleva observabilidad. Sí lleva `backup`, porque se siembra restaurando el
 snapshot de producción y respaldar y restaurar son ahora el mismo contenedor. Desarrollo
 lleva `nginx`, `postgres` y `odoo`.
 
@@ -901,8 +886,8 @@ el operador no los toca.
 **2. Config real por checkout — no compartido, y por eso divergen.** Cada `.example` se
 bootstrapea con `cp` a un archivo real gitignoreado. Dos checkouts en el mismo servidor
 tienen su propio `stacks/nginx/config/server-tls.conf`, su propio `postgresql.conf` y su
-propio `.env`. **Ahí es donde los entornos difieren de verdad**, y por eso ninguno de
-esos valores está parametrizado en el compose. El caso peligroso es copiar el `.env` de
+propio `runtime/<entorno>/compose.env`. **Ahí es donde los entornos difieren de verdad**, y por eso ninguno de
+esos valores está parametrizado en el compose. El caso peligroso es copiar el `compose.env` de
 un checkout a otro: se lleva `COMPOSE_PROJECT_NAME`, y con él los volúmenes. Contra eso
 no hay mecanismo — solo la advertencia en cada plantilla.
 
@@ -944,10 +929,10 @@ exacto de cada paso está en [`docs/entorno/levantar-produccion.md`](docs/entorn
 | # | Bloque | Deja |
 |---|---|---|
 | 1 | Prerrequisitos | Cuentas de terceros (DNS, túnel, SMTP, storage de backup) y el host con Docker listo |
-| 2 | Repositorio | `.env`, los secrets cargados, el daemon rotando logs |
+| 2 | Repositorio | `runtime/<entorno>/compose.env`, los secrets cargados, el daemon rotando logs |
 | 3 | Edge | Certificado, reverse proxy, túnel de ingreso y DNS de la LAN |
 | 4 | Database | Postgres corriendo con su tuning |
-| 5 | **Addons** | `addons/addons.txt` completado, `make repo-sync` trajo el árbol de módulos, la imagen construida |
+| 5 | **Addons** | `runtime/addons/catalogo.txt` completado, `make repo-sync` trajo el árbol de módulos, la imagen construida |
 | 6 | Odoo | La aplicación sirviendo por el hostname público, sobre ese árbol |
 | 7 | Backup | Snapshot probado de punta a punta, avisando por mail si falla |
 | 8 | Monitoring | Métricas, logs y alertas |
@@ -1001,89 +986,23 @@ decisión pendiente sobre dónde vive el repositorio, no trabajo técnico pendie
 
 ```
 odoo-infrastructure/
-│
-├── .env                         ← identidad del checkout: COMPOSE_PROJECT_NAME + COMPOSE_FILE
+├── runtime/                     ← composición, variables privadas, secretos y estado por entorno
+│   ├── desarrollo/{compose.yaml,compose.env.example}
+│   ├── staging/{compose.yaml,compose.env.example}
+│   ├── produccion/{compose.yaml,compose.env.example}
+│   ├── addons/{catalogo.txt.example,requirements.txt.example}
+│   └── control/compose.yaml     ← composición aislada del receptor
+├── stacks/                      ← un stack por contenedor, con imagen, config y verify
+│   ├── nginx/ · cloudflared/ · dnsmasq/ · certbot/
+│   ├── postgres/ · odoo/ · addons-webhook/ · backup/
+│   └── prometheus/ · loki/ · grafana/ · alloy/
+├── scripts/                     ← contexto, sincronización, build y verificaciones transversales
+├── host/                        ← configuración global del daemon y notify de systemd
+├── tests/                       ← contratos estáticos, fixtures herméticos y smoke opt-in
+├── docs/                        ← manual de procedimientos
+├── .specs/                      ← especificaciones, planes, tareas y backlog
 ├── Makefile
-│
-├── envs/                        ← un entrypoint por entorno: redes, secrets, includes, ajustes
-│   ├── production.yaml
-│   ├── staging.yaml
-│   └── development.yaml
-│
-├── stacks/                       ← cada stack: compose.yaml en la raíz, image/ y config/ adentro
-│   ├── odoo/
-│   │   ├── compose.yaml
-│   │   ├── image/
-│   │   │   ├── Dockerfile
-│   │   │   └── entrypoint.sh    ← COPYado por el Dockerfile, vive junto a él
-│   │   ├── config/
-│   │   │   └── odoo.conf            ← versionado tal cual, sin .example: SMTP llega
-│   │   │                               por env, nada más queda por deployment
-│   │   └── verify.sh
-│   │
-│   ├── postgres/
-│   │   ├── compose.yaml
-│   │   ├── image/Dockerfile     ← FROM postgres:17.10, sin capas propias
-│   │   ├── config/
-│   │   │   ├── postgresql.conf.example
-│   │   │   └── postgresql.conf
-│   │   └── verify.sh
-│   │
-│   ├── nginx/
-│   │   ├── compose.yaml
-│   │   ├── image/Dockerfile     ← FROM nginx:1.31.3-alpine, sin capas propias
-│   │   ├── config/
-│   │   │   ├── 00-http.conf.example · server-tls.conf.example · odoo.locations.example
-│   │   │   └── server-plain.conf    ← versionado tal cual: no lleva nada por deployment
-│   │   └── verify.sh
-│   │
-│   ├── certbot/                 ← profiles: [cert] — one-off, pero con todo lo suyo
-│   │   ├── compose.yaml
-│   │   ├── image/Dockerfile
-│   │   ├── scripts/wrapper.sh   ← bind-mount, no COPY: es runtime, no build
-│   │   ├── systemd/cert-renew.{service,timer}
-│   │   └── verify.sh
-│   │
-│   ├── cloudflared/             ← sin config/: el túnel entra por secret, no por archivo
-│   │   ├── compose.yaml
-│   │   ├── image/Dockerfile
-│   │   └── verify.sh
-│   │
-│   ├── dnsmasq/                 ← profiles: [lan]
-│   │   ├── compose.yaml
-│   │   ├── image/Dockerfile
-│   │   ├── config/{dnsmasq.conf.example,dnsmasq.conf}
-│   │   └── verify.sh
-│   │
-│   ├── backup/                  ← respaldar y restaurar, mismo contenedor
-│   │   ├── compose.yaml
-│   │   ├── image/Dockerfile
-│   │   ├── scripts/{backup.sh,restore.sh}
-│   │   ├── config/{r2.env.example,r2.env}
-│   │   ├── systemd/backup-{daily,monthly}.{service,timer}
-│   │   └── verify.sh
-│   │
-│   ├── prometheus/ · loki/ · grafana/ · alloy/
-│   │       cada uno: compose.yaml · image/Dockerfile · config/ (versionado tal cual,
-│   │       sin valores por deployment) · verify.sh
-│   │
-├── scripts/                     ← solo lo transversal
-│   ├── verify-stacks.sh         ← orquesta: corre el de cada stack presente
-│   ├── verify-host.sh           ← lo que es del SO, no de ningún stack
-│   ├── secrets-init.sh · secrets-perms.sh · config-init.sh
-│   ├── addons.sh · odoo-module-operation.sh · odoo-report-config.sh
-│   ├── pydeps.sh · integrity-check.sh · failure-notify.sh
-│   ├── timers.sh
-│   └── lib/{ui.sh,verify.sh,compose.sh}
-│
-├── host/
-│   ├── daemon.json              ← rotación de logs, global al daemon
-│   └── systemd/notify@.service  ← transversal: la usan los timers de cualquier stack
-│
-├── secrets/                     ← gitignoreado
-├── addons/                      ← gitignoreado por contenido
-├── tests/
-└── docs/                        ← manual de procedimientos, ver README.md
+└── ARCHITECTURE.md
 ```
 
 ### Adentro de un stack: `image/`, `config/`, `scripts/`
@@ -1101,7 +1020,7 @@ archivo es**.
   nada así.
 
 `compose.yaml` se queda en la raíz del stack, nunca adentro de una subcarpeta: es lo que
-`envs/*.yaml` nombra por `include:`, y ese camino tiene que ser predecible sin mirar
+`runtime/*/compose.yaml` nombra por `include:`, y ese camino tiene que ser predecible sin mirar
 adentro de cada stack.
 
 **Todo stack tiene `image/Dockerfile`, incluso sin nada que agregarle a la imagen
@@ -1133,9 +1052,9 @@ hace que `timers.sh` derive qué units corresponden preguntándole a la composic
 carpeta dueña de la unit es el servicio que la habilita. Arriba queda solo
 `notify@.service`, que cualquier timer usa.
 
-**Ningún stack tiene `.env` propio.** Es la regla de configuración funcionando: los tags
+**Ningún stack tiene un archivo de entorno propio.** Es la regla de configuración funcionando: los tags
 van pineados literales en el compose, lo que Compose sí interpola —puertos, nombres—
-sale del `.env` de la raíz vía el entrypoint del entorno, y lo demás vive en el config
+sale del `compose.env` del runtime vía el contexto del entorno, y lo demás vive en el config
 de su herramienta. El único `env_file:` del repositorio es el de `backup`, y no es un
-`.env` de stack sino `config/r2.env`: las credenciales de R2 en el formato que restic
+`compose.env` de stack sino `config/r2.env`: las credenciales de R2 en el formato que restic
 parsea.

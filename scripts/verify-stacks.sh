@@ -12,10 +12,20 @@
 # Un stack que este entorno no lleva no es un fallo: se omite nombrándolo.
 
 correr_stack() {
-  local nombre="$1" archivo="stacks/$1/verify.sh" funcion
+  local nombre="$1" archivo="stacks/$1/verify.sh" funcion perfil
 
   if [ ! -f "$archivo" ]; then
     omitir "stack $nombre" "no tiene verify.sh todavía"
+    return
+  fi
+  case "$nombre" in
+    certbot) perfil=cert ;;
+    dnsmasq) perfil=lan ;;
+    backup)  perfil=restore ;;
+    *)       perfil= ;;
+  esac
+  if [ -n "$perfil" ] && perfil_inactivo "$nombre" "$perfil"; then
+    omitir "stack $nombre" "perfil $perfil inactivo — activar COMPOSE_PROFILES=$perfil si corresponde"
     return
   fi
   if ! declarado "$nombre"; then

@@ -13,14 +13,32 @@
 # El chequeo del archivo del daemon solo aplica al Engine Linux.
 
 verificar_rotacion_daemon() {
-  local sistema="${1:-$(uname -s)}"
+  local sistema="${1:-$(uname -s)}" archivo="${DAEMON_JSON:-/etc/docker/daemon.json}"
   if [ "$sistema" != "Linux" ]; then
     omitir "rotación de logs del daemon" "el chequeo de /etc/docker/daemon.json solo aplica a Linux"
-  elif rotacion_aplicada; then
+  elif [ ! -f "$archivo" ]; then
+    bad "rotación de logs del daemon aplicada" "falta $archivo — correr: sudo make host-init"
+  elif python3 - "$archivo" host/daemon.json <<'PY'
+import json
+import sys
+
+actual_path, esperado_path = sys.argv[1:]
+with open(actual_path, encoding="utf-8") as archivo:
+    actual = json.load(archivo)
+with open(esperado_path, encoding="utf-8") as archivo:
+    esperado = json.load(archivo)
+
+if actual.get("log-driver") != esperado.get("log-driver"):
+    raise SystemExit(1)
+for clave, valor in esperado.get("log-opts", {}).items():
+    if actual.get("log-opts", {}).get(clave) != valor:
+        raise SystemExit(1)
+PY
+  then
     ok "rotación de logs del daemon aplicada"
   else
     bad "rotación de logs del daemon aplicada" \
-        "sin max-size en ${DAEMON_JSON:-/etc/docker/daemon.json} — correr: sudo make host-init"
+        "$archivo no es JSON válido o difiere en log-driver/max-size/max-file — revisar y correr: sudo make host-init"
   fi
 }
 

@@ -36,7 +36,7 @@ fi
 
 # --- Qué units corresponden ---
 # Se deriva de la composición, como las guardas del Makefile: el stack que trae
-# 'backup' respalda y el que trae 'certbot' renueva. Development no trae ninguno.
+# 'backup' respalda y el que trae 'certbot' renueva. Desarrollo no trae ninguno.
 
 bases() {
   local servicios perfiles="${COMPOSE_PROFILES:-}"

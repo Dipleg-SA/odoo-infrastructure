@@ -1,8 +1,14 @@
-# Spec: Edición Community o Enterprise
+# Especificación: Edición Community o Enterprise
 
 | Nombre | Código | Versión | Fecha | Estado |
 | --- | --- | --- | --- | --- |
-| Edición Community o Enterprise | SPEC-002 | R00 | 2026-09-16 | Approved |
+| Edición Community o Enterprise | SPEC-002 | R00 | 2026-09-16 | Converged |
+
+## Estado y contexto
+
+SPEC-002 está convergida. La selección vigente usa únicamente
+`runtime/<entorno>/compose.env` con `ODOO_EDITION` y `TAG`; las referencias a estados
+históricos Enterprise sin edición describen compatibilidad de restore, no una configuración actual.
 
 ## Resumen
 

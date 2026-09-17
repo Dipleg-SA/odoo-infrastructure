@@ -16,7 +16,7 @@ Mantener una lista blanca de repositorios propios para candidatos e imágenes.
 
 ## A mano
 
-`runtime/addons/catalogo.txt` contiene una URL Git por línea. Enterprise queda fuera del catálogo y se administra por tag inmutable.
+`runtime/addons/catalogo.txt` contiene una URL Git por línea. Enterprise queda fuera del catálogo y se administra por tag inmutable; `custom`, `oca` y `third-party` se publican como candidatos del entorno.
 
 ## Comandos
 

@@ -2,7 +2,13 @@
 
 | Nombre | Código | Versión | Fecha | Estado |
 | --- | --- | --- | --- | --- |
-| Edición Community o Enterprise | PLAN-002 | R02 | 2026-09-16 | Approved |
+| Edición Community o Enterprise | PLAN-002 | R02 | 2026-09-16 | Converged |
+
+## Estado y contexto
+
+PLAN-002 queda convergido junto con SPEC-002. La configuración vigente es plana y
+vive en `runtime/<entorno>/compose.env`; las referencias a estados históricos sin
+edición documentan compatibilidad de restore, no rutas operativas alternativas.
 
 ## Enfoque
 

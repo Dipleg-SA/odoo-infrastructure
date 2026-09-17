@@ -13,9 +13,7 @@ contexto_iniciar
 certbot() { COMPOSE_PROFILES="${COMPOSE_PROFILES:+$COMPOSE_PROFILES,}cert" contexto_compose run --rm -T certbot "$@"; }
 
 # --- Métrica de vencimiento ---
-# Única fuente de la alerta de vencimiento. Mide lo que certbot tiene en disco,
-# no lo que nginx está sirviendo: el caso "renovó y nadie recargó" lo cubren el
-# reload de abajo y el chequeo contra el socket real de odoo-verify.
+# Mide el certificado que certbot tiene en disco y alimenta las alertas.
 
 escribir_metrica() {
   local dir="$RUNTIME_STATE_DIR/textfile" tmp fin epoch
@@ -36,8 +34,7 @@ escribir_metrica() {
 }
 
 # --- Recarga de nginx ---
-# Un certificado renovado que nginx no releyó sigue sirviendo el viejo hasta que
-# vence. Best-effort: si nginx no está arriba no hay nada que recargar.
+# Nginx relee el certificado renovado cuando está corriendo.
 
 recargar_nginx() {
   if [ -z "$(contexto_compose ps -q nginx 2>/dev/null)" ]; then

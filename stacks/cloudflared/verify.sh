@@ -10,8 +10,7 @@ v_cloudflared() {
   sano cloudflared
 
   # --- Conexiones del túnel ---
-  # Cuatro registradas es lo normal; una sola funciona pero está degradado, y es
-  # el estado que precede a una caída sin que nada más lo muestre.
+  # Dos o más conexiones indican redundancia; una sola es un estado degradado.
 
   local conns
   if ! corriendo cloudflared; then

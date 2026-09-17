@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 # Qué se espera del stack odoo. Dueño único de estos valores: el runbook
 # nombra el comando, los valores viven acá.
-#
-# Corre solo (stacks/odoo/verify.sh) o sourceado por scripts/verify-stacks.sh,
-# que comparte los contadores y emite un único resumen.
 
 . "$(dirname "${BASH_SOURCE[0]}")/../../scripts/lib/verify.sh"
 . scripts/lib/odoo-report.sh
@@ -25,13 +22,7 @@ v_odoo() {
   log_limpio "odoo sin errores de permisos" 'permission denied' "" odoo
 
   # --- smtp_server realmente cargado ---
-  # odoo.conf ya no tiene placeholder: server/port/user los appendea el
-  # entrypoint desde SMTP_HOST/PORT/USER en .env. Si esas claves quedaron
-  # vacías, el runtime conf lo tiene igual de vacío — se chequea ahí, no en el
-  # archivo estático, que nunca lo va a tener.
-  #
-  # Solo donde el valor se usa: los entornos que fuerzan ODOO_DISABLE_SMTP vacían
-  # smtp_server en el entrypoint a propósito, y ahí vacío es lo esperado.
+  # El entrypoint carga SMTP desde el runtime; ODOO_DISABLE_SMTP permite dejarlo vacío.
 
   if ! smtp_activo; then
     omitir "smtp_server cargado en el runtime conf" \

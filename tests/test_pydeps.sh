@@ -14,12 +14,15 @@ trap 'rm -rf "$TMP"' EXIT
 
 crear_checkout() {
   local root="$TMP/$1"
-  mkdir -p "$root/scripts/lib" "$root/stacks/odoo/image" "$root/addons"
+  mkdir -p "$root/scripts/lib" "$root/stacks/odoo/image" "$root/runtime/addons/custom/staging"
   cp "$REPO_ROOT/scripts/pydeps.sh" "$root/scripts/"
-  cp "$REPO_ROOT/scripts/lib/ui.sh" "$root/scripts/lib/"
-  echo "FROM odoo:19.0-20260810" > "$root/stacks/odoo/image/Dockerfile"
-  echo "for category in enterprise custom-addons oca third-party; do" > "$root/stacks/odoo/image/entrypoint.sh"
-  : > "$root/addons/requirements.txt"
+  cp "$REPO_ROOT/scripts/lib/ui.sh" "$REPO_ROOT/scripts/lib/contexto.sh" "$root/scripts/lib/"
+  printf 'FROM odoo:19.0-20260810\n' > "$root/stacks/odoo/image/Dockerfile"
+  mkdir -p "$root/runtime/staging"
+  printf 'name: prueba-staging\nservices: {}\n' > "$root/runtime/staging/compose.yaml"
+  printf 'COMPOSE_PROJECT_NAME=prueba-staging\nODOO_EDITION=community\nTAG=19.0-ce-2026-09-16\n' \
+    > "$root/runtime/staging/compose.env"
+  : > "$root/runtime/addons/requirements.txt"
   printf '%s' "$root"
 }
 
@@ -27,7 +30,7 @@ crear_checkout() {
 
 declarar_modulo() {
   local root="$1" categoria="$2" modulo="$3"; shift 3
-  local dir="$root/addons/$categoria/${modulo}_repo/$modulo" deps
+  local dir="$root/runtime/addons/custom/staging/${modulo}_repo/$modulo" deps
   mkdir -p "$dir"
   if [ "$#" -eq 0 ]; then
     printf "{'name': '%s'}\n" "$modulo" > "$dir/__manifest__.py"
@@ -38,13 +41,13 @@ declarar_modulo() {
   fi
 }
 
-pinear() { printf '%s\n' "$2" >> "$1/addons/requirements.txt"; }
+pinear() { printf '%s\n' "$2" >> "$1/runtime/addons/requirements.txt"; }
 
-check()      { (cd "$1" && ./scripts/pydeps.sh check 2>&1); }
-check_code() { (cd "$1" && ./scripts/pydeps.sh check >/dev/null 2>&1; echo $?); }
+check()      { (cd "$1" && ENTORNO=staging ./scripts/pydeps.sh check 2>&1); }
+check_code() { (cd "$1" && ENTORNO=staging ./scripts/pydeps.sh check >/dev/null 2>&1; echo $?); }
 check_env_code() { (cd "$1" && ENTORNO="$2" ./scripts/pydeps.sh check >/dev/null 2>&1; echo $?); }
-sync_()      { (cd "$1" && PATH="$REPO_ROOT/tests/stubs:$PATH" STUB_DIR="$2" ./scripts/pydeps.sh sync 2>&1); }
-sync_code()  { (cd "$1" && PATH="$REPO_ROOT/tests/stubs:$PATH" STUB_DIR="$2" ./scripts/pydeps.sh sync >/dev/null 2>&1; echo $?); }
+sync_()      { (cd "$1" && ENTORNO=staging PATH="$REPO_ROOT/tests/stubs:$PATH" STUB_DIR="$2" ./scripts/pydeps.sh sync 2>&1); }
+sync_code()  { (cd "$1" && ENTORNO=staging PATH="$REPO_ROOT/tests/stubs:$PATH" STUB_DIR="$2" ./scripts/pydeps.sh sync >/dev/null 2>&1; echo $?); }
 
 # =====================================================================
 titulo "check: nada declarado, requirements.txt vacío"
@@ -65,7 +68,9 @@ mkdir -p "$ROOT/runtime/addons/custom/staging/ventas"
 printf "{'name': 'ventas', 'external_dependencies': {'python': ['httpx']}}\n" \
   > "$ROOT/runtime/addons/custom/staging/ventas/__manifest__.py"
 pinear "$ROOT" "httpx==0.28.1"
-declarar_modulo "$ROOT" custom-addons legado paquete_que_no_debe_leerse
+mkdir -p "$ROOT/addons/custom-addons/legado_repo/legado"
+printf "{'name': 'legado', 'external_dependencies': {'python': ['paquete_que_no_debe_leerse']}}\n" \
+  > "$ROOT/addons/custom-addons/legado_repo/legado/__manifest__.py"
 igual "staging lee el candidato del runtime" "0" "$(check_env_code "$ROOT" staging)"
 
 # =====================================================================
@@ -120,7 +125,7 @@ igual "sale con 0" "0" "$(sync_code "$ROOT" "$STUB")"
 contiene "le pasa a pip el rango original" "authlib>=1.6.12,<1.7.0" "$(cat "$STUB/llamadas")"
 no_contiene "no transforma los puntos del rango" "authlib>=1-6-12,<1-7-0" "$(cat "$STUB/llamadas")"
 igual "queda pineado con la versión resuelta" "0" \
-  "$(grep -qx 'Authlib==1.6.12' "$ROOT/addons/requirements.txt"; echo $?)"
+  "$(grep -qx 'Authlib==1.6.12' "$ROOT/runtime/addons/requirements.txt"; echo $?)"
 rm -rf "$STUB"
 
 # =====================================================================
@@ -162,7 +167,7 @@ igual "sale con 0" "0" "$(sync_code "$ROOT" "$STUB")"
 contiene "invocó la imagen del Dockerfile" "odoo:19.0-20260810" "$(cat "$STUB/llamadas")"
 contiene "y le pidió el paquete que faltaba" "phonenumbers" "$(cat "$STUB/llamadas")"
 igual "quedó pineado con la versión resuelta" "0" \
-  "$(grep -qx 'phonenumbers==8.13.42' "$ROOT/addons/requirements.txt"; echo $?)"
+  "$(grep -qx 'phonenumbers==8.13.42' "$ROOT/runtime/addons/requirements.txt"; echo $?)"
 rm -rf "$STUB"
 
 # =====================================================================
@@ -181,9 +186,9 @@ sync_code "$ROOT" "$STUB" >/dev/null
 no_contiene "no le pidió a Docker resolver lo ya pineado" "requests" \
   "$(grep -o 'requests' "$STUB/llamadas" || true)"
 igual "el pin viejo de requests sigue intacto" "0" \
-  "$(grep -qx 'requests==2.28.0' "$ROOT/addons/requirements.txt"; echo $?)"
+  "$(grep -qx 'requests==2.28.0' "$ROOT/runtime/addons/requirements.txt"; echo $?)"
 igual "y el nuevo de phonenumbers se agregó" "0" \
-  "$(grep -qx 'phonenumbers==8.13.42' "$ROOT/addons/requirements.txt"; echo $?)"
+  "$(grep -qx 'phonenumbers==8.13.42' "$ROOT/runtime/addons/requirements.txt"; echo $?)"
 rm -rf "$STUB"
 
 # =====================================================================
@@ -193,14 +198,28 @@ titulo "falta el archivo — aborta y dice cómo bootstrapearlo"
 # No se versiona: un checkout nuevo tiene la plantilla y no el archivo. Sin este
 # corte, check leería cero pines y diría que está todo cubierto.
 ROOT=$(crear_checkout caso8)
-rm -f "$ROOT/addons/requirements.txt"
+rm -f "$ROOT/runtime/addons/requirements.txt"
 declarar_modulo "$ROOT" custom-addons mi_modulo phonenumbers
 STUB=$(mktemp -d)
 
 igual "check sale con 1" "1" "$(check_code "$ROOT")"
-contiene "y nombra el cp" "cp addons/requirements.txt.example addons/requirements.txt" "$(check "$ROOT")"
+contiene "y nombra el cp" "cp runtime/addons/requirements.txt.example runtime/addons/requirements.txt" "$(check "$ROOT")"
 igual "sync sale con 1" "1" "$(sync_code "$ROOT" "$STUB")"
 igual "y no invocó Docker" "1" "$([ -f "$STUB/llamadas" ]; echo $?)"
 rm -rf "$STUB"
+
+# =====================================================================
+titulo "contrato: exige ENTORNO y rechaza manifiestos inválidos"
+# =====================================================================
+
+ROOT=$(crear_checkout caso_invalido)
+mkdir -p "$ROOT/runtime/addons/custom/staging/incompleto"
+printf "{'name': 'incompleto'" > "$ROOT/runtime/addons/custom/staging/incompleto/__manifest__.py"
+igual "un manifiesto inválido detiene check" "1" \
+  "$(cd "$ROOT" && ENTORNO=staging ./scripts/pydeps.sh check >/dev/null 2>&1; echo $?)"
+contiene "explica el manifiesto inválido" "manifiesto inválido" \
+  "$(cd "$ROOT" && ENTORNO=staging ./scripts/pydeps.sh check 2>&1 || true)"
+igual "sin ENTORNO falla antes de leer addons" "2" \
+  "$(cd "$ROOT" && env -u ENTORNO ./scripts/pydeps.sh check >/dev/null 2>&1; echo $?)"
 
 resumen

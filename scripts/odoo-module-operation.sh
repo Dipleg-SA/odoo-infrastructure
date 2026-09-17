@@ -45,7 +45,19 @@ if ! scripts/image-state.sh require-actual >/dev/null 2>&1; then
   exit 2
 fi
 
-LOCK_DIR="${ODOO_OPERATION_LOCK_DIR:-${TMPDIR:-/tmp}/odoo-module-operation.lock}"
+# Identidad de la operación
+# El proyecto y el entorno evitan colisiones entre checkouts y composiciones concurrentes.
+PROYECTO="${COMPOSE_PROJECT_NAME:-}"
+[ -n "$PROYECTO" ] || {
+  ui_bad "falta COMPOSE_PROJECT_NAME" "revisar runtime/$ENTORNO/compose.env"
+  exit 2
+}
+IDENTIDAD_OPERACION="${PROYECTO}-${ENTORNO}"
+ONEOFF_NAME="${IDENTIDAD_OPERACION}-odoo-oneoff"
+
+# Lock local de módulos
+# El override conserva el aislamiento de los tests y permite diagnosticar un lock puntual.
+LOCK_DIR="${ODOO_OPERATION_LOCK_DIR:-${TMPDIR:-/tmp}/odoo-module-operation-${IDENTIDAD_OPERACION}.lock}"
 LOCK_PID="$LOCK_DIR/pid"
 LOCK_ADQUIRIDO=0
 
@@ -67,8 +79,8 @@ adquirir_lock() {
 
   # Si el proceso murió pero dejó el contenedor one-off, no liberar el lock a
   # ciegas: ese contenedor podría seguir usando la base.
-  if docker ps -a --filter 'name=^/odoo-oneoff$' --format '{{.Names}}' 2>/dev/null | grep -qx odoo-oneoff; then
-    ui_bad "hay un contenedor one-off pendiente" "revisar odoo-oneoff antes de reintentar"
+  if docker ps -a --filter "name=^/${ONEOFF_NAME}$" --format '{{.Names}}' 2>/dev/null | grep -qx "$ONEOFF_NAME"; then
+    ui_bad "hay un contenedor one-off pendiente" "revisar $ONEOFF_NAME antes de reintentar"
     exit 2
   fi
 
@@ -89,7 +101,7 @@ liberar_lock() {
 }
 
 python_operacion() {
-  contexto_compose run --rm --name odoo-oneoff \
+  contexto_compose run --rm --name "$ONEOFF_NAME" \
     -e "ODOO_OPERATION=$ACCION" \
     -e "ODOO_MODULES=$MODULOS" \
     -e "ODOO_PHASE=$1" \

@@ -10,6 +10,12 @@ cd "$(dirname "$0")/.."
 . tests/lib.sh
 
 STUB_DIR=$(mktemp -d); export STUB_DIR
+: > "$STUB_DIR/config"
+: > "$STUB_DIR/ps"
+: > "$STUB_DIR/ps-q"
+: > "$STUB_DIR/port"
+: > "$STUB_DIR/salida"
+: > "$STUB_DIR/systemctl"
 RUNTIME_ENV_CREADO=0
 if [ ! -f runtime/desarrollo/compose.env ]; then
   cp runtime/desarrollo/compose.env.example runtime/desarrollo/compose.env
@@ -30,6 +36,7 @@ orquestador() {
 }
 
 servicios_fixture() { printf '%s\n' "$1" > "$STUB_DIR/servicios"; }
+linea_exacta() { printf '%s\n' "$2" | grep -Fxq "$1"; }
 
 # =====================================================================
 titulo "descubrimiento — qué stacks corre"
@@ -39,9 +46,9 @@ titulo "descubrimiento — qué stacks corre"
 servicios_fixture $'nginx\nodoo\npostgres'
 SALIDA=$(orquestador all)
 
-contiene "corre el stack nginx"    "nginx"    "$SALIDA"
-contiene "corre el stack odoo"     "odoo"     "$SALIDA"
-contiene "corre el stack postgres" "postgres" "$SALIDA"
+igual "corre el stack nginx en su sección"    "0" "$(linea_exacta nginx "$SALIDA"; echo $?)"
+igual "corre el stack odoo en su sección"     "0" "$(linea_exacta odoo "$SALIDA"; echo $?)"
+igual "corre el stack postgres en su sección" "0" "$(linea_exacta postgres "$SALIDA"; echo $?)"
 
 # El host va primero: sus prerrequisitos explican los fallos de los stacks.
 contiene "los chequeos de host van primero" "host" "$SALIDA"
@@ -61,7 +68,7 @@ contiene "nombra que no está en este stack" "no está en este stack" "$SALIDA"
 no_contiene "y no corre sus chequeos" "odoo sirve en :8069" "$SALIDA"
 
 # =====================================================================
-titulo "perfiles — el .env del operador se suma, no se pierde"
+titulo "perfiles — el compose.env del operador se suma, no se pierde"
 # =====================================================================
 
 # Un --profile explícito REEMPLAZA a COMPOSE_PROFILES en vez de sumarse. Con
@@ -83,6 +90,27 @@ no_contiene "y no se lo da por ausente" "stack dnsmasq (no está en este stack)"
 
 rm -f "$STUB_DIR/servicios-sin-perfil"
 
+# Un perfil declarado pero inactivo se muestra de forma explícita.
+printf '%s\n' cert lan restore > "$STUB_DIR/config"
+printf '%s\n' nginx odoo postgres > "$STUB_DIR/servicios"
+SALIDA=$(orquestador dnsmasq 2>&1 || true)
+contiene "informa el perfil LAN inactivo" "perfil lan inactivo" "$SALIDA"
+no_contiene "no confunde perfil inactivo con servicio caído" "dnsmasq no está corriendo" "$SALIDA"
+: > "$STUB_DIR/config"
+
+# Verificadores directos
+# Cada stack expone su selector y entrega un diagnóstico propio aunque esté abajo.
+printf '%s\n' cert lan restore > "$STUB_DIR/config"
+printf '%s\n' addons-webhook alloy backup certbot cloudflared dnsmasq grafana loki nginx odoo postgres prometheus \
+  > "$STUB_DIR/servicios"
+rm -f "$STUB_DIR/servicios-sin-perfil"
+for stack in addons-webhook alloy backup certbot cloudflared dnsmasq grafana loki nginx odoo postgres prometheus; do
+  SALIDA=$(orquestador "$stack" 2>&1 || true)
+  igual "el selector directo ejecuta $stack en su sección" "0" \
+    "$(linea_exacta "$stack" "$SALIDA"; echo $?)"
+done
+: > "$STUB_DIR/config"
+
 # =====================================================================
 titulo "agregación — un solo resumen para todos los stacks"
 # =====================================================================
@@ -90,7 +118,8 @@ titulo "agregación — un solo resumen para todos los stacks"
 servicios_fixture $'nginx\nodoo\npostgres'
 SALIDA=$(orquestador all)
 
-igual "un único resumen al cierre" "1" "$(printf '%s\n' "$SALIDA" | grep -c 'ok · .* fallas')"
+igual "un único resumen al cierre" "1" \
+  "$(printf '%s\n' "$SALIDA" | grep -cE '^[✓✗] [0-9]+ ok · [0-9]+ fallas · [0-9]+ avisos$')"
 
 # Contar líneas de resumen NO alcanza: sin la guarda de doble sourceo sigue
 # saliendo una sola, con los contadores del último stack nada más. Lo que lo
@@ -99,14 +128,14 @@ igual "un único resumen al cierre" "1" "$(printf '%s\n' "$SALIDA" | grep -c 'ok
 
 # El propio renglón del resumen empieza con ✗ cuando hubo fallas: sin excluirlo
 # se cuenta a sí mismo y el total nunca cierra.
-SIN_RESUMEN=$(printf '%s\n' "$SALIDA" | grep -v 'ok · .* fallas')
+SIN_RESUMEN=$(printf '%s\n' "$SALIDA" | grep -vE '^[✓✗] [0-9]+ ok · [0-9]+ fallas · [0-9]+ avisos$')
 
 FALLAS_IMPRESAS=$(printf '%s\n' "$SIN_RESUMEN" | grep -c '^✗ ')
-FALLAS_RESUMEN=$(printf '%s\n' "$SALIDA" | sed -n 's/.*ok · \([0-9]*\) fallas.*/\1/p')
+FALLAS_RESUMEN=$(printf '%s\n' "$SALIDA" | sed -nE 's/^[✓✗] [0-9]+ ok · ([0-9]+) fallas · [0-9]+ avisos$/\1/p')
 igual "el resumen suma las fallas de TODOS los stacks" "$FALLAS_IMPRESAS" "$FALLAS_RESUMEN"
 
 OK_IMPRESOS=$(printf '%s\n' "$SIN_RESUMEN" | grep -c '^✓ ')
-OK_RESUMEN=$(printf '%s\n' "$SALIDA" | sed -n 's/.*[✓✗] \([0-9]*\) ok ·.*/\1/p')
+OK_RESUMEN=$(printf '%s\n' "$SALIDA" | sed -nE 's/^[✓✗] ([0-9]+) ok · [0-9]+ fallas · [0-9]+ avisos$/\1/p')
 igual "y también los ok" "$OK_IMPRESOS" "$OK_RESUMEN"
 
 # =====================================================================

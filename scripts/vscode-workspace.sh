@@ -10,15 +10,13 @@ contexto_iniciar
 
 ROOT="$(pwd)"
 OUT="$COMPOSE_PROJECT_NAME.code-workspace"
+ADDONS_WORKSPACE="$ROOT/runtime/addons"
 COLOR="1a4d7a"
 
 cat > "$OUT" <<EOF
 {
   "folders": [
-    { "name": "custom-addons", "path": "$ROOT/addons/custom-addons" },
-    { "name": "oca",           "path": "$ROOT/addons/oca" },
-    { "name": "third-party",   "path": "$ROOT/addons/third-party" },
-    { "name": "addons",        "path": "$ROOT/addons" },
+    { "name": "addons — $ENTORNO", "path": "$ADDONS_WORKSPACE" },
     { "name": "infra — solo terminal, NO editar", "path": "$ROOT" }
   ],
   "settings": {
@@ -33,34 +31,29 @@ cat > "$OUT" <<EOF
 }
 EOF
 
-# --- Recorte del folder 'addons' ---
-# custom-addons/oca/third-party ya son folders propios arriba; sin ocultarlos acá
-# VS Code los escanea dos veces y duplica el estado de git de cada módulo. Lo que
-# queda visible en 'addons/' es justamente lo que no vive en ningún otro folder:
-# enterprise/, addons.txt y requirements.txt (y sus .example).
+# --- Recorte del folder de addons ---
+# Oculta clones bare y builds generados, pero deja visibles catálogo, candidatos y Enterprise.
 
-mkdir -p addons/.vscode
-cat > addons/.vscode/settings.json <<EOF
+mkdir -p "$ADDONS_WORKSPACE/.vscode"
+cat > "$ADDONS_WORKSPACE/.vscode/settings.json" <<EOF
 {
   "files.exclude": {
-    "custom-addons": true,
-    "oca": true,
-    "third-party": true
+    ".repos": true,
+    "builds": true
   }
 }
 EOF
 
-# --- Recorte del root de infra ---
-# Todo 'addons/' ya está representado por los cuatro folders de arriba (las tres
-# categorías sueltas más 'addons'); sin ocultarlo acá se duplica entero.
+# --- Recorte del root de infraestructura ---
+# Oculta runtime/addons en la carpeta padre para no mostrar dos veces los mismos archivos.
 
 mkdir -p .vscode
 cat > .vscode/settings.json <<EOF
 {
   "files.exclude": {
-    "addons": true
+    "runtime/addons": true
   }
 }
 EOF
 
-ui_ok "generado $OUT, .vscode/settings.json y addons/.vscode/settings.json"
+ui_ok "generado $OUT, .vscode/settings.json y runtime/addons/.vscode/settings.json"

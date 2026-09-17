@@ -1,36 +1,24 @@
 #!/usr/bin/env bash
 # Restore desde un snapshot de restic: la otra dirección de la misma herramienta.
-# Se invoca a mano — nunca por timer, nunca al arrancar.
-#
-# El orden importa y no es simétrico al del backup: primero el filestore, después
-# la base. Un filestore más nuevo que la base deja archivos huérfanos, que son
-# inofensivos; uno más viejo deja filas apuntando a archivos que no existen, que
-# es destructivo y silencioso.
+# Se invoca a mano, primero para el filestore y después para la base.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
 . scripts/lib/ui.sh
 
 # Contexto del runtime
-# Compose y el estado restaurado deben pertenecer al entorno seleccionado.
-if [ -n "${ENTORNO:-}" ] && [ -f scripts/lib/contexto.sh ]; then
-  . scripts/lib/contexto.sh
-  contexto_iniciar
-  META_DIR="$RUNTIME_STATE_DIR/meta"
-  compose() { contexto_compose "$@"; }
-else
-  META_DIR="state/meta"
-  compose() { docker compose "$@"; }
-fi
-
-if [ -f .env ]; then set -a; . ./.env; set +a; fi
+# Compose y el estado restaurado deben pertenecer al entorno seleccionado; no hay fallback global.
+[ -n "${ENTORNO:-}" ] || { ui_bad "falta ENTORNO" "usar ENTORNO=staging o ENTORNO=produccion" >&2; exit 2; }
+. scripts/lib/contexto.sh
+contexto_iniciar
+META_DIR="$RUNTIME_STATE_DIR/meta"
+compose() { contexto_compose "$@"; }
 
 SNAPSHOT="${1:-latest}"
 DUMP_PATH=/dumps/odoo.sql
 
 # --- Guarda ---
-# Restaurar sobre una base con Odoo escribiendo deja el cluster a medias: las
-# conexiones vivas bloquean el DROP y lo que sí entra queda mezclado.
+# Odoo debe estar detenido y Postgres disponible antes de restaurar.
 
 if [ -n "$(compose ps -q odoo 2>/dev/null)" ]; then
   ui_bad "odoo está corriendo" "restaurar con la aplicación viva mezcla datos — make odoo-down" >&2
@@ -45,20 +33,14 @@ ui_plan_start "restore desde el snapshot '$SNAPSHOT'"
 ui_step 1 "Restore del filestore y la base desde el snapshot '$SNAPSHOT'."
 
 # --- Cómo se invoca el contenedor ---
-# --user 0:0 en la invocación y no en el compose: así la operación recurrente —el
-# backup diario— sigue corriendo no-root. Root hace falta por dos motivos: un
-# volumen recién creado nace root:root y ningún no-root puede crear ahí el primer
-# directorio, y solo root le devuelve a cada archivo el owner del snapshot.
-#
-# --entrypoint es obligatorio: el servicio declara `entrypoint: ["sleep"]` para
-# poder colgarle un healthcheck, así que sin esto `run backup restic ...`
-# ejecutaría `sleep restic ...` y devolvería 0 sin restaurar nada.
+# Root y un entrypoint explícito son puntuales: el servicio recurrente sigue no-root.
 
 en_backup() {
   compose run --rm --user 0:0 --entrypoint "$1" -T backup "${@:2}"
 }
 
 # --- Filestore ---
+# Restore del filestore antes de cargar la base.
 
 ui_run "restore del filestore" en_backup restic restore "$SNAPSHOT" --target / --include /data/odoo
 
@@ -71,14 +53,12 @@ ui_run "restore de metadata" en_backup restic restore "$SNAPSHOT" --target / --i
 ui_run "owner del filestore" en_backup chown -R 100:101 /data/odoo
 
 # --- Dump ---
-# Al volumen que postgres monta rw, para poder alimentárselo por psql.
+# Se restaura al volumen compartido que luego lee Postgres.
 
 ui_run "restore del dump" en_backup restic restore "$SNAPSHOT" --target / --include /data/dump
 
 # --- Base ---
-# La base se recrea entera: el dump es lógico y no aplica sobre un esquema que ya
-# existe sin chocar con cada objeto. dropdb/createdb y no --clean para que el
-# fallo, si lo hay, sea al principio y no a mitad de la carga.
+# La base se recrea antes de cargar el dump lógico para fallar al comienzo.
 
 ui_run "recrear la base" compose exec -T postgres sh -c \
   'dropdb -U odoo --if-exists odoo && createdb -U odoo -O odoo odoo'
@@ -88,7 +68,7 @@ ui_run "cargar el dump" compose exec -T postgres sh -c \
 
 # Procedencia de imagen
 # El restore debe dejar Actual y Anterior alineadas con el snapshot recuperado.
-if [ -n "${ENTORNO:-}" ] && [ -f "$META_DIR/images.json" ]; then
+if [ -f "$META_DIR/images.json" ]; then
   scripts/image-state.sh restore-meta "$META_DIR/images.json"
 else
   ui_bad "falta procedencia de imágenes" "el snapshot no contiene state/meta/images.json"

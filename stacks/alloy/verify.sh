@@ -8,15 +8,7 @@ REGLAS=stacks/grafana/config/provisioning/alerting/rules.yaml
 BACKUP_COMPOSE=stacks/backup/compose.yaml
 
 # --- Cuántos componentes hay y cuántos no están sanos ---
-# Función aparte para poder ejercitarla sin Alloy arriba: los dos greps de acá ya
-# pasaron dos veces por el mismo error —contar la clave equivocada, y excluir un
-# patrón sin anclar— y las dos veces el chequeo pasaba dijera lo que dijera Alloy.
-#
-# El estado va anidado en "health":{"state":...}, no en una clave "health_type" de
-# primer nivel: se midió contra la API real. wc -l y no grep -c porque la API
-# devuelve todo el JSON en UNA línea. Y el patrón excluido va anclado al valor
-# entero: 'healthy' suelto matchea dentro de "unhealthy", que es justo el estado
-# que este chequeo existe para encontrar.
+# La API devuelve una línea con health.state por componente.
 
 alloy_salud() {
   local comp="$1" total rotos
@@ -30,10 +22,33 @@ v_alloy() {
 
   sano alloy
 
+  # --- Límite de privilegios ---
+  # El agente necesita montajes de observabilidad, pero no privileged ni capacidades adicionales.
+
+  local configuracion
+  configuracion=$(contexto_compose config 2>/dev/null | awk '
+    /^services:$/ { servicios = 1; next }
+    servicios && /^  [^ ]/ {
+      if ($0 == "  alloy:") { encontrado = 1; dentro = 1; next }
+      if (dentro) exit
+      next
+    }
+    dentro { print }
+    END { if (!encontrado) exit 1 }
+  ')
+  if printf '%s\n' "$configuracion" | grep -qE '^    read_only: true$' \
+    && printf '%s\n' "$configuracion" | grep -qE '^    cap_drop:$' \
+    && printf '%s\n' "$configuracion" | grep -qE '^      - ALL$' \
+    && printf '%s\n' "$configuracion" | grep -qE '^      - no-new-privileges:true$' \
+    && ! printf '%s\n' "$configuracion" | grep -qE '^    privileged: true$|^    cap_add:'; then
+    ok "alloy limita privilegios a observabilidad"
+  else
+    bad "alloy limita privilegios a observabilidad" \
+      "exigir read_only, cap_drop=ALL, no-new-privileges y ningún privileged/cap_add"
+  fi
+
   # --- Los componentes resuelven de verdad ---
-  # `alloy validate` acepta constantes inexistentes con exit 0: la ÚNICA prueba de
-  # que las referencias entre componentes resuelven es ejecutarlo y leer su API.
-  # Un componente en estado unhealthy deja de emitir y nada más lo dice.
+  # La API en ejecución es la prueba de que las referencias resuelven.
 
   local comp rotos
   if ! corriendo alloy; then
@@ -55,8 +70,7 @@ v_alloy() {
   fi
 
   # --- Los dos umbrales de frescura del backup ---
-  # La alerta tiene que avisar ANTES de que el healthcheck marque unhealthy. Los dos
-  # derivan de la cadencia del timer y viven en archivos de herramientas distintas.
+  # La alerta debe avisar antes de que el healthcheck marque unhealthy.
 
   local alerta maxage
   alerta=$(sed -n 's/.*params: \[\([0-9]\{4,\}\)\].*/\1/p' "$REGLAS" 2>/dev/null | head -1)

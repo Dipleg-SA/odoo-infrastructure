@@ -40,6 +40,10 @@ igual "el receptor no publica puertos del host" "" \
 # Verificación del stack
 # La fixture devuelve la composición real y simula el servicio detenido.
 mkdir -p "$TMP/verify"
+: > "$TMP/verify/ps-q"
+: > "$TMP/verify/ps"
+: > "$TMP/verify/port"
+: > "$TMP/verify/salida"
 printf '%s\n' addons-webhook > "$TMP/verify/servicios"
 printf '%s\n' addons-webhook > "$TMP/verify/servicios-sin-perfil"
 cp runtime/produccion/compose.env.example "$TMP/verify/config.env"
@@ -50,8 +54,19 @@ SALIDA=$(STUB_DIR="$TMP/verify" PATH="$PWD/tests/stubs:$PATH" ENTORNO=produccion
 contiene "el stack con guion se descubre y ejecuta" "addons-webhook" "$SALIDA"
 contiene "el verify acepta las rutas limitadas de secretos" \
   "solo monta los cuatro secretos dedicados al webhook" "$SALIDA"
+contiene "el verify exige usuario no privilegiado" \
+  "receptor no privilegiado y filesystem de imagen inmutable" "$SALIDA"
 no_contiene "el verify no confunde el nombre del checkout con Odoo" \
   "la composición del receptor contiene una referencia prohibida" "$SALIDA"
+
+# Targets del contenedor
+# El receptor usa el mismo sexteto Make que los demás stacks.
+TARGETS=$(make -qp 2>/dev/null)
+for target in addons-webhook-up addons-webhook-down addons-webhook-restart \
+  addons-webhook-logs addons-webhook-ps addons-webhook-verify; do
+  contiene "Make registra $target" "${target}:" "$TARGETS"
+done
+
 sed 's@target: /var/lib/addons-webhook@target: /var/run/docker.sock@' \
   "$TMP/verify/config" > "$TMP/verify/config-insegura"
 cp "$TMP/verify/config-insegura" "$TMP/verify/config"

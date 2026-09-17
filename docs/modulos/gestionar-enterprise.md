@@ -2,146 +2,93 @@
 
 ## Cuándo se usa
 
-Módulo de Odoo Enterprise, sin acceso al repositorio privado de GitHub — se consume vía el ZIP que se descarga desde el portal de tu cuenta. Es la excepción al resto del modelo de addons: la licencia no permite forkear el código a una organización propia, así que no hay fork, rama Git de staging ni `repo-sync`.
-
-El mismo procedimiento sirve para instalar el módulo por primera vez y para traer una versión nueva más adelante — no hay git de por medio, así que "crear" y "actualizar" son literalmente el mismo comando.
+Cuando el runtime selecciona `ODOO_EDITION=enterprise`. Enterprise se mantiene en un
+checkout privado fuera del repositorio de infraestructura y se selecciona por un tag
+anotado e inmutable de la misma línea de Odoo.
 
 ## Objetivo
 
-Módulo disponible en `runtime/addons/enterprise/`, instalado.
+Dejar disponible el checkout privado en `runtime/addons/enterprise/`, validarlo contra
+`TAG` y construir una imagen Enterprise reproducible. El repositorio público no guarda
+el código, sus credenciales ni sus artefactos.
 
 ## Flujo rápido
 
-Este es el recorrido para instalar un módulo Enterprise por primera vez o actualizarlo con un ZIP nuevo. El ZIP se aplica manualmente en cada checkout; no viaja por Git.
-
-1. **Descargar el ZIP** de la misma versión de Odoo que usa el entorno. No hay comando `make` en esta etapa.
-
-2. **Descomprimirlo en desarrollo** y resolver dependencias Python si el módulo las declara:
+1. Prepará o actualizá manualmente el checkout privado de Enterprise en
+   `runtime/addons/enterprise/` y seleccioná un tag `19.0-ee-YYYY-MM-DD`.
+2. Validá el checkout y resolvé dependencias Python si corresponde:
 
    ```bash
-   unzip -q odoo-enterprise.zip -d runtime/addons/enterprise/
+   ENTORNO=desarrollo scripts/addons.sh enterprise-sync <url-privada> <tag>
+   ENTORNO=desarrollo scripts/addons.sh enterprise-validate <tag>
    ENTORNO=desarrollo make addons-deps
-   ENTORNO=desarrollo make build   # solo si addons-deps agregó o cambió pines
+   ENTORNO=desarrollo make build
    ```
 
-3. **Instalar o actualizar en desarrollo** según el estado de la base:
+3. Validá la imagen y las operaciones funcionales manualmente en desarrollo y staging.
+4. Repetí la selección del mismo tag en el checkout privado de cada entorno; no copies
+   código ni credenciales al repositorio público.
+5. En producción, conservá el backup requerido y aplicá la imagen solo después de la
+   validación de staging:
 
    ```bash
-   ENTORNO=desarrollo make addons-install MODULES=<nombre_tecnico>  # primera vez en esta base
-   # o
-   ENTORNO=desarrollo make addons-update MODULES=<nombre_tecnico>   # ya estaba instalado
-   ENTORNO=desarrollo make odoo-verify
-   ```
-
-4. **Repetir el mismo ZIP en staging** y validar antes de producción:
-
-   ```bash
-   unzip -q odoo-enterprise.zip -d runtime/addons/enterprise/
-   ENTORNO=staging make addons-deps
-   ENTORNO=staging make build   # solo si addons-deps agregó o cambió pines
-   ENTORNO=staging make addons-install MODULES=<nombre_tecnico>  # primera vez en staging
-   # o
-   ENTORNO=staging make addons-update MODULES=<nombre_tecnico>   # ya estaba instalado
-   ENTORNO=staging make verify
-   ```
-
-5. **Aplicar el ZIP validado en producción** y confirmar el resultado:
-
-   ```bash
-   unzip -q odoo-enterprise.zip -d runtime/addons/enterprise/
-   ENTORNO=produccion make addons-deps
-   ENTORNO=produccion make build   # solo si addons-deps agregó o cambió pines
-   ENTORNO=produccion make addons-install MODULES=<nombre_tecnico>  # primera vez en producción
-   # o
-   ENTORNO=produccion make addons-update MODULES=<nombre_tecnico>   # ya estaba instalado
-   ENTORNO=produccion make verify
-   ENTORNO=produccion make addons-modules
+   ENTORNO=produccion make build
+   ENTORNO=produccion make validate-image NOTE="staging aprobado"
+   ENTORNO=produccion make apply-image
    ```
 
 | Situación | Comando |
 | --- | --- |
-| Primera instalación en una base | `make addons-install MODULES=<nombre_tecnico>` |
-| Módulo ya instalado en la base | `make addons-update MODULES=<nombre_tecnico>` |
-| El módulo declaró dependencias Python | `make addons-deps` y, si agregó pines, `make build` |
-| Validar el entorno tras instalar o actualizar | `make odoo-verify` en desarrollo; `make verify` en staging o producción |
+| Seleccionar el checkout privado | `ENTORNO=<entorno> scripts/addons.sh enterprise-sync <url> <tag>` |
+| Validar tag, commit y limpieza | `ENTORNO=<entorno> scripts/addons.sh enterprise-validate <tag>` |
+| Resolver dependencias declaradas | `ENTORNO=<entorno> make addons-deps` |
+| Construir la fotografía | `ENTORNO=<entorno> make build` |
+| Verificar el runtime | `ENTORNO=<entorno> make verify` |
 
 ## A mano
 
-Descargar el ZIP desde el portal de tu cuenta de Odoo.
+El acceso al repositorio privado, la selección del tag y la validación funcional son
+responsabilidad del operador. No se automatiza la instalación, actualización,
+desinstalación ni validación funcional de módulos.
 
-## Comandos
+## Contrato de edición
 
-```bash
-unzip -q odoo-enterprise.zip -d runtime/addons/enterprise/
-ENTORNO=desarrollo make addons-deps
-ENTORNO=desarrollo make build   # solo si addons-deps agregó o cambió pines
+Enterprise usa únicamente este par en el archivo privado del runtime:
+
+```ini
+ODOO_EDITION=enterprise
+TAG=19.0-ee-YYYY-MM-DD
 ```
 
-`entrypoint.sh` arma el `addons_path` con un glob por categoría. El ZIP debe conservar su directorio contenedor de primer nivel dentro de `runtime/addons/enterprise/`; los módulos son los directorios que contienen `__manifest__.py`, no necesariamente los directorios de primer nivel.
-
-Después elegí **uno** de estos comandos, nunca los dos:
-
-```bash
-make addons-install MODULES=<nombre_tecnico>   # primera vez en esta base
-```
-
-```bash
-make addons-update MODULES=<nombre_tecnico>    # el módulo ya estaba instalado
-```
+Community usa `ODOO_EDITION=community` y `TAG=19.0-ce-YYYY-MM-DD`; no necesita
+checkout Enterprise. No se interpretan bloques `[enterprise]` o `[community]` ni se
+mantiene un archivo adicional de selección.
 
 ## Verificación
 
-### Desarrollo
-
 ```bash
-find runtime/addons/enterprise -name __manifest__.py -print
-make addons-modules
-make odoo-verify
-docker compose logs --since 5m odoo
+ENTORNO=desarrollo scripts/addons.sh enterprise-validate "$TAG"
+ENTORNO=desarrollo make verify
+ENTORNO=staging make verify
+ENTORNO=produccion make verify
 ```
 
-Confirmá que el módulo figura instalado y probá en la UI local el flujo que agrega o modifica. Si tocaste vistas o datos, recargá sin caché. Si el ZIP agregó una dependencia Python, comprobá `make addons-deps` y reconstruí la imagen cuando haya cambiado algún pin.
-
-### Staging
-
-```bash
-make addons-modules
-docker compose logs --since 5m odoo
-make verify
-```
-
-Probá el flujo con los datos restaurados de producción y revisá los cambios sobre registros existentes. Confirmá que no salió correo real: staging fuerza `ODOO_DISABLE_SMTP=1`. No copies el ZIP a producción hasta completar esta validación.
-
-### Producción
-
-```bash
-make addons-modules
-docker compose logs --since 10m odoo
-make verify
-```
-
-Probá el flujo con cuidado y confirmá que llegó el correo si el cambio lo dispara. Esta comprobación es de confirmación; la prueba exploratoria ya se hizo en staging. Si falla algo que pasó allí, registrá el caso y ampliá la validación de staging para la próxima actualización.
-
----
-
-**Sin staging por git.** Sin `repo-sync` no hay forma de traer este cambio al servidor de staging antes de producción por el camino habitual. Si querés probarlo antes de tocar producción, repetí este mismo `unzip` + `addons-install`/`addons-update` a mano en el checkout de staging primero — es la única forma de validarlo con este mecanismo.
-
-La carpeta sigue gitignoreada por dentro, igual que cualquier otra categoría: el ZIP nunca se versiona.
+La verificación debe confirmar que el commit coincide con el tag, que el checkout está
+limpio y que `images.json` conserva `edition`, `edition_tag`, `enterprise_tag` y
+`enterprise_commit`. El código Enterprise no se versiona ni se publica mediante
+webhook.
 
 ## Retirar Enterprise y pasar a Community
 
-No retires el checkout Enterprise antes de quitar sus módulos de la base. La imagen Community no puede arrancar de forma segura si la base conserva módulos Enterprise instalados.
+No retires el checkout Enterprise antes de quitar manualmente sus módulos de la base.
+Primero restaurá una copia en staging, comprobá el inventario y desinstalá los módulos
+afectados mediante el procedimiento de módulos. Después cambiá únicamente:
 
-1. Conservá el backup asociado y restaurá una copia en staging.
-2. Identificá los módulos Enterprise instalados y desinstalalos manualmente en esa copia:
+```ini
+ODOO_EDITION=community
+TAG=19.0-ce-YYYY-MM-DD
+```
 
-   ```bash
-   ENTORNO=staging scripts/odoo-edition-check.sh --destino community
-   ENTORNO=staging make addons-uninstall MODULES=<nombre_tecnico>
-   ENTORNO=staging make verify
-   ```
-
-3. Cambiá únicamente `ODOO_EDITION=community` y `TAG=19.0-ce-YYYY-MM-DD` en el `compose.env`, retiră el ZIP Enterprise del checkout aislado y construí una imagen Community.
-4. Validá nuevamente staging. No desinstales, actualices ni conviertas módulos automáticamente durante `apply-image`.
-
-En producción, `apply-image` vuelve a ejecutar el preflight y exige el backup asociado antes de aceptar la transición. La imagen Enterprise anterior queda como frontera de recuperación; `rollback-image` no la reactiva contra el runtime Community. Si la base todavía tiene módulos Enterprise, el preflight bloquea el cambio.
+Construí y validá la imagen Community en staging. `apply-image` vuelve a ejecutar el
+preflight en producción, exige el backup asociado y no convierte módulos por sí solo.
+Si la base todavía conserva módulos Enterprise, la transición queda bloqueada.

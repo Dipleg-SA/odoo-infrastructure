@@ -70,12 +70,25 @@ vacio() {
 
 SERVICIOS=$(servicios_activos)
 
+# Perfiles declarados y servicios activos
+# La consulta separada permite detectar un perfil que Compose conoce pero dejó fuera.
+PERFILES_DECLARADOS=$(contexto_compose config --profiles 2>/dev/null)
+
 # Sin composición no se aborta: es el estado que la capa host existe para
 # diagnosticar. Se responde que sí a todo y cada chequeo reporta su propio fallo.
 
 declarado() {
   [ -z "$SERVICIOS" ] && return 0
   printf '%s\n' "$SERVICIOS" | grep -qx "$1"
+}
+
+perfil_declarado() {
+  printf '%s\n' "$PERFILES_DECLARADOS" | grep -qx "$1"
+}
+
+perfil_inactivo() {
+  local servicio="$1" perfil="$2"
+  perfil_declarado "$perfil" && ! declarado "$servicio"
 }
 
 # --- ¿El servicio está levantado? ---

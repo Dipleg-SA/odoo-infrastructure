@@ -12,10 +12,7 @@ v_grafana() {
   sano grafana
 
   # --- Reglas de alerting realmente cargadas ---
-  # Se cuentan contra el archivo, no se asume que cargó. Un fallo de provisioning
-  # completo NO es silencioso —Grafana sale con código 1 y entra en loop, y eso lo
-  # atrapa `sano grafana`—, pero una regla que no provisiona sí lo es: el resto
-  # carga, el stack se ve sano, y esa alerta no dispara nunca.
+  # Se cuentan en la API de Grafana porque una regla ausente no siempre tumba el stack.
 
   local esperadas cargadas codigo pass_gf
   esperadas=$(grep -c '^      - uid:' "$RULES" 2>/dev/null)
@@ -47,18 +44,14 @@ v_grafana() {
   fi
 
   # --- SMTP y destinatario realmente cargados ---
-  # grafana.ini y contact-points.yaml ya no tienen placeholder: host/user/
-  # from_address/destinatario llegan por env desde .env. Si alguna clave quedó
-  # vacía ahí, acá se nota en el propio contenedor — GF_SMTP_HOST resuelve a
-  # ":587" y no a un host real, por ejemplo — en vez de que Grafana arranque
-  # igual y mande correo a una dirección que no existe, o no mande nada.
+  # La consulta dentro del contenedor confirma que host, usuario y destinatario tienen valor.
 
   if corriendo grafana; then
-    vacio "SMTP y destinatario de alertas sin claves vacías en .env" \
+    vacio "SMTP y destinatario de alertas sin claves vacías en runtime/$ENTORNO/compose.env" \
       contexto_compose exec -T grafana sh -c \
         '[ -n "$GF_SMTP_USER" ] && [ "$GF_SMTP_HOST" != ":587" ] && [ -n "$GF_SMTP_FROM_ADDRESS" ] && [ -n "$ALERT_EMAIL_TO" ] || echo "alguna quedo vacia"'
   else
-    omitir "SMTP y destinatario de alertas sin claves vacías en .env" "$(motivo grafana)"
+    omitir "SMTP y destinatario de alertas sin claves vacías en runtime/$ENTORNO/compose.env" "$(motivo grafana)"
   fi
 
   # --- Binds ---

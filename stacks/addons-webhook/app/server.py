@@ -45,6 +45,7 @@ class Config:
     candidate_root: Path
     state_dir: Path
     secret_file: Path
+    project_name: str = "default"
     git_token_file: Path | None = None
     git_key_file: Path | None = None
     git_known_hosts_file: Path | None = None
@@ -61,6 +62,7 @@ class Config:
             candidate_root=Path(os.environ.get("ADDONS_CANDIDATE_ROOT", root / "runtime/addons/custom")),
             state_dir=Path(os.environ.get("ADDONS_STATE_DIR", root / "runtime/control/state")),
             secret_file=Path(os.environ.get("ADDONS_SECRET_FILE", root / "runtime/control/secrets/addons_webhook_secret")),
+            project_name=os.environ.get("ADDONS_PROJECT_NAME", "default"),
             git_token_file=Path(os.environ.get("ADDONS_GIT_TOKEN_FILE", root / "runtime/control/secrets/git_readonly_token")),
             git_key_file=Path(os.environ.get("ADDONS_GIT_SSH_KEY_FILE", root / "runtime/control/secrets/git_readonly_key")),
             git_known_hosts_file=Path(os.environ.get("ADDONS_GIT_KNOWN_HOSTS_FILE", root / "runtime/control/secrets/git_known_hosts")),
@@ -98,7 +100,7 @@ def file_lock(path: Path):
 
 
 def environment_lock(config: Config, environment: str) -> Path:
-    return config.state_dir / "locks" / f"{environment}.lock"
+    return config.state_dir / "locks" / config.project_name / f"{environment}.lock"
 
 
 def repository_lock(config: Config, domain: str) -> Path:

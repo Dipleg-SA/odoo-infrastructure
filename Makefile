@@ -15,9 +15,9 @@ include .make/main.mk
         odoo-report-config \
         host-init host-verify up-timers down-timers notify-test monitoring-role \
         cert-issue cert-renew \
-        backup-run backup-integrity restore \
+        backup-run backup-integrity restore integrity-check \
         repo-sync repo-status addons-install addons-update addons-uninstall addons-modules addons-deps \
-        require-entorno require-edition-transition require-modules require-backups require-restore require-root require-systemd require-not-production test verify \
+        require-entorno require-edition-transition require-modules require-backups require-restore require-root require-systemd require-not-production test test-smoke verify \
         $(foreach s,$(STACKS),$(s)-up $(s)-down $(s)-restart $(s)-logs $(s)-ps $(s)-verify) \
         $(foreach s,$(STACKS_ONESHOT),$(s)-logs $(s)-ps $(s)-verify)
 .DEFAULT_GOAL := help
@@ -27,6 +27,7 @@ include .make/main.mk
 RUNTIME_TARGETS := secrets-init secrets-perms secrets-check config-init dev-workspace odoo-report-config \
                    host-verify up-timers down-timers notify-test monitoring-role cert-issue cert-renew \
                    backup-run backup-integrity restore repo-sync repo-status \
+                   integrity-check \
                    addons-install addons-update addons-uninstall addons-modules addons-deps \
                    require-edition-transition require-backups require-restore require-not-production verify \
                    up down logs ps nuke reset build apply-image rollback-image validate-image
@@ -99,10 +100,14 @@ require-systemd:
 host-init: TARGET=host-init
 host-init: require-systemd require-root ## Aplica la rotación de logs del daemon en Linux (requiere root)
 	@. scripts/lib/ui.sh; \
+	  if ! python3 -c 'import json; json.load(open("host/daemon.json"))' >/dev/null 2>&1; then \
+	    ui_bad "host/daemon.json inválido" "el contrato versionado no es JSON válido" >&2; exit 2; \
+	  fi; \
 	  if [ -e /etc/docker/daemon.json ] && ! cmp -s host/daemon.json /etc/docker/daemon.json; then \
 	    MAX_SIZE=$$(grep -o '"max-size"[^,}]*' host/daemon.json); \
 	    MAX_FILE=$$(grep -o '"max-file"[^,}]*' host/daemon.json); \
-	    if grep -qF "$$MAX_SIZE" /etc/docker/daemon.json && grep -qF "$$MAX_FILE" /etc/docker/daemon.json; then \
+	    LOG_DRIVER=$$(grep -o '"log-driver"[^,}]*' host/daemon.json); \
+	    if grep -qF "$$LOG_DRIVER" /etc/docker/daemon.json && grep -qF "$$MAX_SIZE" /etc/docker/daemon.json && grep -qF "$$MAX_FILE" /etc/docker/daemon.json; then \
 	      ui_skip "/etc/docker/daemon.json ya rota logs igual que el repo (difiere solo en formato o en claves propias del host)"; \
 	      exit 0; \
 	    fi; \
@@ -146,6 +151,9 @@ test: ## Corre los tests del repo, sin Docker ni red
 	  if [ "$$ok" -eq "$$total" ]; then ui_ok "tests listos — $$ok/$$total archivos ok"; \
 	  else ui_bad "tests fallaron" "$$ok/$$total archivos ok"; fi; \
 	  [ "$$ok" -eq "$$total" ]
+
+test-smoke: ## Valida builds y configuraciones con Docker real (requiere daemon y red)
+	@DOCKER_SMOKE=1 bash tests/test_docker_smoke.sh
 
 # --- Verificación del deploy ---
 # Cada stacks/<nombre>/verify.sh es dueño de qué se espera de él; el orquestador solo
@@ -201,7 +209,7 @@ reset: require-not-production ## Borra los datos (volúmenes) y vuelve a levanta
 	  ui_run "reset" bash -c '$(CONTEXTO_COMPOSE) down -v && $(CONTEXTO_COMPOSE) up -d'
 	@$(MAKE) odoo-report-config
 
-# Repositorios de dominio
+# --- [STACK:addons] Repositorios de dominio ---
 # Sync actualiza el clon bare y publica el candidato del entorno seleccionado.
 
 repo-sync: ## Sincroniza los candidatos declarados en runtime/addons/catalogo.txt
@@ -210,9 +218,12 @@ repo-sync: ## Sincroniza los candidatos declarados en runtime/addons/catalogo.tx
 repo-status: ## Muestra el estado de los addons
 	@. scripts/lib/ui.sh; ui_run "repo-status" scripts/addons.sh status
 
+integrity-check: ## Comprueba adjuntos de Odoo contra el filestore
+	scripts/integrity-check.sh "$(DB)"
+
 # --- Imágenes propias ---
 # Todo stack construye la suya, aunque el Dockerfile sea un FROM pineado y nada más.
-# El build de odoo no clona nada: los addons entran por bind-mount, no por capa.
+# El build de odoo no clona nada: los addons entran por la fotografía inmutable.
 
 build: ## Construye la imagen Odoo desde la fotografía del entorno
 	scripts/build-odoo-image.sh

@@ -40,7 +40,12 @@ printf 'FROM odoo:19.0\n' > "$ROOT/stacks/odoo/image/Dockerfile"
 
 # Limpieza de invocaciones
 # Cada aserción observa solo la llamada que acaba de ejecutar.
-reset_stub() { rm -f "$STUB_DIR/llamadas" "$STUB_DIR/config" "$STUB_DIR/salida"; }
+reset_stub() {
+  rm -f "$STUB_DIR/llamadas"
+  : > "$STUB_DIR/config"
+  : > "$STUB_DIR/salida"
+  : > "$STUB_DIR/servicios"
+}
 
 # Selector obligatorio
 # La ausencia y los valores desconocidos deben fallar antes de invocar Docker.
@@ -73,8 +78,12 @@ for entorno in desarrollo staging produccion; do
   igual "$entorno carga solo su marcador" "$entorno" "$MARCADOR_ENTORNO"
   igual "$entorno deriva su ruta privada" "$ROOT/runtime/$entorno/config" "$RUNTIME_CONFIG_DIR"
   igual "$entorno deriva la línea de Odoo" "19.0" "$(contexto_odoo_version)"
+  printf 'nginx\n' > "$STUB_DIR/servicios"
   reset_stub
-  sale_con "$entorno delega a Compose" 0 contexto_compose config --services
+  printf 'nginx\n' > "$STUB_DIR/servicios"
+  salida=$(contexto_compose config --services); codigo=$?
+  igual "$entorno delega a Compose" "0" "$codigo"
+  contiene "$entorno obtiene la salida de Compose" "nginx" "$salida"
   llamada=$(cat "$STUB_DIR/llamadas")
   contiene "$entorno pasa su compose.env" "--env-file $ROOT/runtime/$entorno/compose.env" "$llamada"
   contiene "$entorno pasa su compose.yaml" "-f $ROOT/runtime/$entorno/compose.yaml" "$llamada"

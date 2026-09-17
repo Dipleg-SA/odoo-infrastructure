@@ -10,9 +10,7 @@ v_prometheus() {
   sano prometheus
 
   # --- Todos los targets arriba ---
-  # Es la señal de que el pull funciona. Alloy figura entre ellos a propósito:
-  # si el agente se muere, su propia caída dispara up == 0 en vez de dejar las
-  # series ausentes, que ningún umbral alcanza.
+  # El estado up confirma que el pull funciona, incluido el agente Alloy.
 
   local salida caidos
   if ! corriendo prometheus; then
@@ -21,9 +19,8 @@ v_prometheus() {
        'http://127.0.0.1:9090/api/v1/targets?state=active' 2>/dev/null); then
     bad "todos los targets de Prometheus up" "no se pudo consultar la API de targets"
   else
-    # scrapePool y no job: job vive DENTRO de labels, un objeto anidado — [^{}]*
-    # cruzaría su cierre y se comería el health de otro target. scrapePool está al
-    # mismo nivel que health, sin llaves de por medio.
+    # scrapePool está al mismo nivel que health; job vive anidado en labels.
+    # La extracción evita cruzar objetos anidados de otros targets.
     caidos=$(printf '%s' "$salida" \
       | grep -oE '"scrapePool": ?"[^"]*"[^{}]*"health": ?"down"' \
       | sed -E 's/"scrapePool": ?"([^"]*)".*/\1/' | sort -u | tr '\n' ' ')
@@ -32,9 +29,7 @@ v_prometheus() {
   fi
 
   # --- Las tres familias que empuja Alloy ---
-  # Host, contenedores y base: si falta una, el agente perdió un colector. Se
-  # verifica acá y no en alloy porque lo que importa es que HAYAN LLEGADO, no que
-  # el colector diga estar sano.
+  # Host, contenedores y base deben tener series recibidas en Prometheus.
 
   local m
   if ! corriendo prometheus; then

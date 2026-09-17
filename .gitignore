@@ -26,6 +26,7 @@ runtime/produccion/*
 
 runtime/addons/*
 !runtime/addons/catalogo.txt.example
+!runtime/addons/requirements.txt.example
 runtime/control/*
 !runtime/control/compose.yaml
 
@@ -42,8 +43,9 @@ runtime/control/*
 
 acme.json
 
-# --- Estado runtime ---
-# Métricas y registro de addons que backup.sh deja; los directorios sí se versionan.
+# --- Compatibilidad histórica de estado ---
+# La operación actual usa runtime/<entorno>/state/. Estas reglas solo protegen datos
+# de checkouts antiguos; no autorizan scripts ni procedimientos a usar state/.
 
 state/*
 !state/textfile/
@@ -72,10 +74,9 @@ stacks/backup/config/r2.env
 
 repos/
 
-# --- Addons ---
-# Bind-mount desde el host. El manifiesto y los pines Python son locales a cada
-# checkout —igual que .env, difieren de verdad entre dev/staging/producción— y no
-# se versionan; solo sus plantillas y el esqueleto de categorías sí.
+# --- Compatibilidad histórica de addons ---
+# La operación actual usa runtime/addons/. Estas reglas solo protegen árboles de
+# checkouts antiguos; el catálogo vigente es runtime/addons/catalogo.txt.
 
 addons/*
 !addons/addons.txt.example

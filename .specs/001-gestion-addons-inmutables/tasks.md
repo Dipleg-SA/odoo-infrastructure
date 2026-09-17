@@ -2,7 +2,12 @@
 
 | Nombre | Código | Versión | Fecha | Estado |
 | --- | --- | --- | --- | --- |
-| gestion-addons-inmutables | TASKS-001 | R00 | 2026-09-14 | Approved |
+| gestion-addons-inmutables | TASKS-001 | R00 | 2026-09-14 | Converged |
+
+## Estado y contexto
+
+TASKS-001 está completo y convergido. Las tareas que nombran `.env` raíz o `envs/`
+registran lo retirado durante la migración; no son rutas ejecutables actuales.
 
 ## Fase 1: Fundaciones compartidas
 

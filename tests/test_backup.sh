@@ -8,6 +8,8 @@ REPO_ROOT="$PWD"
 
 TMP=$(mktemp -d)
 STUB_DIR="$TMP/stub"; mkdir -p "$STUB_DIR"; export STUB_DIR
+printf '%s\n' '{"snapshot_id":"snap-test"}' > "$STUB_DIR/salida"
+tar -cf "$TMP/runtime-before.tar" -C "$REPO_ROOT" runtime
 trap 'rm -rf "$TMP"' EXIT
 
 # --- Checkout mínimo ---
@@ -16,20 +18,26 @@ trap 'rm -rf "$TMP"' EXIT
 crear_checkout() {
   local root="$TMP/backup"
   mkdir -p "$root/stacks/backup/scripts" "$root/stacks/backup/config" \
-           "$root/scripts/lib" "$root/scripts" "$root/state/meta"
+           "$root/scripts/lib" "$root/scripts" "$root/runtime/desarrollo/state/meta"
   cp "$REPO_ROOT/stacks/backup/scripts/backup.sh" "$root/stacks/backup/scripts/"
-  cp "$REPO_ROOT/scripts/lib/ui.sh" "$root/scripts/lib/"
+  cp "$REPO_ROOT/scripts/lib/ui.sh" "$REPO_ROOT/scripts/lib/contexto.sh" "$root/scripts/lib/"
+  printf '%s\n' 'services: {}' > "$root/runtime/desarrollo/compose.yaml"
+  printf '%s\n' \
+    'COMPOSE_PROJECT_NAME=backup-test' \
+    'ODOO_EDITION=community' \
+    'TAG=19.0-ce-2026-09-16' \
+    > "$root/runtime/desarrollo/compose.env"
   printf '%s\n' 'RESTIC_REPOSITORY=s3:https://cuenta.r2.cloudflarestorage.com/bucket/restic' \
     > "$root/stacks/backup/config/r2.env"
   printf '%s' "$root"
 }
 
 ejecutar_backup() {
-  (cd "$1" && PATH="$REPO_ROOT/tests/stubs:$PATH" ./stacks/backup/scripts/backup.sh daily 2>&1)
+  (cd "$1" && ENTORNO=desarrollo PATH="$REPO_ROOT/tests/stubs:$PATH" ./stacks/backup/scripts/backup.sh daily 2>&1)
 }
 
 codigo_backup() {
-  (cd "$1" && PATH="$REPO_ROOT/tests/stubs:$PATH" ./stacks/backup/scripts/backup.sh daily >/dev/null 2>&1; echo $?)
+  (cd "$1" && ENTORNO=desarrollo PATH="$REPO_ROOT/tests/stubs:$PATH" ./stacks/backup/scripts/backup.sh daily >/dev/null 2>&1; echo $?)
 }
 
 definir_addons() {
@@ -42,7 +50,7 @@ titulo "backup.sh — registro de addons best-effort"
 # =====================================================================
 
 ROOT=$(crear_checkout)
-printf 'inventario anterior\n' > "$ROOT/state/meta/addons.txt"
+printf 'inventario anterior\n' > "$ROOT/runtime/desarrollo/state/meta/addons.txt"
 
 # --- Fallo informado ---
 # El backup conserva el inventario previo y el error de addons queda visible.
@@ -56,7 +64,15 @@ EOF
 igual "un fallo de addons no falla el backup" "0" "$(codigo_backup "$ROOT")"
 contiene "conserva el diagnóstico de addons" "fallo de git simulado" "$(ejecutar_backup "$ROOT")"
 contiene "y conserva su código de salida" "salió con 7" "$(ejecutar_backup "$ROOT")"
-igual "no pisa el inventario anterior" "inventario anterior" "$(cat "$ROOT/state/meta/addons.txt")"
+igual "no pisa el inventario anterior" "inventario anterior" "$(cat "$ROOT/runtime/desarrollo/state/meta/addons.txt")"
+
+# --- Entorno obligatorio ---
+# Una invocación directa sin entorno falla antes de crear estado global.
+
+salida=$(cd "$ROOT" && PATH="$REPO_ROOT/tests/stubs:$PATH" ./stacks/backup/scripts/backup.sh daily 2>&1); codigo=$?
+igual "backup sin entorno falla antes de operar" "2" "$codigo"
+contiene "backup sin entorno informa la corrección" "usar ENTORNO=desarrollo, staging o produccion" "$salida"
+igual "backup sin entorno no crea estado raíz" "0" "$([ ! -e "$ROOT/state" ]; echo $?)"
 
 # --- Registro válido ---
 # La salida se filtra al formato del snapshot y reemplaza el inventario en forma atómica.
@@ -68,10 +84,10 @@ EOF
 
 igual "un registro válido deja exitoso el backup" "0" "$(codigo_backup "$ROOT")"
 contiene "guarda el estado de Enterprise" "enterprise: 19.0-ee-2026-09-15 · commit: ee123" \
-  "$(cat "$ROOT/state/meta/addons.txt")"
+  "$(cat "$ROOT/runtime/desarrollo/state/meta/addons.txt")"
 contiene "guarda el commit del candidato" "dominio_ventas publicado abc123" \
-  "$(cat "$ROOT/state/meta/addons.txt")"
-igual "guarda la procedencia de imágenes" "0" "$([ -s "$ROOT/state/meta/images.json" ] && grep -q '"Actual"' "$ROOT/state/meta/images.json"; echo $?)"
+  "$(cat "$ROOT/runtime/desarrollo/state/meta/addons.txt")"
+igual "guarda la procedencia de imágenes" "0" "$([ -s "$ROOT/runtime/desarrollo/state/meta/images.json" ] && grep -q '"Actual"' "$ROOT/runtime/desarrollo/state/meta/images.json"; echo $?)"
 contiene "restore reaplica la procedencia de imágenes" "restore-meta" "$(cat "$REPO_ROOT/stacks/backup/scripts/restore.sh")"
 contiene "backup monta metadatos del runtime" "RUNTIME_STATE_DIR" "$(cat "$REPO_ROOT/stacks/backup/compose.yaml")"
 
@@ -156,5 +172,8 @@ contiene "restore recupera metadata del snapshot" '"tag": "local/odoo:community"
   "$(cat "$ROOT/runtime/produccion/state/images.json")"
 contiene "restore solicita metadata al snapshot" "/data/meta" "$(cat "$STUB_DIR/llamadas")"
 no_contiene "restore no recupera código Enterprise" "enterprise" "$(cat "$STUB_DIR/llamadas")"
+
+tar -cf "$TMP/runtime-after.tar" -C "$REPO_ROOT" runtime
+igual "el test no modifica runtime preexistente" "0" "$(cmp -s "$TMP/runtime-before.tar" "$TMP/runtime-after.tar"; echo $?)"
 
 resumen

@@ -1,37 +1,23 @@
 #!/usr/bin/env bash
 # Corrida de backup. Se invoca a mano (make backup-run / make backup-integrity) o desde los
-# timers de systemd. Cualquier paso que falle aborta la corrida entera, lo que deja
-# exit code != 0 y dispara el OnFailure= de la unit.
-#
-# Corre en el HOST, no adentro del contenedor: necesita docker compose para hablarle
-# tanto a postgres (el dump) como a backup (restic).
+# timers de systemd; un fallo aborta y dispara el OnFailure de la unit.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
 . scripts/lib/ui.sh
 
-# Contexto del estado de imágenes
-# En un runtime real los metadatos viven bajo su state; el fallback mantiene el arnés aislado.
-if [ -n "${ENTORNO:-}" ] && [ -f scripts/lib/contexto.sh ]; then
-  . scripts/lib/contexto.sh
-  contexto_iniciar
-  META_DIR="$RUNTIME_STATE_DIR/meta"
-  compose() { contexto_compose "$@"; }
-else
-  META_DIR="state/meta"
-  compose() { docker compose "$@"; }
-fi
-
-if [ -f .env ]; then set -a; . ./.env; set +a; fi
+# Contexto obligatorio del runtime
+# Toda corrida usa exclusivamente el estado y la composición de ENTORNO.
+[ -n "${ENTORNO:-}" ] || { ui_bad "falta ENTORNO" "usar ENTORNO=desarrollo, staging o produccion" >&2; exit 2; }
+. scripts/lib/contexto.sh
+contexto_iniciar
+META_DIR="$RUNTIME_STATE_DIR/meta"
+compose() { contexto_compose "$@"; }
 
 MODE="${1:-daily}"
 
 # --- Endpoint de R2 válido, antes de tocar nada ---
-# sin_placeholder (backup-verify) solo descarta el literal TU_ENDPOINT — un valor
-# cargado a mano pero incompleto (el account ID sin el sufijo .r2.cloudflarestorage.com,
-# por ejemplo) pasa esa verificación igual. Sin este chequeo, restic lo descubre
-# recién reintentando contra DNS durante minutos, después de haber dumpeado la base
-# para nada.
+# Se valida el endpoint antes del dump para evitar una corrida inútil.
 
 validar_endpoint() {
   local repo
@@ -45,28 +31,21 @@ validar_endpoint() {
 }
 
 # --- Retención ---
-# GFS, la misma que usa Odoo.sh para sus clientes: 7 diarios, 4 semanales, 3
-# mensuales. La hace `forget` en la corrida diaria — en restic todo snapshot es
-# completo, así que no hace falta una corrida distinta por cadencia.
-#
-# Un solo lugar: con pgBackRest afuera ya no hay una segunda retención que cruzar.
+# La corrida diaria aplica la retención GFS sobre snapshots completos de restic.
 
 KEEP_DAILY=7
 KEEP_WEEKLY=4
 KEEP_MONTHLY=3
 
 # --- Umbral de aviso del dump ---
-# pg_dump relee la base entera en cada corrida. Cuando ese tiempo se va de mano,
-# la estrategia de snapshot dejó de alcanzar y toca reconsiderarla (ver
-# ARCHITECTURE.md). Se avisa, no se falla: es una señal, no una avería.
+# Un dump lento es una señal operativa, no un fallo del backup.
 
 DUMP_AVISO_SEGUNDOS=1800
 
 DUMP_PATH=/dumps/odoo.sql
 
 # --- Lock ---
-# Evita catch-ups solapados (Persistent=true); sobre el directorio, no un archivo,
-# para servir a root y al operador.
+# Evita corridas solapadas de los timers y del operador.
 
 if command -v flock >/dev/null 2>&1; then
   exec 9<.
@@ -79,8 +58,7 @@ res() { compose exec -T backup restic "$@"; }
 pg()  { compose exec -T postgres "$@"; }
 
 # --- Marca de éxito ---
-# El exit code no es consultable desde Prometheus; esta marca sí. Escritura atómica:
-# el colector de textfile puede leer en cualquier momento y un archivo a medias lo rompe.
+# Prometheus lee esta marca mediante el colector textfile.
 
 marcar_exito() {
   local dir="${RUNTIME_STATE_DIR:-state}/textfile" tmp
@@ -96,8 +74,7 @@ marcar_exito() {
 }
 
 # --- Registro de addons ---
-# Sin pineo por commit, el snapshot necesita decir a qué código corresponde.
-# Informativo: un fallo acá no aborta el backup — tolerante y best-effort.
+# El snapshot registra el código de addons que estaba montado.
 
 registrar_addons() {
   local dir="$META_DIR" tmp error detalle estado
@@ -196,14 +173,7 @@ PY
 }
 
 # --- Dump de la base ---
-# SIN COMPRIMIR, y no es un descuido: comprimido, zlib cambia el flujo de bytes
-# globalmente ante cualquier modificación y la deduplicación de restic cae a cero
-# — subiría el archivo entero todas las noches. Con texto plano, restic dedupe
-# los bloques que no cambiaron.
-#
-# Al volumen `dumps`, que postgres monta rw y backup monta ro: así el dump y el
-# filestore entran en el MISMO snapshot y la consistencia es una propiedad del
-# backup, no un procedimiento que hay que recordar.
+# El dump plano permite que restic deduplique bloques sin comprimir toda la base.
 
 dump_base() {
   local inicio fin dur
@@ -222,8 +192,7 @@ ui_plan_start "backup $MODE"
 case "$MODE" in
   daily)
     # --- Las dos mitades del estado, en un solo snapshot ---
-    # La base referencia archivos que solo existen en el filestore. Respaldarlos
-    # por separado convierte la consistencia en algo que hay que recordar.
+    # Dump y filestore deben entrar en el mismo snapshot.
 
     ui_step 1 "Dump de la base y el filestore en un snapshot restic, con retención GFS aplicada."
     validar_endpoint
@@ -238,9 +207,7 @@ case "$MODE" in
     ;;
   check)
     # --- Integridad del repositorio ---
-    # --read-data-subset lee datos REALES, no solo metadata: es lo único que
-    # detecta corrupción silenciosa, que ningún backup exitoso revela. Un
-    # repositorio corrupto se descubre al restaurar, que es el peor momento.
+    # --read-data-subset comprueba datos reales además de metadata.
 
     ui_step 1 "Verificación de integridad del repositorio de restic (muestra de datos)."
     validar_endpoint

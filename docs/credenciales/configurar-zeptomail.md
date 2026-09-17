@@ -17,7 +17,7 @@ Dominio de envío verificado, un Mail Agent con credencial SMTP, y saldo cargado
 ## A mano
 
 1. Cuenta en ZeptoMail, dominio de envío verificado (SPF/DKIM contra tu zona de Cloudflare).
-2. Mail Agents → crear uno → SMTP & API: ahí está el `Username` literal (`SMTP_USER` en `.env`, casi siempre `emailapikey`, **no es tu dirección de correo**) y el token.
+2. Mail Agents → crear uno → SMTP & API: ahí está el `Username` literal (`SMTP_USER` en `runtime/produccion/compose.env`, casi siempre `emailapikey`, **no es tu dirección de correo**) y el token.
 3. Cargar saldo — sin créditos, ZeptoMail rechaza el envío en silencio para el resto de este stack, no solo para esta prueba.
 
 ## Comandos

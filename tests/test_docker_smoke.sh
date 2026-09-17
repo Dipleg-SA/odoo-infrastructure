@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# Smoke real de Docker
+# Construye Odoo y valida las configuraciones efectivas solo cuando se solicita explícitamente.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+# Opt-in
+# make test no levanta Docker ni necesita red; este archivo solo corre con DOCKER_SMOKE=1.
+if [ "${DOCKER_SMOKE:-0}" != 1 ]; then
+  printf 'smoke Docker omitido — usar DOCKER_SMOKE=1 make test-smoke\n'
+  exit 0
+fi
+
+command -v docker >/dev/null 2>&1 || {
+  printf 'smoke Docker: falta el cliente docker\n' >&2
+  exit 2
+}
+docker info >/dev/null 2>&1 || {
+  printf 'smoke Docker: el daemon no responde\n' >&2
+  exit 2
+}
+
+TMP=$(mktemp -d)
+ODOO_IMAGE="local/odoo-smoke:$$"
+GRAFANA_CONTAINER="odoo-smoke-grafana-$$"
+trap 'docker rm -f "$GRAFANA_CONTAINER" >/dev/null 2>&1 || true; docker image rm "$ODOO_IMAGE" >/dev/null 2>&1 || true; rm -rf "$TMP"' EXIT
+
+# Contexto real de Odoo
+# Enterprise, custom y requirements llegan como entradas separadas del contexto temporal.
+mkdir -p "$TMP/odoo/enterprise" "$TMP/odoo/custom"
+cp stacks/odoo/image/Dockerfile stacks/odoo/image/entrypoint.sh "$TMP/odoo/"
+: > "$TMP/odoo/requirements.txt"
+docker build --pull --tag "$ODOO_IMAGE" "$TMP/odoo"
+docker run --rm --entrypoint /bin/sh "$ODOO_IMAGE" -c \
+  'test -x /usr/local/bin/odoo-entrypoint.sh && test -d /opt/odoo/enterprise && test -d /opt/odoo/custom && test ! -e /tmp/requirements.txt'
+
+# Nginx
+# El hostname y el certificado se materializan en un árbol descartable antes de validar nginx -t.
+mkdir -p "$TMP/nginx/conf.d" "$TMP/nginx/letsencrypt/live/odoo.example.test"
+cp stacks/nginx/config/00-http.conf stacks/nginx/config/odoo.locations \
+  stacks/nginx/config/addons-webhook.locations "$TMP/nginx/conf.d/"
+sed 's/TU_DOMINIO/odoo.example.test/g' stacks/nginx/config/server-tls.conf \
+  > "$TMP/nginx/conf.d/server-tls.conf"
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+  -keyout "$TMP/nginx/letsencrypt/live/odoo.example.test/privkey.pem" \
+  -out "$TMP/nginx/letsencrypt/live/odoo.example.test/fullchain.pem" \
+  -subj '/CN=odoo.example.test' >/dev/null 2>&1
+docker run --rm \
+  -v "$TMP/nginx/conf.d:/etc/nginx/conf.d:ro" \
+  -v "$TMP/nginx/letsencrypt:/etc/letsencrypt:ro" \
+  nginx:1.31.3-alpine nginx -t
+
+# Alloy
+# La validación usa el binario real de la imagen y el archivo versionado montado como solo lectura.
+docker run --rm \
+  -v "$PWD/stacks/alloy/config/config.alloy:/etc/alloy/config.alloy:ro" \
+  --entrypoint alloy grafana/alloy:v1.18.1 validate /etc/alloy/config.alloy
+
+# Prometheus
+# promtool comprueba la estructura efectiva de scrape_configs y sus campos requeridos.
+docker run --rm \
+  -v "$PWD/stacks/prometheus/config/prometheus.yaml:/etc/prometheus/prometheus.yml:ro" \
+  --entrypoint promtool prom/prometheus:v3.13.2 check config /etc/prometheus/prometheus.yml
+
+# Loki
+# El propio proceso de Loki valida esquema, almacenamiento y retención sin iniciar un servicio persistente.
+docker run --rm \
+  -v "$PWD/stacks/loki/config/loki.yaml:/etc/loki/config.yaml:ro" \
+  grafana/loki:3.7.6 -verify-config -config.file=/etc/loki/config.yaml
+
+# Grafana
+# Un arranque acotado confirma que el ini, los secrets y los paths de provisioning son utilizables.
+mkdir -p "$TMP/grafana/secrets"
+printf 'admin-smoke\n' > "$TMP/grafana/secrets/grafana_admin_password"
+printf 'smtp-smoke\n' > "$TMP/grafana/secrets/zeptomail_smtp_password"
+chmod 644 "$TMP/grafana/secrets"/*
+cp stacks/grafana/config/grafana.ini "$TMP/grafana/grafana.ini"
+docker run -d --name "$GRAFANA_CONTAINER" --network none \
+  -v "$TMP/grafana/grafana.ini:/etc/grafana/grafana.ini:ro" \
+  -v "$TMP/grafana/secrets:/run/secrets:ro" \
+  --entrypoint grafana grafana/grafana:13.1.3 \
+  server --config=/etc/grafana/grafana.ini --homepath=/usr/share/grafana >/dev/null
+sleep 3
+estado=$(docker inspect -f '{{.State.Status}}' "$GRAFANA_CONTAINER")
+if [ "$estado" != running ]; then
+  docker logs "$GRAFANA_CONTAINER" >&2 || true
+  printf 'smoke Grafana: el proceso terminó en estado %s\n' "$estado" >&2
+  exit 1
+fi
+docker rm -f "$GRAFANA_CONTAINER" >/dev/null
+
+printf 'smoke Docker listo — Odoo y cinco configuraciones efectivas validadas\n'

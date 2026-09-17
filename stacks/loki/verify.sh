@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 # Qué se espera del stack loki. Dueño único de estos valores: el runbook
 # nombra el comando, los valores viven acá.
-#
-# Sin `sano`: la imagen es distroless estricta y no tiene healthcheck posible. El
-# caso "vivo pero no sirve" lo cubre que Prometheus lo scrapee, y que de verdad
-# reciba logs — que es lo único que prueba la cadena entera.
 
 . "$(dirname "${BASH_SOURCE[0]}")/../../scripts/lib/verify.sh"
 
@@ -15,6 +11,19 @@ v_loki() {
     omitir "loki levantado" "no está en este stack"
     return
   fi
+
+  # --- Retención efectiva ---
+  # La configuración montada es la única fuente; exige un período y el compactor activo.
+
+  local archivo_retencion="$RUNTIME_CONFIG_DIR/loki/loki.yaml" retenciones
+  retenciones=$(grep -cE '^[[:space:]]+retention_period:[[:space:]]+[^[:space:]]+$' "$archivo_retencion" 2>/dev/null || true)
+  if [ "$retenciones" -eq 1 ] && grep -qE '^  retention_enabled:[[:space:]]+true$' "$archivo_retencion" 2>/dev/null; then
+    ok "loki retención efectiva declarada y aplicada"
+  else
+    bad "loki retención efectiva declarada y aplicada" \
+      "revisar $archivo_retencion: retention_period único y compactor.retention_enabled=true"
+  fi
+
   if ! corriendo loki; then
     bad "loki levantado" "no está corriendo"
     omitir "Loki recibe logs por contenedor" "loki no está corriendo"
@@ -24,11 +33,10 @@ v_loki() {
   ok "loki up (sin healthcheck propio: imagen distroless)"
 
   # --- Logs de verdad, etiquetados por contenedor ---
-  # La consulta sale desde prometheus y no desde el host: loki no publica puerto,
-  # así que preguntarle desde afuera daría un falso rojo.
+  # Prometheus consulta Loki por la red interna porque el puerto no se publica.
 
-  # El request sale de prometheus, así que su estado también condiciona: sin la
-  # guarda, un prometheus caído se reporta como si Loki no recibiera logs.
+  # Si Prometheus está caído, se omite el chequeo de recepción de logs.
+  # Sin ese cliente no se puede concluir que Loki reciba eventos.
   if ! corriendo prometheus; then
     omitir "Loki recibe logs por contenedor" "$(motivo prometheus)"
   else
@@ -37,6 +45,7 @@ v_loki() {
   fi
 
   # --- Binds ---
+  # Loki solo se consulta por la red de observabilidad.
 
   sin_publicar loki 3100
 }
