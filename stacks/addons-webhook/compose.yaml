@@ -8,9 +8,13 @@ services:
     command:
       - python
       - /app/server.py
+    # Usuario no privilegiado del receptor
+    # Las carpetas mutables del host deben permitir escritura a este UID; los secretos siguen siendo de solo lectura.
+    user: "65532:65532"
     expose:
       - "8080"
     environment:
+      ADDONS_PROJECT_NAME: ${COMPOSE_PROJECT_NAME}
       ADDONS_CATALOG: /etc/addons/catalogo.txt
       ADDONS_BARE_DIR: /var/lib/addons/.repos
       ADDONS_CANDIDATE_ROOT: /var/lib/addons/custom

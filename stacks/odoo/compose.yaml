@@ -20,9 +20,7 @@ services:
       USER: odoo
       PASSWORD_FILE: /run/secrets/postgres_password
       # El entrypoint los appendea a odoo.conf en runtime — mismo mecanismo que
-      # admin_passwd, para no repetir el mismo valor a mano en dos archivos.
-      # Sin default: vacíos acá no rompen nada, ODOO_DISABLE_SMTP gana en
-      # development/staging y el operador los carga en .env solo en producción.
+      # admin_passwd, y ODOO_DISABLE_SMTP puede dejarlos vacíos por entorno.
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
@@ -38,7 +36,6 @@ services:
       start_period: 90s
     restart: unless-stopped
     # --- Presupuesto de memoria ---
-    # Fijo, no por deployment: nunca se tocó en ningún .env.*.example real. Un
-    # servidor chico o una laptop que necesiten menos, se edita acá directo.
+    # El límite se define en el stack y no se carga desde compose.env.
     mem_limit: 5g
     cpus: "4.0"

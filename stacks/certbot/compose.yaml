@@ -1,10 +1,5 @@
 # --- Emisión y renovación de certificados ---
-# profiles lo deja fuera de `make up`: corre como one-off, a mano la primera vez
-# y por timer de systemd después. DNS-01 y no HTTP-01 para que la emisión no
-# dependa del ingreso — el certificado se emite aunque el borde esté roto.
-#
-# Stack propio
-# El runtime declara su credencial y el volumen letsencrypt con identidad propia.
+# El perfil cert lo reserva para one-off manuales y el timer de systemd.
 services:
   certbot:
     build:

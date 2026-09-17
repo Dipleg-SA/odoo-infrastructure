@@ -111,7 +111,8 @@ contiene "actualiza mediante la API" "API operation=update phase=apply" "$SALIDA
 contiene "previsualiza la desinstalación" "API operation=uninstall phase=preflight" "$SALIDA_UNINSTALL"
 contiene "desinstala mediante la API" "API operation=uninstall phase=apply" "$SALIDA_UNINSTALL"
 contiene "levanta Odoo después de operar" "make odoo-report-config" "$(cat "$ROOT/make-calls")"
-contiene "usa el one-off común" "run --rm --name odoo-oneoff" "$(cat "$ROOT/docker-calls")"
+contiene "usa el one-off del proyecto y entorno" \
+  "run --rm --name test-development-desarrollo-odoo-oneoff" "$(cat "$ROOT/docker-calls")"
 sale_con "conserva el error del one-off" 17 bash -c "exit $ESTADO_FAILURE"
 contiene "levanta Odoo aunque falle la API" "up -d odoo" "$(cat "$ROOT/docker-calls")"
 

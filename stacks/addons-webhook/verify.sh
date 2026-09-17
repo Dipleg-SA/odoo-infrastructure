@@ -36,6 +36,18 @@ v_addons_webhook() {
     return
   fi
 
+  # --- Usuario y superficie de escritura ---
+  # El proceso corre sin privilegios y solo los tres directorios de operación quedan mutables.
+
+  if printf '%s\n' "$configuracion" | grep -qE '^    user: 65532:65532$' \
+    && printf '%s\n' "$configuracion" | grep -qE '^    read_only: true$' \
+    && printf '%s\n' "$configuracion" | grep -qE '^    cap_drop:$'; then
+    ok "receptor no privilegiado y filesystem de imagen inmutable"
+  else
+    bad "receptor no privilegiado y filesystem de imagen inmutable" \
+      "exigir user 65532:65532, read_only=true y cap_drop"
+  fi
+
   sin_referencias_prohibidas "sin acceso a Docker" \
     'docker\.sock|DOCKER_HOST|docker[[:space:]_-]*api' "$configuracion"
   sin_referencias_prohibidas "sin recursos de Odoo, Postgres, filestore ni Enterprise" \

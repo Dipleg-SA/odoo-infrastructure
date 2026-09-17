@@ -1,10 +1,5 @@
 # --- Proxy ---
-# nginx es el único reverse proxy del stack: termina TLS, rutea el bus a su
-# puerto propio y aplica el rate-limit del login.
-#
-# La llevan LOS TRES entornos. Development no tiene túnel ni certificados, pero
-# sí proxy: es lo que hace honesto al proxy_mode = True de odoo.conf, que sin
-# nadie escribiendo X-Forwarded-* confía en cabeceras que no existen.
+# nginx termina TLS, rutea Odoo y aplica el rate-limit del login en los tres runtimes.
 services:
   nginx:
     build:
@@ -36,7 +31,5 @@ services:
     mem_limit: 128m
     cpus: "0.50"
 
-# El volumen letsencrypt NO se declara acá: lo comparte con el stack certbot, que
-# escribe lo que este lee. Lo compartido lo declara el entorno, como redes y
-# secrets — dos declaraciones divergentes del mismo recurso se fusionan en
-# silencio, con exit 0.
+# El entorno declara letsencrypt para compartirlo con certbot.
+# nginx lo lee y certbot lo escribe.

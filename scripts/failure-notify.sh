@@ -29,6 +29,7 @@ ui_step 1 "Envío del aviso de fallo por SMTP a $ALERT_EMAIL_TO."
 printf 'From: %s\nTo: %s\nSubject: [odoo] fallo en %s\n\nLa unit %s termino con error en %s a las %s.\nRevisar con: journalctl -u %s -n 50\n' \
   "$ALERT_EMAIL_FROM" "$ALERT_EMAIL_TO" "$UNIT" "$UNIT" "$(hostname)" "$(date -Is)" "$UNIT" \
 | curl -sS --ssl-reqd \
+    --connect-timeout 10 --max-time 60 \
     --url "smtp://${SMTP_HOST}:${SMTP_PORT:-587}" \
     --user "$SMTP_USER:$SMTP_PASS" \
     --mail-from "$ALERT_EMAIL_FROM" \

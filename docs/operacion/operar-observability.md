@@ -49,6 +49,21 @@ make alloy-verify
 
 Cuatro comandos porque cada stack es dueño de lo suyo. `prometheus-verify` cubre el servicio `healthy`, que ningún target esté caído, y las tres familias de métricas que empuja Alloy (host, contenedores, base). `loki-verify` cubre que reciba logs de verdad, etiquetados por contenedor. `grafana-verify` cubre el servicio `healthy`, las siete reglas de alerting realmente cargadas, y que SMTP y el destinatario no hayan quedado con alguna clave vacía. `alloy-verify` cubre que sus componentes internos resuelvan de verdad y que la alerta de backup avise antes de que el healthcheck se ponga rojo. Los binds de los cuatro se verifican en su propio script.
 
+### Smoke de configuración
+
+Para comprobar las imágenes y los archivos efectivos fuera de la suite hermética:
+
+```bash
+make test-smoke
+```
+
+El smoke requiere Docker Engine o Docker Desktop activo, Buildx, red para descargar
+las imágenes si no están en caché y `openssl` en el host. Construye Odoo en un contexto
+temporal, valida Nginx, Alloy, Prometheus y Loki con sus binarios reales y arranca
+Grafana durante unos segundos para confirmar que su `grafana.ini` y sus secrets son
+utilizables. No usa `runtime/*/compose.env` privados, no levanta el deploy ni modifica
+volúmenes o estado del repositorio.
+
 ---
 
 **Destructivo — sin target, a mano.** Por la misma limpieza de arriba tampoco queda un

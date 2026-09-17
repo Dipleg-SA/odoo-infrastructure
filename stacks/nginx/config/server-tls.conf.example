@@ -4,7 +4,7 @@
 #
 # Reemplazá TU_DOMINIO por el hostname público real de este deployment, en
 # las cuatro líneas de abajo. Es el mismo valor que PUBLIC_HOSTNAME en el
-# .env de este checkout — lo necesitan dnsmasq y cert.sh, que no leen este
+# compose.env del runtime — lo necesitan dnsmasq y cert.sh, que no leen este
 # archivo. make nginx-verify cruza los dos.
 #
 # El certificado tiene que existir ANTES del primer arranque — nginx no levanta

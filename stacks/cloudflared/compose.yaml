@@ -1,7 +1,5 @@
 # --- Túnel ---
-# El ingreso público entra por acá, sin puertos abiertos en el router. Sale hacia
-# afuera, así que no necesita ningún puerto publicado ni llega a nginx por la LAN:
-# lo alcanza por la red edge, por nombre de contenedor.
+# El túnel recibe el ingreso público y alcanza nginx por la red edge interna.
 services:
   cloudflared:
     build:

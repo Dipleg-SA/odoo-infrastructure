@@ -21,13 +21,13 @@ Reemplazá la credencial y probá cada consumidor antes de cerrar la rotación.
 
 ## A mano
 
-Generar el token nuevo en ZeptoMail → Mail Agents → el agente → SMTP & API. Confirmar el `Username` literal (`SMTP_USER` en `.env`, no cambia con la rotación salvo que también lo hayas modificado).
+Generar el token nuevo en ZeptoMail → Mail Agents → el agente → SMTP & API. Confirmar el `Username` literal (`SMTP_USER` en `runtime/produccion/compose.env`, no cambia con la rotación salvo que también lo hayas modificado).
 
 ## Comandos
 
 ```bash
 echo "# 1 → Reemplazar el archivo"
-sudo -e secrets/zeptomail_smtp_password
+sudo -e runtime/produccion/secrets/zeptomail_smtp_password
 sudo make secrets-perms
 ```
 
@@ -45,9 +45,9 @@ Primero la credencial sola, después los tres consumidores — en el mismo orden
 
 ```bash
 echo "# 1 → Directo, sin pasar por ningún contenedor"
-set -a; . ./.env; set +a   # shell nueva: sin esto ALERT_EMAIL_FROM/TO quedan vacías
-ZM_USER='emailapikey'  # el que corresponda — el mismo que SMTP_USER en .env
-ZM_TOKEN=$(sudo cat secrets/zeptomail_smtp_password)   # sudo: los secrets son 640 con grupo del consumidor
+set -a; . runtime/produccion/compose.env; set +a   # shell nueva: sin esto ALERT_EMAIL_FROM/TO quedan vacías
+ZM_USER='emailapikey'  # el que corresponda — el mismo que SMTP_USER en compose.env
+ZM_TOKEN=$(sudo cat runtime/produccion/secrets/zeptomail_smtp_password)   # sudo: los secrets son 640 con grupo del consumidor
 printf 'From: %s\nTo: %s\nSubject: prueba rotación\n\nok\n' "$ALERT_EMAIL_FROM" "$ALERT_EMAIL_TO" \
   | curl -sS --ssl-reqd --url smtp://smtp.zeptomail.com:587 \
       --user "$ZM_USER:$ZM_TOKEN" --mail-from "$ALERT_EMAIL_FROM" --mail-rcpt "$ALERT_EMAIL_TO" --upload-file -

@@ -27,16 +27,14 @@ if [ "${#paths[@]}" -eq 0 ]; then
 fi
 
 # --- Config runtime: base + addons_path + secrets inyectados ---
+# Construye el archivo temporal que consume Odoo.
 
 cp /etc/odoo/odoo.conf "$RUNTIME_CONF"
 {
   echo "addons_path = ${ADDONS_PATH}"
   echo "admin_passwd = $(cat /run/secrets/odoo_admin_password)"
-  # server/port/user vienen de .env (SMTP_HOST/SMTP_PORT/SMTP_USER), igual que
-  # admin_passwd viene del secret: un solo lugar donde cargarlos, no un literal
-  # en odoo.conf que haya que mantener igual a mano. Respaldo estructural: si
-  # ODOO_DISABLE_SMTP=1, gana esta rama y sale vacío pase lo que pase en .env —
-  # última línea gana, así que pisa lo que se haya escrito arriba.
+  # server/port/user vienen de compose.env (SMTP_HOST/SMTP_PORT/SMTP_USER), igual que
+  # admin_passwd del secret; ODOO_DISABLE_SMTP fuerza un smtp_server vacío.
   if [ "${ODOO_DISABLE_SMTP:-}" = "1" ]; then
     echo "smtp_server = "
   else
@@ -50,6 +48,7 @@ cp /etc/odoo/odoo.conf "$RUNTIME_CONF"
 } >> "$RUNTIME_CONF"
 
 # --- Password para conexión directa a postgres (usado en el init check y en el modo one-off) ---
+# Se reutiliza para el chequeo inicial y las operaciones explícitas.
 
 DB_PASSWORD="$(cat /run/secrets/postgres_password)"
 
@@ -58,8 +57,7 @@ DB_PASSWORD="$(cat /run/secrets/postgres_password)"
 
 if [ "$#" -gt 0 ]; then
   # `shell` es un subcomando de Odoo, no un flag del servidor. Mantenerlo
-  # después de `odoo` evita que el entrypoint lo convierta en un parámetro
-  # inválido y conserva el mismo runtime conf y conexión que los one-off.
+  # después de `odoo` conserva el runtime conf y la conexión de los one-off.
   if [ "${1:-}" = "shell" ]; then
     shift
     exec odoo shell -c "$RUNTIME_CONF" -d odoo --no-http "$@" \
@@ -83,5 +81,6 @@ if [ "$INITIALIZED" != "1" ]; then
 fi
 
 # --- Entrypoint oficial: wait-for-psql + --db_host/etc hacia postgres ---
+# Delega la espera final y el arranque normal en la imagen oficial.
 
 exec /entrypoint.sh odoo -c "$RUNTIME_CONF"

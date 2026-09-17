@@ -17,9 +17,8 @@ services:
       - loki-data:/loki
       - ${RUNTIME_CONFIG_DIR:?falta RUNTIME_CONFIG_DIR}/loki/loki.yaml:/etc/loki/loki.yaml:ro
     command: ["-config.file=/etc/loki/loki.yaml"]
-    # Sin healthcheck: la imagen es distroless estricta (solo /usr/bin/loki), no hay
-    # binario para ejecutar uno. El caso "vivo pero no sirve" lo cubre up == 0 en
-    # Prometheus, que lo scrapea directo, y de ahí sale la alerta de servicio caído.
+    # No tiene healthcheck porque la imagen distroless no trae un binario auxiliar.
+    # Prometheus verifica su disponibilidad y genera la alerta correspondiente.
     restart: unless-stopped
     mem_limit: 512m
     cpus: "0.5"

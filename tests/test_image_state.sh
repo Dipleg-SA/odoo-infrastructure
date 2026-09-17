@@ -5,10 +5,15 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 . tests/lib.sh
 TMP=$(mktemp -d)
-CREADO=0
-trap 'rm -rf "$TMP"; [ "$CREADO" -eq 0 ] || rm -f runtime/desarrollo/compose.env; rm -f runtime/desarrollo/state/images.json' EXIT
-if [ ! -f runtime/desarrollo/compose.env ]; then cp runtime/desarrollo/compose.env.example runtime/desarrollo/compose.env; CREADO=1; fi
-rm -f runtime/desarrollo/state/images.json
+REPO_ROOT="$PWD"
+ROOT="$TMP/repo"
+mkdir -p "$ROOT/runtime/desarrollo"
+cp -R "$REPO_ROOT/scripts" "$ROOT/"
+cp "$REPO_ROOT/runtime/desarrollo/compose.env.example" "$ROOT/runtime/desarrollo/compose.env"
+printf 'services: {}\n' > "$ROOT/runtime/desarrollo/compose.yaml"
+tar -cf "$TMP/runtime-before.tar" -C "$REPO_ROOT" runtime
+trap 'rm -rf "$TMP"' EXIT
+cd "$ROOT"
 export ENTORNO=desarrollo
 SCRIPT=scripts/image-state.sh
 
@@ -135,4 +140,6 @@ ENV_ANTES=$(cat runtime/desarrollo/compose.env)
 sale_con "no promueve una etiqueta manipulada" 1 "$SCRIPT" apply
 igual "no escribe compose.env ni ejecuta la etiqueta" "$ENV_ANTES" "$(cat runtime/desarrollo/compose.env)"
 igual "la etiqueta no ejecuta comandos del host" "0" "$([ ! -e "$MALICIOUS_MARKER" ]; echo $?)"
+tar -cf "$TMP/runtime-after.tar" -C "$REPO_ROOT" runtime
+igual "el test no modifica runtime preexistente" "0" "$(cmp -s "$TMP/runtime-before.tar" "$TMP/runtime-after.tar"; echo $?)"
 resumen

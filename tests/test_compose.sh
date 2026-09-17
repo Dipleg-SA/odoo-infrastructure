@@ -4,6 +4,7 @@
 
 cd "$(dirname "$0")/.."
 . tests/lib.sh
+set -o pipefail
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
@@ -25,8 +26,14 @@ servicios() {
 # Extractores
 # Aíslan servicios, puertos y nombres de recursos de la salida normalizada.
 contar_secrets() { sed -n '/^secrets:/,$p' | grep -cE '^  [a-z0-9_]+:$'; }
-bloque()         { sed -nE "/^  $1:$/,/^[a-z]|^  [a-z0-9_-]+:$/p"; }
-binds()          { grep -B1 -E 'target: (80|443)$' | sed -n 's/^ *host_ip: //p' | tr '\n' ' '; }
+bloque()         {
+  awk -v servicio="$1" '
+    $0 == "  " servicio ":" { dentro=1 }
+    dentro { print }
+    dentro && $0 ~ /^  [a-z0-9_-]+:$/ && $0 != "  " servicio ":" { exit }
+  '
+}
+binds()          { grep -B1 -E '^[[:space:]]+target: (80|443)$' | sed -n 's/^[[:space:]]*host_ip: //p' | tr '\n' ' '; }
 recursos() {
   awk '
     /^networks:/ { seccion = 1; next }
@@ -82,6 +89,15 @@ done
 
 # Development
 # El entorno local incluye solo proxy, datos y aplicación.
+for entorno in desarrollo staging produccion; do
+  salida=$(resuelto "$entorno"); codigo=$?
+  igual "$entorno config devuelve exit 0" "0" "$codigo"
+  contiene "$entorno config devuelve una estructura" "services:" "$salida"
+  lista=$(servicios "$entorno"); codigo=$?
+  igual "$entorno consulta servicios con exit 0" "0" "$codigo"
+  contiene "$entorno devuelve al menos un servicio" " " "$lista"
+done
+
 DEV=$(resuelto desarrollo)
 igual "desarrollo resuelve sin error" "0" "$(docker compose --env-file runtime/desarrollo/compose.env.example -f runtime/desarrollo/compose.yaml config -q >/dev/null 2>&1; echo $?)"
 igual "desarrollo declara 2 secretos" "2" "$(printf '%s\n' "$DEV" | contar_secrets)"
@@ -154,6 +170,16 @@ contiene "backup está activo por defecto en producción" "backup" "$(servicios 
 # Solo producción declara dnsmasq, y cada runtime recibe recursos con nombre propio.
 no_contiene "producción no activa dnsmasq por defecto" "dnsmasq" "$(servicios produccion)"
 contiene "producción activa dnsmasq con el perfil LAN" "dnsmasq" "$(COMPOSE_PROFILES=lan servicios produccion)"
+
+# Los perfiles declarados siguen siendo visibles aunque estén inactivos.
+contiene "producción declara cert" "cert" \
+  "$(docker compose --env-file runtime/produccion/compose.env.example -f runtime/produccion/compose.yaml config --profiles)"
+contiene "producción declara lan" "lan" \
+  "$(docker compose --env-file runtime/produccion/compose.env.example -f runtime/produccion/compose.yaml config --profiles)"
+contiene "staging declara restore" "restore" \
+  "$(docker compose --env-file runtime/staging/compose.env.example -f runtime/staging/compose.yaml config --profiles)"
+no_contiene "staging no declara lan" "lan" \
+  "$(docker compose --env-file runtime/staging/compose.env.example -f runtime/staging/compose.yaml config --profiles)"
 
 for entorno in desarrollo staging produccion; do
   cfg=$(resuelto "$entorno")

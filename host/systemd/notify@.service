@@ -5,9 +5,14 @@
 
 [Unit]
 Description=Aviso de unit fallida (%i)
+After=network-online.target
+Wants=network-online.target
 
+# Tiempo acotado de notificación
+# Un SMTP bloqueado no debe retener la unit indefinidamente.
 [Service]
 Type=oneshot
 WorkingDirectory=CAMBIAR-en-deploy
 Environment=ENTORNO=CAMBIAR-entorno
 ExecStart=CAMBIAR-en-deploy/scripts/failure-notify.sh %i
+TimeoutStartSec=60s

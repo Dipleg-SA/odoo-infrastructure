@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
 # Rol de solo lectura que el exporter de Postgres de Alloy usa para scrapear.
-#
-# Vive con alloy y no con postgres aunque haga psql contra postgres: es SU
-# credencial, y sin este stack el rol no existe para nadie. Repetible: el DROP
-# lo hace idempotente, y sirve tanto para crearlo como para rotar la clave.
-#
-# pg_monitor y no superuser: el agente que tiene el socket de Docker y los logs
-# no porta la credencial de la aplicación.
+# Vive con Alloy porque la credencial pertenece al agente de observabilidad.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
@@ -14,6 +8,13 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
 . scripts/lib/contexto.sh
 contexto_iniciar
 SECRETS_VISIBLE="runtime/$ENTORNO/secrets"
+
+# Guarda del stack de observabilidad
+# El rol solo se crea cuando el runtime seleccionado declara Alloy y su acceso a Postgres.
+if ! contexto_compose config --services 2>/dev/null | grep -qx alloy; then
+  ui_bad "Alloy no está en este runtime" "usar ENTORNO=produccion para configurar el stack de observabilidad" >&2
+  exit 2
+fi
 
 [ -s "$RUNTIME_SECRETS_DIR/postgres_exporter_password" ] || {
   ui_bad "falta $SECRETS_VISIBLE/postgres_exporter_password" \

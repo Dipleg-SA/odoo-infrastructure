@@ -15,7 +15,8 @@ export ENTORNO=desarrollo
 
 # nuke debe limpiar solo el runtime seleccionado: los clones bare y el control
 # son compartidos, y los candidatos/builds de los otros entornos no se pueden borrar.
-NUKE=$(make -n ENTORNO=desarrollo nuke 2>&1)
+NUKE=$(make -n ENTORNO=desarrollo nuke 2>&1); NUKE_CODIGO=$?
+igual "make -n nuke termina correctamente" "0" "$NUKE_CODIGO"
 contiene "nuke limita candidatos al entorno seleccionado" 'runtime/addons/custom/${ENTORNO}' "$NUKE"
 contiene "nuke limita builds al entorno seleccionado" 'runtime/addons/builds/${ENTORNO}' "$NUKE"
 no_contiene "nuke conserva los clones bare compartidos" "runtime/addons/.repos" "$NUKE"
@@ -41,7 +42,22 @@ crear_root() {
 }
 
 llamadas() { cat "$STUB_DIR/llamadas" 2>/dev/null; }
-reset_stub() { : > "$STUB_DIR/llamadas"; rm -f "$STUB_DIR/config" "$STUB_DIR/ps-q" "$STUB_DIR/salida"; }
+reset_stub() {
+  : > "$STUB_DIR/llamadas"
+  : > "$STUB_DIR/config"
+  : > "$STUB_DIR/salida"
+  : > "$STUB_DIR/systemctl"
+  rm -f "$STUB_DIR/ps-q"
+}
+
+# Fixtures ausentes deben fallar en vez de convertir una llamada no preparada en un falso verde.
+# El contrato se prueba en un directorio separado para no alterar las respuestas de los casos.
+titulo "stubs — una respuesta no preparada falla"
+STUB_FALTANTE="$TMP/stub-faltante"; mkdir -p "$STUB_FALTANTE"
+sale_con "docker exige su fixture" 99 env STUB_DIR="$STUB_FALTANTE" \
+  "$REPO_ROOT/tests/stubs/docker" compose config --services
+sale_con "systemctl exige su fixture" 99 env STUB_DIR="$STUB_FALTANTE" \
+  "$REPO_ROOT/tests/stubs/systemctl" is-enabled docker
 
 # =====================================================================
 titulo "cert.sh — lo que le llega de verdad a certbot"
@@ -126,6 +142,7 @@ contiene "y lo dice"                   "skip (ya existe)" "$SALIDA"
 # Sin saber qué declara el stack, crear los once sería fabricar archivos inertes.
 
 rm -f "$STUB_DIR/config"
+: > "$STUB_DIR/config"
 sale_con "sin composición legible aborta" 1 bash -c "cd '$ROOT' && ./scripts/secrets-init.sh"
 
 # =====================================================================
@@ -201,6 +218,7 @@ ROOT_MON=$(crear_root monitoring)
 mkdir -p "$ROOT_MON/stacks/alloy/scripts" "$ROOT_MON/runtime/produccion/secrets"
 ROOT_MON="$(cd "$ROOT_MON" && pwd -P)"
 cp "$REPO_ROOT/stacks/alloy/scripts/monitoring-role.sh" "$ROOT_MON/stacks/alloy/scripts/"
+printf 'alloy\n' > "$STUB_DIR/servicios-sin-perfil"
 printf 'password-de-prueba\n' > "$ROOT_MON/runtime/produccion/secrets/postgres_exporter_password"
 chmod 640 "$ROOT_MON/runtime/produccion/secrets/postgres_exporter_password"
 reset_stub
@@ -208,6 +226,7 @@ SALIDA=$( (cd "$ROOT_MON" && ENTORNO=produccion ./stacks/alloy/scripts/monitorin
 contiene "monitoring-role usa el secreto del runtime" "monitoring-role listo" "$SALIDA"
 contiene "monitoring-role usa la composición del entorno" \
   "-f $ROOT_MON/runtime/produccion/compose.yaml" "$(llamadas)"
+rm -f "$STUB_DIR/servicios-sin-perfil"
 
 # =====================================================================
 titulo "config-init.sh — qué stack está activo decide qué bootstrapea"
@@ -263,6 +282,7 @@ igual "un stack fuera de la composición no bootstrapea" "1" \
 # --- Sin composición legible ---
 
 rm -f "$STUB_DIR/servicios"
+: > "$STUB_DIR/servicios"
 sale_con "sin composición legible aborta" 1 bash -c "cd '$ROOT' && ./scripts/config-init.sh"
 
 # =====================================================================
@@ -295,9 +315,11 @@ ROOT=$(crear_root_timers production produccion)
 reset_stub
 printf 'postgres\nodoo\nbackup\ncertbot\n' > "$STUB_DIR/servicios"
 
+UNIDADES=$(timers "$ROOT" units); UNIDADES_CODIGO=$?
+igual "el parser de units termina correctamente" "0" "$UNIDADES_CODIGO"
 igual "las tres units, prefijadas por el proyecto" \
   "production-backup-daily production-backup-monthly production-cert-renew" \
-  "$(timers "$ROOT" units | tr '\n' ' ' | sed 's/ $//')"
+  "$(printf '%s\n' "$UNIDADES" | tr '\n' ' ' | sed 's/ $//')"
 igual "y la plantilla de aviso" "production-notify@" "$(timers "$ROOT" notify)"
 
 SALIDA=$(timers "$ROOT" install)
@@ -387,7 +409,7 @@ no_contiene "sin tocar systemd" "systemctl" "$(llamadas)"
 # Adivinar qué units corresponden es peor que no instalar ninguna.
 
 reset_stub
-rm -f "$STUB_DIR/servicios"
+: > "$STUB_DIR/servicios"
 sale_con "sin composición legible aborta" 1 \
   bash -c "cd '$ROOT' && SYSTEMD_DIR='$ROOT/systemd' ./scripts/timers.sh install"
 
@@ -398,5 +420,75 @@ contiene "Makefile expone rollback-image" "rollback-image:" "$(cat "$REPO_ROOT/M
 contiene "Makefile expone guarda de edición" "require-edition-transition:" "$(cat "$REPO_ROOT/Makefile")"
 contiene "Makefile exige backup previo cuando corresponde" "backup-run" "$(cat "$REPO_ROOT/Makefile")"
 contiene "la operación de módulos exige Actual" "no hay imagen Actual" "$(cat "$REPO_ROOT/scripts/odoo-module-operation.sh")"
+
+# =====================================================================
+titulo "integrity-check, failure-notify y workspace — contratos de auxiliares"
+# =====================================================================
+
+# integrity-check debe pasar por el contexto del runtime y conservar el error del segundo comando.
+ROOT_INT=$(crear_root integrity integrity-check.sh)
+mkdir -p "$ROOT_INT/fakebin"
+cat > "$ROOT_INT/fakebin/docker" <<'EOF'
+#!/usr/bin/env bash
+set -uo pipefail
+printf '%s\n' "$*" >> "$DOCKER_CALLS"
+case "$*" in
+  *postgres*) printf 'filestore/a\n' ;;
+  *odoo*)
+    cat >/dev/null
+    if [ "${INTEGRITY_FAIL:-0}" -eq 1 ]; then
+      printf 'FALTA: filestore/a\nreferenciados: 1 | faltantes: 1\n'
+      exit 1
+    fi
+    printf 'referenciados: 1 | faltantes: 0\n'
+    ;;
+esac
+EOF
+chmod +x "$ROOT_INT/fakebin/docker"
+SALIDA=$(cd "$ROOT_INT" && DOCKER_CALLS="$ROOT_INT/docker-calls" PATH="$ROOT_INT/fakebin:$PATH" \
+  ENTORNO=staging ./scripts/integrity-check.sh 2>&1)
+contiene "integrity-check usa el contexto" "integrity-check listo" "$SALIDA"
+contiene "integrity-check pasa compose.env" \
+  "--env-file $(cd "$ROOT_INT" && pwd -P)/runtime/staging/compose.env" "$(cat "$ROOT_INT/docker-calls")"
+sale_con "integrity-check conserva un faltante" 1 env DOCKER_CALLS="$ROOT_INT/docker-calls-fail" \
+  PATH="$ROOT_INT/fakebin:$PATH" ENTORNO=staging INTEGRITY_FAIL=1 \
+  bash "$ROOT_INT/scripts/integrity-check.sh"
+
+# failure-notify debe acotar el tiempo de red y devolver el error de curl.
+ROOT_NOTIFY=$(crear_root notify failure-notify.sh)
+mkdir -p "$ROOT_NOTIFY/runtime/produccion/secrets" "$ROOT_NOTIFY/fakebin"
+printf 'smtp-password\n' > "$ROOT_NOTIFY/runtime/produccion/secrets/zeptomail_smtp_password"
+cat >> "$ROOT_NOTIFY/runtime/produccion/compose.env" <<'EOF'
+SMTP_HOST=smtp.example.test
+SMTP_PORT=587
+SMTP_USER=usuario
+ALERT_EMAIL_FROM=alertas@example.test
+ALERT_EMAIL_TO=ops@example.test
+EOF
+cat > "$ROOT_NOTIFY/fakebin/curl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$CURL_CALLS"
+cat >/dev/null
+exit "${CURL_FAIL:-0}"
+EOF
+chmod +x "$ROOT_NOTIFY/fakebin/curl"
+SALIDA=$(cd "$ROOT_NOTIFY" && CURL_CALLS="$ROOT_NOTIFY/curl-calls" \
+  PATH="$ROOT_NOTIFY/fakebin:$PATH" ENTORNO=produccion \
+  ./scripts/failure-notify.sh backup.timer 2>&1)
+contiene "failure-notify termina bien" "failure-notify listo" "$SALIDA"
+contiene "failure-notify acota curl" "--connect-timeout 10 --max-time 60" "$(cat "$ROOT_NOTIFY/curl-calls")"
+sale_con "failure-notify conserva el error de red" 28 env CURL_CALLS="$ROOT_NOTIFY/curl-calls-fail" \
+  PATH="$ROOT_NOTIFY/fakebin:$PATH" ENTORNO=produccion CURL_FAIL=28 \
+  bash "$ROOT_NOTIFY/scripts/failure-notify.sh" backup.timer
+
+# El workspace no repite el árbol de addons dentro del folder padre de infraestructura.
+ROOT_WS=$(crear_root workspace vscode-workspace.sh)
+SALIDA=$(cd "$ROOT_WS" && ENTORNO=staging ./scripts/vscode-workspace.sh 2>&1)
+contiene "workspace genera el archivo" "runtime/addons/.vscode/settings.json" "$SALIDA"
+contiene "workspace usa runtime/addons" "runtime/addons" \
+  "$(cat "$ROOT_WS/workspace-staging.code-workspace")"
+no_contiene "workspace no vuelve a addons raíz" '"path": "'$ROOT_WS'/addons"' \
+  "$(cat "$ROOT_WS/workspace-staging.code-workspace")"
+contiene "workspace oculta la raíz anidada" 'runtime/addons' "$(cat "$ROOT_WS/.vscode/settings.json")"
 
 resumen

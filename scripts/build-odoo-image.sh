@@ -86,7 +86,7 @@ if [[ "$ODOO_EDITION" == enterprise ]]; then
   ENTERPRISE_MODULES="$(find "$BUILD_DIR/enterprise" -type f -name __manifest__.py -print | while IFS= read -r manifest; do basename "$(dirname "$manifest")"; done | sort -u)"
 fi
 cp stacks/odoo/image/Dockerfile stacks/odoo/image/entrypoint.sh "$BUILD_DIR/"
-if [[ -f addons/requirements.txt ]]; then cp addons/requirements.txt "$BUILD_DIR/requirements.txt"; else : > "$BUILD_DIR/requirements.txt"; fi
+if [[ -f runtime/addons/requirements.txt ]]; then cp runtime/addons/requirements.txt "$BUILD_DIR/requirements.txt"; else : > "$BUILD_DIR/requirements.txt"; fi
 PYDEPS_REQUIREMENTS="$BUILD_DIR/requirements.txt" PYDEPS_SNAPSHOT_ROOT="$BUILD_DIR" scripts/pydeps.sh check
 
 # Build y digest

@@ -24,11 +24,7 @@ services:
       - grafana_admin_password
       - zeptomail_smtp_password
     # SMTP y destinatario desde el runtime
-    # GF_SMTP_* pisa grafana.ini —mecanismo nativo de Grafana, no envsubst—, y
-    # ALERT_EMAIL_TO lo expande Grafana mismo en contact-points.yaml. Mismos
-    # valores que ya usan odoo y failure-notify.sh: un lugar donde cargarlos,
-    # no tres. La password sigue por $__file{} en grafana.ini: no hay forma
-    # segura de pasarla por env var.
+    # GF_SMTP_* y ALERT_EMAIL_TO llegan desde el runtime; la password usa $__file{}.
     environment:
       GF_SMTP_ENABLED: "true"
       GF_SMTP_HOST: "${SMTP_HOST:-}:${SMTP_PORT:-587}"

@@ -29,7 +29,7 @@ ENTORNO=produccion make backup-verify
 ENTORNO=produccion make backup-logs
 ```
 
-El backup registra `runtime/produccion/state/meta/images.json` junto con `addons.txt`. `apply-image` ejecuta el backup previo cuando corresponde.
+El backup registra `runtime/produccion/state/meta/images.json` junto con la procedencia de `runtime/addons/catalogo.txt`. `apply-image` ejecuta el backup previo cuando corresponde.
 
 Para restaurar en staging:
 

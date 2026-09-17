@@ -1,4 +1,8 @@
-# Reporte de correcciones — PR #15
+# Documento histórico: reporte de correcciones — PR #15
+
+Este documento conserva el contexto de PR #15 y no es un procedimiento operativo
+vigente. Para la arquitectura actual, consultar `README.md`, `ARCHITECTURE.md` y los
+runbooks bajo `docs/`.
 
 PR: <https://github.com/Dipleg-SA/odoo-infrastructure/pull/15>
 

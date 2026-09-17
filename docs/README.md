@@ -57,3 +57,22 @@ Los procedimientos están agrupados en `entorno/`, `modulos/`, `backup-restore/`
 `operacion/` y `credenciales/`. Cada documento indica cuándo se usa, objetivo, flujo
 rápido cuando corresponde, comandos y verificación. La procedencia de edición, los
 backups y los restores forman parte del procedimiento, no de una configuración paralela.
+
+## Verificaciones
+
+`make test` es estático y hermético: no levanta Docker ni sale a la red. `make verify`
+necesita el deploy corriendo y consulta su estado real. Los smoke tests con Docker real
+se ejecutan por separado mediante `make test-smoke` cuando el operador prepara ese
+entorno. El smoke necesita Docker Desktop o Docker Engine activo, Buildx, acceso de red
+para descargar las imágenes base y `openssl` en el host; usa únicamente árboles y un
+contenedor efímeros, sin cargar los archivos privados de `runtime/`.
+
+```bash
+make test
+make test-smoke
+```
+
+`make test-smoke` construye la imagen Odoo real y valida con los binarios de las imágenes
+las configuraciones de Nginx, Alloy, Prometheus, Loki y Grafana. Si no se lo invoca,
+`tests/test_docker_smoke.sh` se omite para que la suite normal conserve su contrato sin
+daemon ni red.

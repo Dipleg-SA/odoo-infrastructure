@@ -12,7 +12,7 @@ entrypoint de prueba le pone `profiles: [restore]` al stack `backup`, así que
 ## Objetivo
 
 Un backup completo de las dos mitades del estado —el dump de la base y el filestore—
-**en el mismo snapshot de restic**, con el registro de qué código de `addons/`
+**en el mismo snapshot de restic**, con el registro de qué código de `runtime/addons/`
 corresponde a ese momento.
 
 Que las dos mitades vayan juntas no es una comodidad: la base referencia archivos que
@@ -32,8 +32,8 @@ Ninguno. La corrida diaria no pide nada.
 ## Comandos
 
 ```bash
-make backup-run        # dump + filestore en un snapshot, y forget --prune
-make backup-integrity  # solo verifica el repositorio, no escribe nada
+ENTORNO=produccion make backup-run        # dump + filestore en un snapshot, y forget --prune
+ENTORNO=produccion make backup-integrity  # solo verifica el repositorio, no escribe nada
 ```
 
 **El dump va sin comprimir, y no es un descuido.** Comprimido, zlib cambia el flujo de
@@ -52,7 +52,7 @@ base creció lo suficiente como para reconsiderar la estrategia de snapshot.
 ## Verificación
 
 ```bash
-make backup-verify
+ENTORNO=produccion make backup-verify
 ```
 
 Cubre el servicio `healthy`, que `r2.env` no tenga el placeholder sin reemplazar, que

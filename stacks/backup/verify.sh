@@ -5,14 +5,18 @@
 . "$(dirname "${BASH_SOURCE[0]}")/../../scripts/lib/verify.sh"
 META_DIR="${RUNTIME_STATE_DIR:-state}/meta"
 
-# --- ¿Este entorno respalda, o solo restaura? ---
-# Se deriva de la composición, no de una lista: si backup está en la composición
-# POR DEFECTO corre siempre y se le puede exigir healthcheck y frescura. Si solo
-# aparece bajo perfil —el entrypoint de prueba le pone profiles: [restore]— es un
-# one-off y esos dos chequeos fallarían por la razón equivocada.
+  # --- ¿Este entorno respalda, o solo restaura? ---
+  # La composición distingue el backup permanente del servicio bajo restore.
 
 respalda() {
   contexto_compose config --services 2>/dev/null | grep -qx backup
+}
+
+restaura() {
+  local servicios
+  perfil_declarado restore || return 1
+  servicios=$(contexto_compose_perfiles restore config --services 2>/dev/null) || return 1
+  printf '%s\n' "$servicios" | grep -qx backup
 }
 
 v_backup() {
@@ -22,21 +26,23 @@ v_backup() {
     sano backup
   else
     omitir "backup levantado" "este entorno solo restaura — el servicio corre a demanda"
+    if restaura; then
+      ok "perfil restore con backup declarado"
+    else
+      bad "perfil restore con backup declarado" \
+        "el runtime no ofrece backup bajo restore; no se permite saltar el perfil con docker compose run"
+      return
+    fi
   fi
 
   # --- El repositorio está declarado ---
-  # r2.env es el único config que se declara con required: false, para que un
-  # checkout sin bootstrapear igual resuelva `docker compose config` y pueda
-  # correr los tests. El precio es que su ausencia no rompe ahí, y lo atrapa acá:
-  # sin RESTIC_REPOSITORY, restic falla recién cuando alguien intenta respaldar.
+  # r2.env es opcional para que Compose y los tests funcionen antes del bootstrap.
 
   sin_placeholder "r2.env con el repositorio real" \
     stacks/backup/config/r2.env 'TU_ENDPOINT|TU_BUCKET'
 
   # --- El endpoint es un hostname de R2, no solo el account ID ---
-  # sin_placeholder solo descarta el literal TU_ENDPOINT: un valor cargado a mano
-  # pero incompleto (el account ID sin .r2.cloudflarestorage.com) pasa esa
-  # verificación igual, y recién se nota cuando restic reintenta contra DNS.
+  # El sufijo completo evita aceptar un account ID que fallará al resolver DNS.
 
   if [ -f stacks/backup/config/r2.env ]; then
     expect "el endpoint de r2.env termina en .r2.cloudflarestorage.com" \
@@ -47,16 +53,7 @@ v_backup() {
   fi
 
   # --- Repositorio alcanzable ---
-  # Qué se espera depende del rol del entorno, y por eso la consulta cambia:
-  #
-  # El que respalda tiene que ver snapshots CON SU PROPIO nombre — restic agrupa
-  # por (host, paths) y el hostname sale del proyecto, así que pedirlo distingue
-  # "el repo tiene snapshots" de "los tiene MI stack".
-  #
-  # El que solo restaura lee el repositorio de producción: exigirle su propio
-  # nombre fallaría siempre, porque nunca escribió nada ahí. Lo que se verifica es
-  # que el repositorio se alcance y tenga de dónde sembrar. Y como su contenedor
-  # no está levantado, la consulta va por `run` en vez de `exec`.
+  # El backup permanente exige snapshots de su proyecto; restore solo exige acceso.
 
   if respalda; then
     expect "repo de restic con snapshots de este stack" "$COMPOSE_PROJECT_NAME" \
@@ -67,8 +64,7 @@ v_backup() {
   fi
 
   # --- Las dos mitades en el mismo snapshot ---
-  # Es la propiedad que reemplaza al procedimiento de respaldar en orden. Un
-  # snapshot con el filestore y sin el dump restaura una base que no existe.
+  # Un snapshot debe contener dump y filestore para que la restauración sea válida.
 
   local rutas
   if ! respalda; then
@@ -76,10 +72,8 @@ v_backup() {
   elif ! corriendo backup; then
     omitir "el snapshot trae la base y el filestore" "$(motivo backup)"
   else
-    # `snapshots latest`, no `--latest 1`: restic agrupa por (host, paths), así que
-    # --latest 1 devuelve el más nuevo DE CADA GRUPO. Se midió: un backup que se
-    # olvidaba el dump pasaba igual, porque el snapshot viejo con el dump seguía
-    # apareciendo en la respuesta y tapaba al nuevo.
+    # `snapshots latest` compara el último snapshot de cada grupo de paths.
+    # Se evita `--latest 1`, que podría ocultar la falta reciente de una mitad.
     rutas=$(contexto_compose exec -T backup restic snapshots latest --json 2>/dev/null)
     case "$rutas" in
       *'/data/dump'*)

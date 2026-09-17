@@ -31,7 +31,7 @@ ENTORNO=staging make build
 ENTORNO=staging make up
 ```
 
-El restore recupera `Actual` y `Anterior` desde `state/meta/images.json`; la imagen candidata de staging se aplica después de construirla y validarla.
+El restore recupera `Actual` y `Anterior` desde `runtime/staging/state/images.json`; la imagen candidata de staging se aplica después de construirla y validarla.
 
 ## Verificación
 

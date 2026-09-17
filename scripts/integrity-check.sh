@@ -6,8 +6,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 . scripts/lib/ui.sh
+. scripts/lib/contexto.sh
+contexto_iniciar
 
-DB="${1:-odoo}"
+compose() { contexto_compose "$@"; }
+
+DB="${DB:-${1:-odoo}}"
 
 ui_plan_start "integrity-check"
 ui_step 1 "Verificación de que cada adjunto referenciado en ir_attachment exista en el filestore de '$DB'."
@@ -19,10 +23,10 @@ ui_step 1 "Verificación de que cada adjunto referenciado en ir_attachment exist
 # de producción, y este chequeo es justo el que quiere un simulacro en staging.
 
 ec=0
-docker compose exec -T -u postgres postgres \
+compose exec -T -u postgres postgres \
   psql -U odoo -d "$DB" -tAc \
   "select store_fname from ir_attachment where store_fname is not null and store_fname <> '';" \
-| docker compose exec -T odoo sh -c '
+| compose exec -T odoo sh -c '
   db="$1"; total=0; faltan=0
   while IFS= read -r f; do
     [ -n "$f" ] || continue

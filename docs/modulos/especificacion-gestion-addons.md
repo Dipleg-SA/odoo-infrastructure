@@ -2,7 +2,7 @@
 
 ## Estado
 
-Implementada para las fases 1 a 6. Este documento conserva la estructura objetivo y sirve como fuente del flujo operativo.
+Implementada. Este documento conserva la estructura vigente y sirve como fuente del flujo operativo.
 
 ## Objetivo
 
@@ -28,7 +28,7 @@ runtime/addons/
 └── builds/<entorno>/<id>/      # fotografía del build
 ```
 
-El checkout de Enterprise pertenece a una única línea mayor y se selecciona por tag anotado e inmutable. No recibe webhooks ni se mezcla con el catálogo de dominios.
+El checkout de Enterprise pertenece a una única línea mayor y se selecciona por tag anotado e inmutable. No recibe webhooks ni se mezcla con el catálogo de dominios. Las operaciones puntuales del receptor se exponen también como targets `addons-webhook-*` de Make, igual que los demás stacks.
 
 ## Contratos implementados
 

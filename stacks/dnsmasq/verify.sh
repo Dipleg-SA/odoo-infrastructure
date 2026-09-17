@@ -7,20 +7,24 @@
 v_dnsmasq() {
   titulo "dnsmasq"
 
+  # --- Perfil LAN ---
+  # Un perfil declarado pero inactivo no es un servicio sano ni un stack ausente.
+
+  if perfil_inactivo dnsmasq lan; then
+    omitir "dnsmasq" "perfil lan inactivo — activar COMPOSE_PROFILES=lan si corresponde"
+    return
+  fi
+
   sano dnsmasq
 
   # --- Config real, no plantilla ---
-  # dnsmasq.conf se edita a mano: con el placeholder sin reemplazar, dnsmasq
-  # levanta igual y resuelve el hostname a una IP que no es la del servidor.
+  # dnsmasq.conf no debe conservar TU_IP_LOCAL ni TU_DOMINIO.
 
   sin_placeholder "dnsmasq.conf sin el placeholder de su .example" \
     stacks/dnsmasq/config/dnsmasq.conf 'TU_IP_LOCAL|TU_DOMINIO'
 
   # --- Quién le pregunta ---
-  # El healthcheck le pregunta a dnsmasq: prueba que responde, no que alguien lo
-  # consulte. Eso lo decide el DHCP del router, que este repositorio no toca, y
-  # desde el servidor no hay forma de verificarlo — se comprueba con
-  # `dig +short <hostname>` SIN @, corrido desde un equipo de la LAN.
+  # El uso por la LAN depende del DHCP externo y se verifica con dig sin @.
 
   omitir "la LAN usa dnsmasq como resolver" \
     "lo decide el DHCP del router — verificar con dig desde un equipo de la red"
