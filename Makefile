@@ -10,7 +10,7 @@ CONTEXTO_COMPOSE := scripts/lib/contexto.sh compose
 
 include .make/main.mk
 
-.PHONY: help up down logs ps nuke reset build apply-image rollback-image validate-image \
+.PHONY: help up down logs ps nuke reset build apply-image rollback-image validate-image promotion-verify \
         secrets-init secrets-perms secrets-check config-init dev-workspace \
         odoo-report-config \
         host-init host-verify up-timers down-timers notify-test monitoring-role \
@@ -30,7 +30,7 @@ RUNTIME_TARGETS := secrets-init secrets-perms secrets-check config-init dev-work
                    integrity-check \
                    addons-install addons-update addons-uninstall addons-modules addons-deps \
                    require-edition-transition require-backups require-restore require-not-production verify \
-                   up down logs ps nuke reset build apply-image rollback-image validate-image
+                   up down logs ps nuke reset build apply-image rollback-image validate-image promotion-verify
 RUNTIME_TARGETS += $(foreach s,$(STACKS),$(s)-up $(s)-down $(s)-restart $(s)-logs $(s)-ps $(s)-verify)
 RUNTIME_TARGETS += $(foreach s,$(STACKS_ONESHOT),$(s)-logs $(s)-ps $(s)-verify)
 $(RUNTIME_TARGETS): require-entorno
@@ -249,6 +249,9 @@ rollback-image: ## Reactiva Anterior y levanta Odoo con esa referencia
 
 validate-image: ## Registra la validación manual de Actual
 	scripts/image-state.sh validate-image "$(NOTE)"
+
+promotion-verify: ## Verifica que producción equivale a staging validado antes del build
+	scripts/promotion-verify.sh
 
 # --- [STACK:addons] Dependencias Python ---
 # check es puro host (corre en 'make test'); sync necesita Docker para resolver

@@ -6,13 +6,13 @@ Para sembrar y validar staging con datos de producción antes de promover una im
 
 ## Objetivo
 
-Un runtime aislado con ramas `19.0-stag`, SMTP desactivado y credencial Restic de solo lectura.
+Un runtime aislado que recibe exclusivamente `19.0-stag`, con SMTP desactivado y credencial Restic de solo lectura.
 
 ## Flujo rápido
 
 1. Preparar entorno, secretos y configuración.
-2. Restaurar el snapshot elegido, sincronizar addons y construir la imagen.
-3. Levantar staging, validar la imagen y ejecutar `verify`.
+2. Restaurar el snapshot elegido, sincronizar `19.0-stag` y construir la imagen.
+3. Aplicar la imagen de staging, validar el conjunto completo y ejecutar `verify`.
 
 ## A mano
 
@@ -34,17 +34,19 @@ ENTORNO=staging make up
 ENTORNO=staging make verify
 ```
 
-`restore` reemplaza la base y el filestore de staging y recupera la procedencia del snapshot. Si se opera un módulo durante la validación, staging se descarta y se vuelve a sembrar antes de otro intento.
+`restore` reemplaza la base y el filestore de staging y recupera la procedencia del snapshot. `19.0-stag` puede contener varias features: la prueba y su resultado aplican al conjunto completo frente a `19.0`, no solo a la última feature incorporada. Si se opera un módulo durante la validación, staging se descarta y se vuelve a sembrar antes de otro intento.
 
 Para validar Community→Enterprise, cambiá el par plano a `ODOO_EDITION=enterprise` y `TAG=19.0-ee-YYYY-MM-DD`, restaurá una copia de producción y ejecutá el preflight antes de levantar la imagen. La validación de staging no modifica producción ni instala módulos automáticamente; esa aplicación queda para el paso controlado posterior.
 
-Para promover una fotografía ya validada:
+Al terminar las pruebas funcionales, aplicá la imagen construida y registrá la evidencia sobre su `Actual`:
 
 ```bash
-ENTORNO=staging make validate-image NOTE="validación funcional"
 ENTORNO=staging make apply-image
+ENTORNO=staging make validate-image NOTE="validación funcional del conjunto 19.0-stag"
 ```
+
+La nota debe identificar la revisión o conjunto probado y el resultado. Si la validación falla, no abras ni apruebes el PR `19.0-stag → 19.0`; corregí el conjunto o realineá staging de manera explícita antes de comenzar otra prueba.
 
 ## Verificación
 
-`ENTORNO=staging make verify` debe confirmar la imagen Actual, `ODOO_DISABLE_SMTP=1`, el certificado propio y la ausencia de timers de backup. `ENTORNO=staging make backup-run` debe fallar.
+`ENTORNO=staging make verify` debe confirmar la imagen Actual, `ODOO_DISABLE_SMTP=1`, el certificado propio y la ausencia de timers de backup. `ENTORNO=staging scripts/image-state.sh show` debe mostrar `validation.result: ok` asociada a esa Actual. `ENTORNO=staging make backup-run` debe fallar.

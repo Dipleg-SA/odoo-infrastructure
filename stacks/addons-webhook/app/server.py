@@ -33,7 +33,7 @@ MAX_BODY_BYTES = 1_048_576
 DOMAIN_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-fA-F]{40,64}$")
 DELIVERY_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
-BRANCH_PATTERN = re.compile(r"^([0-9]+\.0)(?:-(dev|stag))?$")
+BRANCH_PATTERN = re.compile(r"^([0-9]+\.0)(?:-stag)?$")
 
 
 # Configuración de rutas
@@ -213,6 +213,8 @@ def repository_matches(entry: dict[str, str], repository: dict) -> bool:
     return False
 
 
+# Selección de ramas operativas
+# El servidor solo recibe staging y producción; las features se prueban localmente.
 def environment_for_branch(ref: str) -> tuple[str, str] | None:
     prefix = "refs/heads/"
     if not ref.startswith(prefix):
@@ -221,10 +223,7 @@ def environment_for_branch(ref: str) -> tuple[str, str] | None:
     match = BRANCH_PATTERN.fullmatch(branch)
     if not match:
         return None
-    suffix = match.group(2)
-    if suffix == "dev":
-        return "desarrollo", branch
-    if suffix == "stag":
+    if branch.endswith("-stag"):
         return "staging", branch
     return "produccion", branch
 

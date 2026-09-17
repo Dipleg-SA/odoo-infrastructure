@@ -15,7 +15,7 @@ if [ "${CANDIDATE_LOCK_HELD:-0}" != "1" ]; then
   exit $?
 fi
 
-# Rutas y rama del entorno
+# Rutas y referencia del entorno
 # El catálogo y los clones se comparten; cada entorno recibe su propio candidato.
 ROOT="$PWD"
 ADDONS_ROOT="$ROOT/runtime/addons"
@@ -29,10 +29,41 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
+# Referencia de desarrollo
+# Solo admite ramas feat/* para no convertir el selector local en un ref arbitrario.
+referencia_feature_valida() {
+  local referencia="$1"
+  [[ "$referencia" =~ ^feat/[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] \
+    && [[ "$referencia" != *..* ]] \
+    && [[ "$referencia" != *//* ]] \
+    && [[ "$referencia" != */ ]] \
+    && [[ "$referencia" != *. ]]
+}
+
+# Selección de ramas
+# Staging y producción son fijas; desarrollo exige que el operador nombre su feature.
 case "$ENTORNO" in
-  desarrollo) RAMA="${VERSION}-dev" ;;
-  staging) RAMA="${VERSION}-stag" ;;
-  produccion) RAMA="$VERSION" ;;
+  desarrollo)
+    if ! referencia_feature_valida "${ADDONS_REF:-}"; then
+      printf 'ADDONS_REF debe ser una rama feat/<nombre> para ENTORNO=desarrollo\n' >&2
+      exit 2
+    fi
+    RAMA="$ADDONS_REF"
+    ;;
+  staging)
+    if [[ -n "${ADDONS_REF:-}" ]]; then
+      printf 'ADDONS_REF solo se admite con ENTORNO=desarrollo\n' >&2
+      exit 2
+    fi
+    RAMA="${VERSION}-stag"
+    ;;
+  produccion)
+    if [[ -n "${ADDONS_REF:-}" ]]; then
+      printf 'ADDONS_REF solo se admite con ENTORNO=desarrollo\n' >&2
+      exit 2
+    fi
+    RAMA="$VERSION"
+    ;;
 esac
 
 FAILED=0

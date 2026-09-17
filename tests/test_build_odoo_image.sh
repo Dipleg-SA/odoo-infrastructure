@@ -38,7 +38,7 @@ if [ "${BUILD_FAIL:-0}" = 1 ] && [ "$1" = build ]; then exit 1; fi
 if [ "$1" = image ] && [ "$2" = inspect ]; then printf 'sha256:build-digest\n'; fi
 DOCKER
 chmod +x "$TMP/bin/docker"
-export ENTORNO=desarrollo ENTERPRISE_TAG=19.0-ee-2026-09-13 PATH="$TMP/bin:$PATH"
+export ENTORNO=desarrollo ADDONS_REF=feat/prueba ENTERPRISE_TAG=19.0-ee-2026-09-13 PATH="$TMP/bin:$PATH"
 printf '%s\n' 'ODOO_EDITION=enterprise' 'TAG=19.0-ee-2026-09-14' >> runtime/desarrollo/compose.env
 salida=$(scripts/build-odoo-image.sh 2>&1); codigo=$?
 igual "build exitoso" 0 "$codigo"
