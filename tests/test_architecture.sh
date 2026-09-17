@@ -26,6 +26,7 @@ contiene "documenta la frontera de transición" "frontera operativa" "$EDICION"
 contiene "documenta el rollback condicionado" "rollback" "$EDICION"
 no_contiene "README no usa entrypoints legacy" "envs/production.yaml" "$(cat README.md)"
 no_contiene "README no usa catálogo legacy" "addons/addons.txt" "$(cat README.md)"
+igual "no conserva el árbol legacy de addons" "0" "$([ ! -e addons ]; echo $?)"
 DOCUMENTACION=$(seccion README.md '## Documentación' '## Cómo está pensado')
 contiene "README explica registro en release" "release correspondiente" "$DOCUMENTACION"
 

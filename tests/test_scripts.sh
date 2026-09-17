@@ -481,14 +481,32 @@ sale_con "failure-notify conserva el error de red" 28 env CURL_CALLS="$ROOT_NOTI
   PATH="$ROOT_NOTIFY/fakebin:$PATH" ENTORNO=produccion CURL_FAIL=28 \
   bash "$ROOT_NOTIFY/scripts/failure-notify.sh" backup.timer
 
-# El workspace no repite el árbol de addons dentro del folder padre de infraestructura.
+# El workspace expone solo candidatos del entorno y no modifica la configuración del usuario.
 ROOT_WS=$(crear_root workspace vscode-workspace.sh)
+mkdir -p "$ROOT_WS/runtime/addons/custom/staging"
 SALIDA=$(cd "$ROOT_WS" && ENTORNO=staging ./scripts/vscode-workspace.sh 2>&1)
-contiene "workspace genera el archivo" "runtime/addons/.vscode/settings.json" "$SALIDA"
-contiene "workspace usa runtime/addons" "runtime/addons" \
+contiene "workspace genera el archivo" "workspace-staging.code-workspace" "$SALIDA"
+contiene "workspace usa los candidatos del entorno" "runtime/addons/custom/staging" \
   "$(cat "$ROOT_WS/workspace-staging.code-workspace")"
 no_contiene "workspace no vuelve a addons raíz" '"path": "'$ROOT_WS'/addons"' \
   "$(cat "$ROOT_WS/workspace-staging.code-workspace")"
-contiene "workspace oculta la raíz anidada" 'runtime/addons' "$(cat "$ROOT_WS/.vscode/settings.json")"
+no_contiene "workspace no muestra clones bare" 'runtime/addons/.repos' \
+  "$(cat "$ROOT_WS/workspace-staging.code-workspace")"
+no_contiene "workspace no muestra builds" 'runtime/addons/builds' \
+  "$(cat "$ROOT_WS/workspace-staging.code-workspace")"
+igual "workspace no escribe configuración auxiliar" "0" \
+  "$([ ! -e "$ROOT_WS/.vscode/settings.json" ] && [ ! -e "$ROOT_WS/runtime/addons/.vscode/settings.json" ]; echo $?)"
+TARGET_WORKSPACE=$(make -n ENTORNO=staging dev-workspace 2>&1)
+contiene "dev-workspace avisa su reemplazo" "dev-workspace está obsoleto" "$TARGET_WORKSPACE"
+contiene "dev-workspace delega al workspace operativo" "make runtime-workspace" "$TARGET_WORKSPACE"
+sale_con "workspace sin candidatos explica cómo sincronizar" 1 \
+  bash -c "cd '$ROOT_WS' && rm -rf runtime/addons/custom/staging && ENTORNO=staging ./scripts/vscode-workspace.sh"
+
+mkdir -p "$ROOT_WS/runtime/addons/custom/produccion" "$ROOT_WS/runtime/addons/enterprise"
+sed -i.bak 's/ODOO_EDITION=community/ODOO_EDITION=enterprise/; s/19.0-ce/19.0-ee/' \
+  "$ROOT_WS/runtime/produccion/compose.env"
+SALIDA=$(cd "$ROOT_WS" && ENTORNO=produccion ./scripts/vscode-workspace.sh 2>&1)
+contiene "workspace Enterprise incluye su checkout" 'runtime/addons/enterprise' \
+  "$(cat "$ROOT_WS/workspace-produccion.code-workspace")"
 
 resumen

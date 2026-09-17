@@ -74,25 +74,5 @@ stacks/backup/config/r2.env
 
 repos/
 
-# --- Compatibilidad histórica de addons ---
-# La operación actual usa runtime/addons/. Estas reglas solo protegen árboles de
-# checkouts antiguos; el catálogo vigente es runtime/addons/catalogo.txt.
-
-addons/*
-!addons/addons.txt.example
-!addons/requirements.txt.example
-!addons/custom-addons/
-addons/custom-addons/*
-!addons/custom-addons/.gitkeep
-!addons/oca/
-addons/oca/*
-!addons/oca/.gitkeep
-!addons/third-party/
-addons/third-party/*
-!addons/third-party/.gitkeep
-!addons/enterprise/
-addons/enterprise/*
-!addons/enterprise/.gitkeep
-
 # Examples
 .stacks
