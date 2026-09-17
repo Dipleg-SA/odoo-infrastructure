@@ -30,7 +30,9 @@ seleccionar Community o Enterprise.
 
 Este repo es solo la infraestructura. El código de los módulos de Odoo vive en otros
 repositorios, uno por módulo, declarados en `runtime/addons/catalogo.txt` — el panorama completo
-de esa relación está en [`ARCHITECTURE.md`](ARCHITECTURE.md).
+de esa relación está en [`ARCHITECTURE.md`](ARCHITECTURE.md). El flujo vigente es
+`feat/*` local → `19.0-stag` en staging → PR aprobado → `19.0` en producción; la guía
+operativa está en [`gestionar ramas de staging`](docs/modulos/gestionar-ramas-staging.md).
 
 ## Empezar
 

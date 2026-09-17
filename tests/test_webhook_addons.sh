@@ -156,7 +156,7 @@ def create_remote(name):
     (work / "__manifest__.py").write_text(f"{{'name': '{name}'}}\n")
     run("git", "-C", str(work), "add", ".")
     run("git", "-C", str(work), "commit", "-qm", "base")
-    for branch, content in (("19.0-dev", "desarrollo"), ("19.0-stag", "staging")):
+    for branch, content in (("19.0-stag", "staging"),):
         run("git", "-C", str(work), "checkout", "-qb", branch)
         with (work / "__manifest__.py").open("a") as output:
             output.write(content + "\n")
@@ -195,35 +195,34 @@ def send(branch, revision, delivery, url=remote, event="push", key=b"x" * 32):
     except webhook.WebhookError as error:
         return error.status, {"status": "error", "reason": error.reason}
 
-check("las tres ramas se asignan a su entorno", [webhook.environment_for_branch(f"refs/heads/{b}")[0] for b in ("19.0-dev", "19.0-stag", "19.0")] == ["desarrollo", "staging", "produccion"])
-check("las ramas ajenas a integración se ignoran", webhook.environment_for_branch("refs/heads/feat/prueba") is None)
+check("las dos ramas de servidor se asignan a su entorno", [webhook.environment_for_branch(f"refs/heads/{b}")[0] for b in ("19.0-stag", "19.0")] == ["staging", "produccion"])
+check("las ramas de desarrollo se ignoran", webhook.environment_for_branch("refs/heads/19.0-dev") is None and webhook.environment_for_branch("refs/heads/feat/prueba") is None)
 
-dev_sha = commit_for(work, "19.0-dev")
-status, result = send("19.0-dev", dev_sha, "dev-1")
-check("HMAC válido publica el candidato de desarrollo", status == 200 and result.get("environment") == "desarrollo")
-dev_candidate = candidates / "desarrollo" / "ventas"
-check("el candidato contiene el commit recibido", (dev_candidate / ".candidate-commit").read_text().strip() == dev_sha)
-bare_before_bad_signature = sorted(path.name for path in bare.iterdir())
-check("un HMAC incorrecto se rechaza antes de operar Git", send("19.0-dev", dev_sha, "bad-signature", key=b"z" * 32)[0] == 401 and sorted(path.name for path in bare.iterdir()) == bare_before_bad_signature)
-check("un evento distinto de push no cambia candidatos", send("19.0-dev", dev_sha, "ping-1", event="ping")[0] == 202)
-check("una rama feat se ignora", send("feat/prueba", dev_sha, "feat-1")[0] == 202)
-check("una línea Odoo distinta se ignora", send("20.0-dev", dev_sha, "version-1")[0] == 202)
-check("un repositorio ausente del catálogo se ignora", send("19.0-dev", dev_sha, "unknown-1", url=temporary / "desconocido.git")[0] == 202)
-check("un evento del repositorio Enterprise se ignora", send("19.0-dev", dev_sha, "enterprise-1", url=temporary / "enterprise.git")[0] == 202 and not (candidates / "desarrollo" / "enterprise").exists())
+stage_sha = commit_for(work, "19.0-stag")
+bare_before_bad_signature = sorted(path.name for path in bare.iterdir()) if bare.exists() else []
+check("un HMAC incorrecto se rechaza antes de operar Git", send("19.0-stag", stage_sha, "bad-signature", key=b"z" * 32)[0] == 401 and (sorted(path.name for path in bare.iterdir()) if bare.exists() else []) == bare_before_bad_signature)
+check("un evento distinto de push no cambia candidatos", send("19.0-stag", stage_sha, "ping-1", event="ping")[0] == 202)
+check("una rama de desarrollo se ignora sin publicar candidatos", send("19.0-dev", stage_sha, "dev-1")[0] == 202 and not (candidates / "desarrollo").exists())
+check("una rama feat se ignora", send("feat/prueba", stage_sha, "feat-1")[0] == 202)
+check("una línea Odoo distinta se ignora", send("20.0-stag", stage_sha, "version-1")[0] == 202)
+check("un repositorio ausente del catálogo se ignora", send("19.0-stag", stage_sha, "unknown-1", url=temporary / "desconocido.git")[0] == 202)
+check("un evento del repositorio Enterprise se ignora", send("19.0-stag", stage_sha, "enterprise-1", url=temporary / "enterprise.git")[0] == 202 and not (candidates / "staging" / "enterprise").exists())
 
-run("git", "-C", str(work), "checkout", "-q", "19.0-dev")
+status, result = send("19.0-stag", stage_sha, "stage-1")
+stage_candidate = candidates / "staging" / "ventas"
+check("HMAC válido publica el candidato de staging", status == 200 and result.get("environment") == "staging")
+check("el candidato contiene el commit recibido", (stage_candidate / ".candidate-commit").read_text().strip() == stage_sha)
+run("git", "-C", str(work), "checkout", "-q", "19.0-stag")
 with (work / "__manifest__.py").open("a") as output:
     output.write("v2\n")
-run("git", "-C", str(work), "commit", "-qam", "dev v2")
+run("git", "-C", str(work), "commit", "-qam", "staging v2")
 run("git", "-C", str(work), "checkout", "-q", "19.0")
-new_dev_sha = commit_for(work, "19.0-dev")
-status, result = send("19.0-dev", new_dev_sha, "dev-1")
+new_stage_sha = commit_for(work, "19.0-stag")
+status, result = send("19.0-stag", new_stage_sha, "stage-1")
 check("una entrega repetida es idempotente", status == 200 and result.get("status") == "duplicate")
-check("el reintento no reemplaza el commit ya publicado", (dev_candidate / ".candidate-commit").read_text().strip() == dev_sha)
-check("una entrega nueva publica el commit actualizado", send("19.0-dev", new_dev_sha, "dev-2")[0] == 200 and (dev_candidate / ".candidate-commit").read_text().strip() == new_dev_sha)
-stage_sha = commit_for(work, "19.0-stag")
+check("el reintento no reemplaza el commit ya publicado", (stage_candidate / ".candidate-commit").read_text().strip() == stage_sha)
+check("una entrega nueva publica el commit actualizado", send("19.0-stag", new_stage_sha, "stage-2")[0] == 200 and (stage_candidate / ".candidate-commit").read_text().strip() == new_stage_sha)
 prod_sha = commit_for(work, "19.0")
-check("staging publica solo bajo su ruta", send("19.0-stag", stage_sha, "stage-1")[0] == 200 and (candidates / "staging" / "ventas" / ".candidate-commit").read_text().strip() == stage_sha)
 check("producción publica solo bajo su ruta", send("19.0", prod_sha, "prod-1")[0] == 200 and (candidates / "produccion" / "ventas" / ".candidate-commit").read_text().strip() == prod_sha)
 check("Odoo activo no recibe cambios por webhook", active_odoo.read_bytes() == active_before)
 
@@ -243,7 +242,7 @@ def measured_sync(entry, branch, environment, config):
 webhook.sync_candidate = measured_sync
 try:
     with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(pool.map(lambda args: send("19.0-dev", "a" * 40, *args), (("concurrent-1", remote), ("concurrent-2", remote_two))))
+        results = list(pool.map(lambda args: send("19.0-stag", "a" * 40, *args), (("concurrent-1", remote), ("concurrent-2", remote_two))))
 finally:
     webhook.sync_candidate = original_sync
 check("entregas simultáneas del mismo entorno se serializan", maximum == 1 and all(status == 200 for status, _ in results))

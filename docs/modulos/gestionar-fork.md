@@ -1,244 +1,86 @@
-# Gestionar fork
+# Gestionar un fork de addons
 
 ## Cuándo se usa
 
-Tres momentos del mismo repositorio: **crearlo**, **actualizarlo** o **eliminarlo**. Los tres comparten el mismo modelo: un repositorio declarado en `runtime/addons/catalogo.txt`, del que el checkout es dueño de su propia copia.
-
-Crear aplica a dos orígenes distintos, con el mismo procedimiento salvo por el primer paso:
-
-- **Origen propio** — una idea tuya, el repositorio nace vacío en tu organización.
-- **Origen de terceros** (OCA, un proveedor) — el código ya existe en otro lado y su licencia permite forkear.
-
-No aplica a módulos de Odoo Enterprise sin acceso al repositorio privado — ver [gestionar-enterprise](gestionar-enterprise.md), que no usa git en absoluto.
+Para incorporar, actualizar o retirar un repositorio propio o forkeado de terceros del catálogo de addons.
 
 ## Objetivo
 
-Un repositorio declarado en el manifiesto de este checkout, con su worktree sincronizado — listo para que [gestionar-modulo](gestionar-modulo.md) trabaje adentro —, al día con su origen cuando corresponde, y fuera del árbol sin dejar restos cuando deja de usarse.
+Mantener un repositorio por dominio, declarado en `runtime/addons/catalogo.txt`, con ramas de servidor `19.0-stag` y `19.0`. El desarrollo se hace localmente en `feat/*`; el servidor solo recibe candidatos de staging y producción.
 
 ## Flujo rápido
 
-Este es el recorrido completo para incorporar, actualizar o retirar un repositorio de addons. Las secciones siguientes explican los comandos Git y los casos de excepción.
-
-1. **Crear o forkear el repositorio** en tu organización y declararlo en `runtime/addons/catalogo.txt`. La rama del repositorio debe coincidir con la línea mayor seleccionada por el runtime:
-
-   ```bash
-   make repo-sync
-   ```
-
-2. **Desarrollar módulos dentro del worktree** con el flujo de [gestionar módulo](gestionar-modulo.md). Para cada cambio que agregue dependencias Python:
-
-   ```bash
-   make addons-deps
-   make build   # solo si addons-deps agregó o cambió pines
-   ```
-
-3. **Actualizar un fork de terceros.** Traer `upstream/<rama>`, integrarlo a `<rama>-stag` con Git y validarlo en staging:
-
-   ```bash
-   make repo-sync
-   make addons-deps
-   make build   # solo si addons-deps agregó o cambió pines
-   make addons-update MODULES=<módulos_afectados>
-   make verify
-   ```
-
-4. **Promover lo validado a `<rama>`** con Git y aplicarlo en producción:
-
-   ```bash
-   make repo-sync
-   make addons-deps
-   make build   # solo si addons-deps agregó o cambió pines
-   make addons-update MODULES=<módulos_afectados>
-   make verify
-   ```
-
-5. **Retirar un repositorio.** Desinstalar antes todos sus módulos instalados en cada base y sacar su línea de `runtime/addons/catalogo.txt` en cada checkout. Luego, en cada entorno:
-
-   ```bash
-   make repo-status
-   make verify
-   ```
-
-| Situación | Comando |
-| --- | --- |
-| La rama de desarrollo aún no existe en el repo nuevo | `make repo-branch` y `make repo-sync` |
-| Incorporar un repo ya creado o forkeado | `make repo-sync` |
-| La actualización agregó dependencias Python | `make addons-deps` y, si agregó pines, `make build` |
-| Actualizar módulos ya instalados de un fork | `make addons-update MODULES=<módulos_afectados>` |
-| Comprobar el árbol tras una incorporación o baja | `make repo-status` |
-
----
+1. Crear o forkear el repositorio en la organización propia y declararlo en el catálogo.
+2. Trabajar y probar los cambios en `feat/<nombre>` local.
+3. Integrar la feature o una actualización externa en `19.0-stag`, validar el conjunto en staging y registrar la evidencia.
+4. Promover el conjunto completo mediante PR `19.0-stag → 19.0`; luego sincronizar y verificar producción antes del build.
 
 ## A mano
 
-Elegí si el origen es propio o de terceros, resolvé manualmente los conflictos de
-integración y desinstalá los módulos antes de retirar un repositorio.
+Los forks de terceros conservan `upstream` además de `origin`. Los conflictos de una actualización externa se resuelven en la máquina del operador, antes de publicar `19.0-stag`. No se modifica Git desde el servidor: su credencial es de solo lectura y el webhook solo actualiza candidatos.
+
+`19.0-stag` puede tener varias features. Un PR de promoción incluye todo su delta contra `19.0`, no solo el último cambio. Si el conjunto deja de ser útil, realineá staging con producción según [gestionar ramas de staging](gestionar-ramas-staging.md); no se usa rebase para nombrar esa operación.
 
 ## Comandos
 
-Las operaciones de crear, actualizar y eliminar están organizadas como subsecciones
-de este bloque.
-
-### Crear
-
-**A mano.** **Origen propio:** creá el repositorio vacío en tu organización, con al menos la rama de versión que usa este stack (`TAG` y la versión mayor de Odoo del runtime).
-
-**Origen de terceros:** forkealo a tu organización, en tu proveedor git. No se agrega el repositorio ajeno directo al manifiesto: sin fork no se puede parchear un módulo sin salirse del modelo, y sin un remote propio no hay dónde pushear la integración a staging.
-
-#### Comandos
+Incorporar un repositorio propio o un fork:
 
 ```bash
-# origen propio
-echo "<url-de-tu-repo> custom-addons" >> runtime/addons/catalogo.txt
+$EDITOR runtime/addons/catalogo.txt
+ENTORNO=desarrollo ADDONS_REF=feat/mi-cambio make repo-sync
 ```
+
+Crear una feature local:
 
 ```bash
-# origen de terceros (categoría "oca" o "third-party" según corresponda)
-echo "<url-de-tu-fork> oca" >> runtime/addons/catalogo.txt
+git switch 19.0
+git pull --ff-only origin 19.0
+git switch -c feat/mi-cambio
+# desarrollar y ejecutar las pruebas locales
 ```
 
-En un checkout de desarrollo, si la rama de feature todavía no existe en el repositorio nuevo, creala primero en el repositorio remoto; después `repo-sync` podrá armar el worktree.
+Traer una actualización de un fork de terceros y prepararla para staging:
 
 ```bash
-make repo-sync
+git fetch upstream --prune
+git switch 19.0-stag
+git pull --ff-only origin 19.0-stag
+git merge upstream/19.0
+git push origin 19.0-stag
 ```
 
-Solo si el origen es de terceros, para poder traer versiones nuevas del original más adelante (ver [Actualizar](#actualizar) más abajo):
+Si hay conflictos, resolvelos y probalos localmente antes del push. En staging, sincronizá y validá el conjunto completo:
 
 ```bash
-git -C runtime/addons/.repos/<repo>.git remote add upstream <url-del-original>
-git -C runtime/addons/.repos/<repo>.git fetch upstream
+ENTORNO=staging make repo-sync
+ENTORNO=staging make addons-deps
+ENTORNO=staging make build
+ENTORNO=staging make apply-image
+ENTORNO=staging make validate-image NOTE="validación del conjunto 19.0-stag"
+ENTORNO=staging make verify
 ```
 
-#### Verificación
+Después de aprobar y fusionar el PR `19.0-stag → 19.0`:
 
 ```bash
-make repo-status
+ENTORNO=produccion make repo-sync
+ENTORNO=produccion make promotion-verify
+ENTORNO=produccion make addons-deps
+ENTORNO=produccion make build
 ```
 
-Tiene que mostrar el repositorio, limpio, en la rama declarada. Si es de terceros:
+`promotion-verify` debe terminar bien antes de aplicar la imagen productiva. La instalación, actualización o desinstalación de módulos sigue siendo manual y se realiza solo después de preservar el backup requerido.
+
+Retirar un repositorio:
 
 ```bash
-git -C runtime/addons/.repos/<repo>.git remote -v
+ENTORNO=<entorno> make addons-uninstall MODULES=<modulos>
+$EDITOR runtime/addons/catalogo.txt
+ENTORNO=<entorno> make repo-status
 ```
 
-Tiene que listar `upstream` además de `origin`.
-
----
-
-### Actualizar
-
-Requiere haber trackeado `upstream` al crear el fork (ver [Crear](#crear) más arriba).
-
-#### Comandos
-
-```bash
-git -C runtime/addons/.repos/<repo>.git fetch upstream
-
-git checkout <rama>-stag
-git merge upstream/<rama>
-```
-
-**Si aparece un conflicto**, es porque ya tenías un `feat/*` propio mergeado sobre alguno de los módulos que trae esta actualización. Resolvelo acá, a mano, con criterio de negocio — es el único paso de este procedimiento que puede pedir juicio en vez de solo comandos, y no hay atajo automático.
-
-```bash
-git push --force origin <rama>-stag
-```
-
-Traer y validar en el servidor de staging:
-
-```bash
-make repo-sync
-make addons-deps
-make build   # solo si addons-deps agregó o cambió pines
-make addons-update MODULES=<módulos_afectados>   # o addons-install si alguno es nuevo
-make addons-modules
-docker compose logs --since 5m odoo
-make verify
-```
-
-Revisá los logs de la actualización y probá en la UI de staging el flujo de cada módulo afectado, contra los datos restaurados de producción. Confirmá que no salió correo real: `ODOO_DISABLE_SMTP=1` lo bloquea. Si el cambio modifica registros existentes, comprobá también la migración. No promociones hasta que estas pruebas y `make verify` estén en verde.
-
-`repo-sync` deja el worktree exactamente en `origin/<rama>-stag`, incluso cuando staging se reescribió con `--force`. Descarta cambios, commits locales y archivos no seguidos, así que cualquier trabajo a conservar tiene que estar pusheado antes de sincronizar.
-
-Probá de verdad en staging. Recién validado, promover:
-
-```bash
-git checkout <rama>
-git merge upstream/<rama>   # o merge de la rama de staging, si hubo que resolver un conflicto ahí
-git push origin <rama>
-```
-
-Aplicar en producción:
-
-```bash
-make repo-sync
-make addons-deps
-make build   # solo si addons-deps agregó o cambió pines
-make addons-update MODULES=<módulos-afectados>   # o addons-install si alguno es nuevo
-```
-
-Confirmá la versión instalada y revisá los logs recientes:
-
-```bash
-make addons-modules
-docker compose logs --since 10m odoo
-```
-
-Probá el flujo específico del cambio en la UI de producción con cuidado; si dispara correo, confirmá que llegó. La validación de producción es de confirmación, no de exploración. Si falla algo que pasó en staging, registrá el caso y ampliá esa prueba para la próxima actualización.
-
-#### Verificación
-
-```bash
-make repo-status      # limpio, en la rama esperada, en cada checkout
-make addons-modules   # en producción, muestra la versión nueva
-make verify
-```
-
----
-
-### Eliminar
-
-**Objetivo** — el repo fuera de `runtime/addons/catalogo.txt`, su worktree y su clon bare borrados, y —si el módulo estaba instalado— desinstalado de la base antes de tocar el código.
-
-#### A mano
-
-Si alguno de los módulos del repo está instalado en una base, desinstalalo desde ahí antes de seguir con `make addons-uninstall MODULES=<nombre_tecnico>`. El comando usa la API ORM interna de Odoo, muestra los módulos dependientes que también serán afectados y exige confirmación explícita. Dejar registros en `ir_module_module` apuntando a código que ya no existe puede romper el próximo arranque o `make addons-update`.
-
-Repetí la desinstalación y la baja de la línea del catálogo en desarrollo, staging y producción: `runtime/addons/catalogo.txt` es local a cada checkout y no se promueve por Git.
-
-#### Comandos
-
-```bash
-nano runtime/addons/catalogo.txt   # sacar la línea del repo
-```
-
-```bash
-git -C runtime/addons/.repos/<repo>.git worktree remove --force runtime/addons/<categoria>/<repo>
-rm -rf runtime/addons/.repos/<repo>.git
-```
-
-Nada que reconstruir: el `addons_path` sale de un glob en runtime sobre lo que hay en disco, así que alcanza con reiniciar el contenedor para que deje de verlo.
-
-```bash
-docker compose restart odoo
-```
-
-```bash
-make repo-status
-make verify
-```
-
-#### Verificación
-
-Ya no debería listar ese repo ni marcarlo como huérfano.
+Repetí la desinstalación y el retiro del catálogo en cada entorno que tenga módulos instalados. Los candidatos huérfanos se conservan visibles para limpieza manual; no se eliminan automáticamente.
 
 ## Verificación
 
-El repositorio debe quedar declarado o retirado según la operación, limpio, en la rama
-esperada y sin worktrees ni clones bare huérfanos. En forks de terceros, `upstream`
-debe seguir disponible para futuras actualizaciones.
-
----
-
-**Nota de contexto — precedencia entre categorías.** Si dos módulos comparten nombre técnico, gana el de la categoría que va primero: `enterprise > custom > oca > third-party > core de Odoo`. El `addons_path` se arma recorriendo las categorías en ese orden — vale la pena tenerlo presente al elegir el nombre técnico de un módulo nuevo.
+En staging, `repo-status` debe mostrar los candidatos de `19.0-stag` y `images.json` debe registrar una `Actual` con `validation.result: ok`. Tras el PR, `ENTORNO=produccion make promotion-verify` debe confirmar árboles de addons, edición y procedencia Enterprise equivalentes antes del build productivo.

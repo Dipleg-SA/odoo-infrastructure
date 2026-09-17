@@ -19,9 +19,9 @@ crear_addon() {
   mkdir -p "$dir/$nombre"
   printf "{'name': '%s'}\n" "$nombre" > "$dir/$nombre/__manifest__.py"
   git -C "$dir" add -A && git -C "$dir" commit -qm "base"
-  git -C "$dir" checkout -qb 19.0-dev
-  printf 'dev\n' >> "$dir/$nombre/__manifest__.py"
-  git -C "$dir" commit -qam "dev"
+  git -C "$dir" checkout -qb feat/prueba
+  printf 'feature\n' >> "$dir/$nombre/__manifest__.py"
+  git -C "$dir" commit -qam "feature"
   git -C "$dir" checkout -q 19.0
   git -C "$dir" checkout -qb 19.0-stag
   printf 'staging\n' >> "$dir/$nombre/__manifest__.py"
@@ -54,7 +54,7 @@ declarar() { printf '%s\n' "$2" >> "$1/runtime/addons/catalogo.txt"; }
 ejecutar() {
   local root="$1" entorno="$2" verbo="$3"
   shift 3
-  (cd "$root" && ENTORNO="$entorno" ./scripts/addons.sh "$verbo" "$@" 2>&1)
+  (cd "$root" && ENTORNO="$entorno" ADDONS_REF="${ADDONS_REF:-}" ./scripts/addons.sh "$verbo" "$@" 2>&1)
 }
 codigo() {
   local salida retorno
@@ -68,7 +68,7 @@ codigo() {
 commit_candidato() { cat "$1/runtime/addons/custom/$2/$3/.candidate-commit" 2>/dev/null; }
 
 # Ramas por runtime
-# Desarrollo, staging y producción publican la revisión de su rama fija.
+# Desarrollo publica una feature explícita; staging y producción conservan sus referencias fijas.
 ADDON=$(crear_addon dominio_ventas)
 ROOT=$(crear_checkout caso-ramas)
 declarar "$ROOT" "$ADDON"
@@ -87,16 +87,26 @@ igual "el bare compartido vive en runtime/addons" "0" \
 contiene "status registra el commit publicado" "$STAGING_COMMIT" \
   "$(ejecutar "$ROOT" staging status)"
 
-igual "sync de desarrollo termina bien" "0" "$(codigo "$ROOT" desarrollo sync)"
-DEV_COMMIT=$(git -C "$ADDON" rev-parse 19.0-dev)
-igual "desarrollo publica el commit de 19.0-dev" "$DEV_COMMIT" \
+igual "desarrollo sin ADDONS_REF falla" "2" "$(codigo "$ROOT" desarrollo sync)"
+igual "sync de desarrollo con feature termina bien" "0" \
+  "$(ADDONS_REF=feat/prueba codigo "$ROOT" desarrollo sync)"
+DEV_COMMIT=$(git -C "$ADDON" rev-parse feat/prueba)
+igual "desarrollo publica el commit de feat/prueba" "$DEV_COMMIT" \
+  "$(commit_candidato "$ROOT" desarrollo dominio_ventas)"
+igual "desarrollo rechaza una referencia que no es feature" "2" \
+  "$(ADDONS_REF=main codigo "$ROOT" desarrollo sync)"
+igual "la referencia inválida conserva el candidato" "$DEV_COMMIT" \
   "$(commit_candidato "$ROOT" desarrollo dominio_ventas)"
 igual "desarrollo no comparte la ruta de staging" "1" \
   "$([ "$ROOT/runtime/addons/custom/desarrollo/dominio_ventas" -ef "$ROOT/runtime/addons/custom/staging/dominio_ventas" ]; echo $?)"
+igual "staging rechaza ADDONS_REF" "2" \
+  "$(ADDONS_REF=feat/prueba codigo "$ROOT" staging sync)"
 igual "sync de producción termina bien" "0" "$(codigo "$ROOT" produccion sync)"
 PROD_COMMIT=$(git -C "$ADDON" rev-parse 19.0)
 igual "producción publica el commit base" "$PROD_COMMIT" \
   "$(commit_candidato "$ROOT" produccion dominio_ventas)"
+igual "producción rechaza ADDONS_REF" "2" \
+  "$(ADDONS_REF=feat/prueba codigo "$ROOT" produccion sync)"
 igual "sync conserva la referencia base de Odoo" "FROM odoo:19.0" \
   "$(cat "$ROOT/stacks/odoo/image/Dockerfile")"
 no_contiene "no materializa candidatos en addons raíz" "addons/custom-addons" \
@@ -117,6 +127,19 @@ igual "staging avanza al nuevo commit" "$NUEVO_STAGING" \
 igual "desarrollo conserva su commit" "$PREVIO_DEV" \
   "$(commit_candidato "$ROOT" desarrollo dominio_ventas)"
 igual "producción conserva su commit" "$PREVIO_PROD" \
+  "$(commit_candidato "$ROOT" produccion dominio_ventas)"
+
+# Realineación de staging
+# Al volver la rama de staging a producción, solo se reemplaza su candidato publicado.
+git -C "$ADDON" checkout -q 19.0-stag
+git -C "$ADDON" reset --hard -q 19.0
+git -C "$ADDON" checkout -q 19.0
+igual "sync posterior a la realineación termina bien" "0" "$(codigo "$ROOT" staging sync)"
+REALINEADO_STAGING=$(git -C "$ADDON" rev-parse 19.0-stag)
+igual "staging queda en el commit realineado" "$PROD_COMMIT" "$REALINEADO_STAGING"
+igual "la realineación reemplaza el candidato de staging" "$REALINEADO_STAGING" \
+  "$(commit_candidato "$ROOT" staging dominio_ventas)"
+igual "la realineación conserva el candidato productivo" "$PREVIO_PROD" \
   "$(commit_candidato "$ROOT" produccion dominio_ventas)"
 
 # Reemplazo íntegro del candidato
@@ -186,8 +209,9 @@ contiene "y nombra la plantilla para copiar" "runtime/addons/catalogo.txt.exampl
 printf '%s\n' "$ADDON" > "$ROOT/runtime/addons/catalogo.txt"
 
 RAMA_ANTERIOR=$(commit_candidato "$ROOT" desarrollo dominio_ventas)
-git -C "$ADDON" branch -D 19.0-dev >/dev/null
-igual "una rama ausente hace fallar el sync" "1" "$(codigo "$ROOT" desarrollo sync)"
+git -C "$ADDON" branch -D feat/prueba >/dev/null
+igual "una feature ausente hace fallar el sync" "1" \
+  "$(ADDONS_REF=feat/prueba codigo "$ROOT" desarrollo sync)"
 igual "un fallo conserva el candidato anterior" "$RAMA_ANTERIOR" \
   "$(commit_candidato "$ROOT" desarrollo dominio_ventas)"
 

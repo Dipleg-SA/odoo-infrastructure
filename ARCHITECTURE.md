@@ -346,6 +346,12 @@ Las operaciones de módulos pasan por la API ORM de Odoo mediante los targets
 la imagen `Actual`, y una operación funcional bloquea el rollback de imagen hasta
 restaurar el backup asociado. La instalación o actualización no se dispara por webhook.
 
+**Un repo por módulo, dos ramas fijas de servidor.** Producción usa `19.0` y staging
+usa `19.0-stag`; el desarrollo ocurre localmente en `feat/*`. Staging puede acumular
+features y su validación cubre siempre el conjunto completo frente a producción. La
+promoción se hace por PR `19.0-stag → 19.0`; si se descartan cambios, staging se
+realinea explícitamente con producción después de publicar una referencia de respaldo.
+
 **Precedencia si dos módulos coinciden en nombre:** `enterprise` > `custom-addons` >
 `oca` > `third-party` > core. La arma el entrypoint recorriendo las categorías en ese
 orden, por glob y no por un listado a mano. **Advertencia:** Odoo no documenta la
@@ -827,6 +833,7 @@ distinta:
 | Nombre de proyecto | `odoo-produccion`         | `odoo-staging`          | `odoo-desarrollo`       |
 | Entrypoint         | `runtime/produccion/compose.yaml` | `runtime/staging/compose.yaml` | `runtime/desarrollo/compose.yaml` |
 | Addons             | candidatos de producción | candidatos de staging  | candidatos de desarrollo |
+| Rama de addons     | `19.0`                    | `19.0-stag`             | `feat/*` explícita      |
 | Backup              | activo                    | solo restore            | no                      |
 | Observabilidad     | activa                    | no                      | no                      |
 

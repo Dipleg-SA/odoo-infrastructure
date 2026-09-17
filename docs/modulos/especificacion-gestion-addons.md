@@ -33,7 +33,7 @@ El checkout de Enterprise pertenece a una única línea mayor y se selecciona po
 ## Contratos implementados
 
 - Toda operación usa `ENTORNO=desarrollo|staging|produccion`; sin esa variable falla antes de Compose.
-- `scripts/addons.sh` sincroniza únicamente la rama derivada del entorno y publica el SHA completo en `.candidate-commit`.
+- `scripts/addons.sh` sincroniza `ADDONS_REF=feat/*` solo en desarrollo, `19.0-stag` en staging y `19.0` en producción; publica el SHA completo en `.candidate-commit`.
 - El webhook valida firma, catálogo y rama; actualiza solo el candidato y usa el lock del entorno.
 - `scripts/build-odoo-image.sh` toma el mismo lock, exporta SHAs desde clones bare, copia solo la edición seleccionada y los dominios a la fotografía, resuelve dependencias y registra Nueva después de obtener digest.
 - `stacks/odoo/compose.yaml` consume `ODOO_IMAGE` y no monta addons del host. El entrypoint usa Enterprise, dominios propios y Community, en ese orden.
@@ -44,11 +44,11 @@ El checkout de Enterprise pertenece a una única línea mayor y se selecciona po
 ## Flujo de promoción
 
 ```text
-feat/* → 19.0-dev → 19.0-stag → 19.0
-webhook → Candidato → build → Nueva → validación manual → Actual
+feat/* local → 19.0-stag → PR aprobado → 19.0
+webhook → Candidato → build/apply manual → Actual validada → promotion-verify
 ```
 
-La promoción se ejecuta por entorno y de forma serializada. Desarrollo y staging se pueden descartar y volver a sembrar. Producción crea el backup previo mediante `apply-image`. Si `ODOO_EDITION` cambia, el preflight consulta la base y la promoción conserva la edición anterior como frontera de recuperación.
+La promoción se ejecuta por entorno y de forma serializada. Staging puede contener varias features; su validación y el PR incluyen todo el delta con producción. Si se descartan cambios, staging se realinea explícitamente con `19.0`, conservando un respaldo Git; no es un rebase. Producción crea el backup previo mediante `apply-image`. Si `ODOO_EDITION` cambia, el preflight consulta la base y la promoción conserva la edición anterior como frontera de recuperación.
 
 ## Edición en candidatos y fotografías
 

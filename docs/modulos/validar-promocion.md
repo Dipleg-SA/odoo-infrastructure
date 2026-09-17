@@ -10,25 +10,26 @@ Dejar evidencia manual y conservar una reversión consistente.
 
 ## Flujo rápido
 
-1. Validar la imagen en desarrollo.
-2. Restaurar y validar en staging.
-3. Aplicar en producción solo con la evidencia anterior aprobada.
+1. Probar la feature localmente.
+2. Restaurar y validar en staging el conjunto completo de `19.0-stag`.
+3. Promover ese conjunto por PR y verificar la equivalencia antes del build productivo.
 
 ## A mano
 
-Validá la imagen en desarrollo, luego staging con datos restaurados de producción y finalmente producción. Si cambia `ODOO_EDITION`, ejecutá el preflight de solo lectura en cada entorno y no ejecutes operaciones funcionales desde el webhook.
+Validá la feature localmente, luego staging con datos restaurados de producción. La evidencia se registra con `validate-image` sobre la imagen `Actual` de staging e identifica el conjunto de `19.0-stag` probado. No promociones si esa imagen no tiene `validation.result: ok`, si la nota no identifica la prueba o si staging cambió después de validar. Si cambia `ODOO_EDITION`, ejecutá el preflight de solo lectura en cada entorno y no ejecutes operaciones funcionales desde el webhook.
 
 ## Comandos
 
 ```bash
-ENTORNO=desarrollo make validate-image NOTE="flujo funcional aprobado"
 ENTORNO=desarrollo make apply-image
 ENTORNO=staging make restore SNAPSHOT=latest
-ENTORNO=staging make validate-image NOTE="regresión aprobada"
+ENTORNO=staging make repo-sync
+ENTORNO=staging make build
 ENTORNO=staging make apply-image
-ENTORNO=produccion make validate-image NOTE="staging aprobado"
-ENTORNO=produccion make apply-image
+ENTORNO=staging make validate-image NOTE="regresión aprobada para el conjunto 19.0-stag"
 ```
+
+Después de la validación, abrí el PR `19.0-stag → 19.0`. Su revisión cubre todo el delta validado; una feature adicional exige validar nuevamente el conjunto. Una vez fusionado y sincronizados los candidatos productivos, ejecutá `ENTORNO=produccion make promotion-verify` antes de construir la imagen de producción.
 
 `apply-image` mueve Nueva a Actual y conserva la Actual previa en Anterior. Si una validación falla sin operaciones de módulos, ejecutá `rollback-image`. Si hubo operaciones de módulos, restaurá el backup asociado antes de recuperar la imagen.
 
@@ -41,4 +42,4 @@ ENTORNO=<entorno> scripts/image-state.sh show
 ENTORNO=<entorno> make verify
 ```
 
-La procedencia y la nota de validación deben corresponder a la imagen ejecutada.
+La procedencia y la nota de validación deben corresponder a la imagen ejecutada. `promotion-verify` debe confirmar que los árboles de todos los addons, la edición y la procedencia Enterprise de producción coinciden con la imagen Actual validada en staging.
