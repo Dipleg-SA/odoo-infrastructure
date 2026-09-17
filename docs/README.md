@@ -51,12 +51,20 @@ No se interpretan bloques `[community]` o `[enterprise]` y no se mantiene un seg
 archivo de perfiles. Enterprise conserva su checkout privado y su procedencia; Community
 no lo necesita ni lo incorpora aunque quede un checkout residual.
 
+## Selección de addons
+
+El mismo `compose.env` declara `ADDONS_REF`: desarrollo usa una rama `feat/*`, staging
+usa `19.0-stag` y producción `19.0`. `repo-sync` inicializa una feature de desarrollo
+ausente desde `19.0`; los otros entornos solo consumen sus referencias fijas.
+
 ## Cobertura
 
 Los procedimientos están agrupados en `entorno/`, `modulos/`, `backup-restore/`,
 `operacion/` y `credenciales/`. Cada documento indica cuándo se usa, objetivo, flujo
 rápido cuando corresponde, comandos y verificación. La procedencia de edición, los
 backups y los restores forman parte del procedimiento, no de una configuración paralela.
+La credencial de [gestión de ramas de desarrollo](credenciales/configurar-credencial-git-desarrollo.md)
+es distinta de las credenciales de solo lectura de staging y producción.
 
 ## Verificaciones
 

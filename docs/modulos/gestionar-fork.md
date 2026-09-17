@@ -6,7 +6,7 @@ Para incorporar, actualizar o retirar un repositorio propio o forkeado de tercer
 
 ## Objetivo
 
-Mantener un repositorio por dominio, declarado en `runtime/addons/catalogo.txt`, con ramas de servidor `19.0-stag` y `19.0`. El desarrollo se hace localmente en `feat/*`; el servidor solo recibe candidatos de staging y producción.
+Mantener un repositorio por dominio, declarado en `runtime/addons/catalogo.txt`, con ramas `feat/*`, `19.0-stag` y `19.0`. Desarrollo inicializa su feature desde producción; el servidor solo recibe candidatos de staging y producción.
 
 ## Flujo rápido
 
@@ -17,7 +17,7 @@ Mantener un repositorio por dominio, declarado en `runtime/addons/catalogo.txt`,
 
 ## A mano
 
-Los forks de terceros conservan `upstream` además de `origin`. Los conflictos de una actualización externa se resuelven en la máquina del operador, antes de publicar `19.0-stag`. No se modifica Git desde el servidor: su credencial es de solo lectura y el webhook solo actualiza candidatos.
+Los forks de terceros conservan `upstream` además de `origin`. Desarrollo puede inicializar una `feat/*` con su credencial acotada; staging y producción no modifican Git y sus credenciales son de solo lectura. Los conflictos de una actualización externa se resuelven antes de publicar `19.0-stag`.
 
 `19.0-stag` puede tener varias features. Un PR de promoción incluye todo su delta contra `19.0`, no solo el último cambio. Si el conjunto deja de ser útil, realineá staging con producción según [gestionar ramas de staging](gestionar-ramas-staging.md); no se usa rebase para nombrar esa operación.
 
@@ -27,16 +27,15 @@ Incorporar un repositorio propio o un fork:
 
 ```bash
 $EDITOR runtime/addons/catalogo.txt
-ENTORNO=desarrollo ADDONS_REF=feat/mi-cambio make repo-sync
+ENTORNO=desarrollo make repo-sync
 ```
 
-Crear una feature local:
+Cambiar la feature declarada en desarrollo:
 
 ```bash
-git switch 19.0
-git pull --ff-only origin 19.0
-git switch -c feat/mi-cambio
-# desarrollar y ejecutar las pruebas locales
+$EDITOR runtime/desarrollo/compose.env
+# ADDONS_REF=feat/mi-cambio
+ENTORNO=desarrollo make repo-sync
 ```
 
 Traer una actualización de un fork de terceros y prepararla para staging:

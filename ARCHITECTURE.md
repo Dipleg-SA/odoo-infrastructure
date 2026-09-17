@@ -346,11 +346,13 @@ Las operaciones de módulos pasan por la API ORM de Odoo mediante los targets
 la imagen `Actual`, y una operación funcional bloquea el rollback de imagen hasta
 restaurar el backup asociado. La instalación o actualización no se dispara por webhook.
 
-**Un repo por módulo, dos ramas fijas de servidor.** Producción usa `19.0` y staging
-usa `19.0-stag`; el desarrollo ocurre localmente en `feat/*`. Staging puede acumular
-features y su validación cubre siempre el conjunto completo frente a producción. La
-promoción se hace por PR `19.0-stag → 19.0`; si se descartan cambios, staging se
-realinea explícitamente con producción después de publicar una referencia de respaldo.
+**Un repo por módulo, tres referencias por entorno.** Producción consume `19.0`, staging
+consume `19.0-stag` y desarrollo declara una `feat/*`. Al sincronizar desarrollo, una
+feature ausente se crea desde el SHA de `19.0` en cada dominio; staging y producción solo
+leen sus referencias. Staging puede acumular features y su validación cubre siempre el
+conjunto completo frente a producción. La promoción se hace por PR `19.0-stag → 19.0`; si
+se descartan cambios, staging se realinea explícitamente con producción después de publicar
+una referencia de respaldo.
 
 **Precedencia si dos módulos coinciden en nombre:** `enterprise` > `custom-addons` >
 `oca` > `third-party` > core. La arma el entrypoint recorriendo las categorías en ese
@@ -725,10 +727,9 @@ lectura de cualquier contenedor no-root.
 corriendo, con su propio unsealing y su propio backup, para proteger algo que ya se
 protege razonablemente con archivos y permisos correctos.
 
-**Una excepción, acotada y escrita:** la credencial de git con la que el servidor clona
-los módulos no es un secret de Compose. Al clonar en el host, **ningún contenedor la
-consume**, así que vive en el credential store del sistema. Es de solo lectura porque el
-servidor nunca escribe en un repo de addons.
+**Credenciales Git separadas por entorno:** ninguna es un secret de Compose porque el
+clonado ocurre en el host. Desarrollo usa una credencial acotada a crear y actualizar
+`feat/*`; staging y producción conservan lectura porque nunca escriben en un repo de addons.
 
 **El backup de los secretos va aparte** del pipeline usado para el resto de los datos:
 si el servidor se pierde por completo, hace falta ese directorio para redesplegar.

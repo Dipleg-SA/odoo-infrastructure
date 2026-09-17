@@ -2,9 +2,9 @@
 
 ## Cuándo se usa
 
-Antes de sincronizar addons — lo pide `repo-sync` para clonar los repos privados del manifiesto (los públicos no lo necesitan). **No es un secret de Compose**: vive en `~/.git-credentials` del host, nunca dentro de un contenedor, porque el clonado ocurre en el host y ningún contenedor lo consume.
+Antes de sincronizar addons en staging o producción — lo pide `repo-sync` para clonar los repos privados del manifiesto (los públicos no lo necesitan). Desarrollo requiere la credencial distinta de [gestión de ramas](configurar-credencial-git-desarrollo.md). **No es un secret de Compose**: vive en `~/.git-credentials` del host, nunca dentro de un contenedor, porque el clonado ocurre en el host y ningún contenedor lo consume.
 
-Se genera **una vez por máquina**, no por checkout: `credential.helper store` se configura `--global` y escribe en `~/.git-credentials`, así que producción y staging en el mismo servidor comparten uno solo. Hace falta uno nuevo en cada máquina de desarrollo (ver [levantar-desarrollo](../entorno/levantar-desarrollo.md)) y en cada stack que viva en otro host.
+Se genera **una vez por máquina**, no por checkout: `credential.helper store` se configura `--global` y escribe en `~/.git-credentials`, así que producción y staging en el mismo servidor comparten uno solo. Cada stack que viva en otro host necesita el suyo; desarrollo usa la credencial separada de gestión de ramas.
 
 ## Objetivo
 

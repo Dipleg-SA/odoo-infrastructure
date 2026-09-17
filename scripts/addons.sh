@@ -41,7 +41,7 @@ referencia_feature_valida() {
 }
 
 # Selección de ramas
-# Staging y producción son fijas; desarrollo exige que el operador nombre su feature.
+# Cada runtime declara su referencia; desarrollo puede inicializar una feature desde producción.
 case "$ENTORNO" in
   desarrollo)
     if ! referencia_feature_valida "${ADDONS_REF:-}"; then
@@ -51,18 +51,18 @@ case "$ENTORNO" in
     RAMA="$ADDONS_REF"
     ;;
   staging)
-    if [[ -n "${ADDONS_REF:-}" ]]; then
-      printf 'ADDONS_REF solo se admite con ENTORNO=desarrollo\n' >&2
+    if [ "${ADDONS_REF:-}" != "${VERSION}-stag" ]; then
+      printf 'ADDONS_REF debe ser %s para ENTORNO=staging\n' "${VERSION}-stag" >&2
       exit 2
     fi
-    RAMA="${VERSION}-stag"
+    RAMA="$ADDONS_REF"
     ;;
   produccion)
-    if [[ -n "${ADDONS_REF:-}" ]]; then
-      printf 'ADDONS_REF solo se admite con ENTORNO=desarrollo\n' >&2
+    if [ "${ADDONS_REF:-}" != "$VERSION" ]; then
+      printf 'ADDONS_REF debe ser %s para ENTORNO=produccion\n' "$VERSION" >&2
       exit 2
     fi
-    RAMA="$VERSION"
+    RAMA="$ADDONS_REF"
     ;;
 esac
 
@@ -320,6 +320,34 @@ ensure_bare() {
   BARE_RESULT="$bare"
 }
 
+# Inicialización de feature de desarrollo
+# Crea la rama remota desde producción solo cuando todavía no existe en ese dominio.
+inicializar_feature_desarrollo() {
+  local bare="$1" dominio="$2" base err
+  [ "$ENTORNO" = desarrollo ] || return 0
+  if git -C "$bare" rev-parse --verify "refs/remotes/origin/$RAMA^{commit}" >/dev/null 2>&1; then
+    return 0
+  fi
+  if ! base=$(git -C "$bare" rev-parse --verify "refs/remotes/origin/$VERSION^{commit}" 2>/dev/null); then
+    fail "$dominio: origin/$VERSION no existe, no se puede inicializar $RAMA"
+    return 1
+  fi
+  if ! err=$(git -C "$bare" push origin "$base:refs/heads/$RAMA" 2>&1); then
+    git -C "$bare" fetch --prune origin >/dev/null 2>&1 || true
+    if git -C "$bare" rev-parse --verify "refs/remotes/origin/$RAMA^{commit}" >/dev/null 2>&1; then
+      warn "$dominio: origin/$RAMA apareció durante la inicialización; se reutiliza"
+      return 0
+    fi
+    fail "$dominio: no se pudo inicializar origin/$RAMA desde origin/$VERSION — $err"
+    return 1
+  fi
+  git -C "$bare" fetch --prune origin >/dev/null 2>&1 || {
+    fail "$dominio: se creó origin/$RAMA pero no se pudo actualizar el clon bare"
+    return 1
+  }
+  ui_ok "$dominio: origin/$RAMA inicializada desde ${base:0:12}"
+}
+
 # Publicación de candidato
 # Exporta un commit completo y reemplaza el árbol solo después de extraerlo.
 publicar_candidato() {
@@ -375,6 +403,7 @@ sync_repo() {
   fi
   ensure_bare "$url" "$dominio" || return 1
   bare="$BARE_RESULT"
+  inicializar_feature_desarrollo "$bare" "$dominio" || return 1
   if ! commit=$(git -C "$bare" rev-parse --verify "refs/remotes/origin/$RAMA^{commit}" 2>/dev/null); then
     fail "$dominio: origin/$RAMA no existe, no se puede sincronizar"
     return 1

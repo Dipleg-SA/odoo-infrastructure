@@ -496,9 +496,9 @@ no_contiene "workspace no muestra builds" 'runtime/addons/builds' \
   "$(cat "$ROOT_WS/workspace-staging.code-workspace")"
 igual "workspace no escribe configuración auxiliar" "0" \
   "$([ ! -e "$ROOT_WS/.vscode/settings.json" ] && [ ! -e "$ROOT_WS/runtime/addons/.vscode/settings.json" ]; echo $?)"
-TARGET_WORKSPACE=$(make -n ENTORNO=staging dev-workspace 2>&1)
-contiene "dev-workspace avisa su reemplazo" "dev-workspace está obsoleto" "$TARGET_WORKSPACE"
-contiene "dev-workspace delega al workspace operativo" "make runtime-workspace" "$TARGET_WORKSPACE"
+TARGET_WORKSPACE=$(make -n ENTORNO=staging workspace 2>&1)
+contiene "workspace usa el selector de entorno" "scripts/lib/contexto.sh validar" "$TARGET_WORKSPACE"
+contiene "workspace ejecuta su generador" "scripts/vscode-workspace.sh" "$TARGET_WORKSPACE"
 sale_con "workspace sin candidatos explica cómo sincronizar" 1 \
   bash -c "cd '$ROOT_WS' && rm -rf runtime/addons/custom/staging && ENTORNO=staging ./scripts/vscode-workspace.sh"
 

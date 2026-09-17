@@ -18,9 +18,27 @@ trap 'rm -rf "$TMP"' EXIT
 cp scripts/lib/contexto.sh "$ROOT/scripts/lib/contexto.sh"
 chmod +x "$ROOT/scripts/lib/contexto.sh"
 
+# Plantillas de referencia
+# Cada runtime declara la rama que repo-sync consume o inicializa.
+
+for entorno in desarrollo staging produccion; do
+  case "$entorno" in
+    desarrollo) referencia=feat/desarrollo ;;
+    staging) referencia=19.0-stag ;;
+    produccion) referencia=19.0 ;;
+  esac
+  igual "$entorno declara ADDONS_REF" "$referencia" \
+    "$(sed -n 's/^ADDONS_REF=//p' "$REPO_ROOT/runtime/$entorno/compose.env.example")"
+done
+
 # Checkout de prueba
 # Cada runtime tiene valores distintos para detectar cargas cruzadas.
 for entorno in desarrollo staging produccion; do
+  case "$entorno" in
+    desarrollo) referencia=feat/desarrollo ;;
+    staging) referencia=19.0-stag ;;
+    produccion) referencia=19.0 ;;
+  esac
   mkdir -p "$ROOT/runtime/$entorno"
   cat > "$ROOT/runtime/$entorno/compose.yaml" <<EOF
 name: prueba-$entorno
@@ -33,6 +51,7 @@ COMPOSE_PROFILES=lan
 RUNTIME_CONFIG_DIR=esta-ruta-debe-ser-derivada
 ODOO_EDITION=community
 TAG=19.0-ce-2026-09-16
+ADDONS_REF=$referencia
 EOF
 done
 mkdir -p "$ROOT/stacks/odoo/image"
@@ -67,7 +86,7 @@ igual "ENTORNO desconocido no invoca Docker" "0" "$([ ! -e "$STUB_DIR/llamadas" 
 # Cada llamada usa solo el compose.env y compose.yaml del entorno seleccionado.
 for entorno in desarrollo staging produccion; do
   reset_stub
-  unset COMPOSE_PROJECT_NAME MARCADOR_ENTORNO
+  unset COMPOSE_PROJECT_NAME MARCADOR_ENTORNO ADDONS_REF
   ENTORNO="$entorno"
   export ENTORNO
   . "$ROOT/scripts/lib/contexto.sh"
@@ -76,6 +95,12 @@ for entorno in desarrollo staging produccion; do
   igual "$entorno carga su composición" "0" "$codigo"
   igual "$entorno carga su identidad" "prueba-$entorno" "$COMPOSE_PROJECT_NAME"
   igual "$entorno carga solo su marcador" "$entorno" "$MARCADOR_ENTORNO"
+  case "$entorno" in
+    desarrollo) referencia=feat/desarrollo ;;
+    staging) referencia=19.0-stag ;;
+    produccion) referencia=19.0 ;;
+  esac
+  igual "$entorno carga su referencia de addons" "$referencia" "$ADDONS_REF"
   igual "$entorno deriva su ruta privada" "$ROOT/runtime/$entorno/config" "$RUNTIME_CONFIG_DIR"
   igual "$entorno deriva la línea de Odoo" "19.0" "$(contexto_odoo_version)"
   printf 'nginx\n' > "$STUB_DIR/servicios"

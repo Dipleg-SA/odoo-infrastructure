@@ -6,7 +6,7 @@ Para publicar una feature en staging, promover un conjunto validado a producció
 
 ## Objetivo
 
-Mantener `19.0-stag` como el conjunto que se prueba en el servidor y `19.0` como la rama estable de producción. Las ramas `feat/*` se trabajan localmente; no existe una rama operativa `19.0-dev`.
+Mantener `19.0-stag` como el conjunto que se prueba en el servidor y `19.0` como la rama estable de producción. Desarrollo declara una rama `feat/*`, que `repo-sync` inicializa desde `19.0` si falta; no existe una rama operativa `19.0-dev`.
 
 ## Flujo rápido
 
