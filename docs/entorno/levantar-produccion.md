@@ -16,12 +16,14 @@ Producción ejecuta únicamente la imagen Actual declarada, conserva backup de b
 
 ## A mano
 
-Copiá `runtime/produccion/compose.env.example` a `runtime/produccion/compose.env`, completá secretos, red, SMTP y R2. Elegí la edición cambiando solo `ODOO_EDITION` y `TAG`; nunca uses un `.env` raíz para elegir la composición.
+Copiá las tres plantillas antes de iniciar el runtime. `runtime/produccion/compose.env` declara `ADDONS_REF=19.0`; esa rama debe existir en todos los dominios del catálogo y producción nunca la crea ni la sobrescribe.
 
 ## Comandos
 
 ```bash
 cp runtime/produccion/compose.env.example runtime/produccion/compose.env
+cp runtime/addons/catalogo.txt.example runtime/addons/catalogo.txt
+cp runtime/addons/requirements.txt.example runtime/addons/requirements.txt
 ENTORNO=produccion make secrets-init config-init
 sudo ENTORNO=produccion make secrets-perms
 ENTORNO=produccion make host-verify

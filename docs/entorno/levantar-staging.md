@@ -16,12 +16,14 @@ Un runtime aislado que recibe exclusivamente `19.0-stag`, con SMTP desactivado y
 
 ## A mano
 
-Copiá `runtime/staging/compose.env.example` a `runtime/staging/compose.env`, cargá sus secretos y configuración, elegí la edición con `ODOO_EDITION` y `TAG`, y usá siempre `ENTORNO=staging`.
+Copiá las tres plantillas antes de iniciar el runtime. `runtime/staging/compose.env` declara `ADDONS_REF=19.0-stag`; esa rama debe existir en todos los dominios del catálogo y staging nunca la crea ni la sobrescribe.
 
 ## Comandos
 
 ```bash
 cp runtime/staging/compose.env.example runtime/staging/compose.env
+cp runtime/addons/catalogo.txt.example runtime/addons/catalogo.txt
+cp runtime/addons/requirements.txt.example runtime/addons/requirements.txt
 ENTORNO=staging make secrets-init config-init
 sudo ENTORNO=staging make secrets-perms
 ENTORNO=staging make host-verify

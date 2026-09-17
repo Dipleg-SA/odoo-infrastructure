@@ -2,9 +2,9 @@
 
 ## Cuándo se usa
 
-El token de solo lectura sobre tu organización (el que usa `repo-sync` para clonar/traer los repos privados del manifiesto) venció o toca rotarlo. **No es un secret de Compose** — vive en `~/.git-credentials` del host, nunca dentro de un contenedor, porque el clonado ocurre en el host y ningún contenedor lo consume.
+El token de solo lectura de staging o producción (el que usa `repo-sync` para clonar/traer los repos privados del manifiesto) venció o toca rotarlo. La credencial de desarrollo se rota por su procedimiento propio. **No es un secret de Compose** — vive en `~/.git-credentials` del host, nunca dentro de un contenedor, porque el clonado ocurre en el host y ningún contenedor lo consume.
 
-El archivo es **por máquina, no por checkout**: rotarlo una vez en el servidor cubre a producción y staging juntas —comparten `~/.git-credentials`, ver [crear-token-git-lectura](crear-token-git-lectura.md)—, y hay que repetirlo aparte en cada máquina de desarrollo.
+El archivo es **por máquina, no por checkout**: rotarlo una vez en el servidor cubre a producción y staging juntas —comparten `~/.git-credentials`, ver [crear-token-git-lectura](crear-token-git-lectura.md)—. Desarrollo usa una credencial distinta para gestión de ramas.
 
 ## Objetivo
 
@@ -16,8 +16,8 @@ Actualizá todas las máquinas que usan el archivo antes de revocar el token ant
 
 1. **Generar un token nuevo** con lectura de contenidos y ubicar cada máquina que lo usa; ver
    [A mano](#a-mano).
-2. **Reemplazar la credencial en cada máquina** —el servidor una vez para producción y staging, y
-   cada máquina de desarrollo por separado—; ver [Comandos](#comandos).
+2. **Reemplazar la credencial en cada máquina** que ejecute staging o producción; ver
+   [Comandos](#comandos).
 3. **Probar `repo-sync` en todos los checkouts** y revocar el token anterior cuando todos pasen;
    ver [Verificación](#verificación).
 
@@ -27,7 +27,7 @@ Generar el token nuevo en tu proveedor git — alcanza con lectura de contenidos
 
 ## Comandos
 
-En cada máquina (el servidor, una sola vez para producción y staging, y cada máquina de desarrollo):
+En cada máquina que ejecute staging o producción:
 
 ```bash
 echo "# 1 → Sacar la línea vieja"

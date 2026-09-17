@@ -33,7 +33,7 @@ crear_addon() {
 # Checkout de infraestructura
 # El catálogo y los bare clones son compartidos; las composiciones son por runtime.
 crear_checkout() {
-  local root="$TMP/$1" entorno
+  local root="$TMP/$1" entorno referencia
   mkdir -p "$root/scripts/lib" "$root/stacks/odoo/image" "$root/runtime/addons"
   cp "$REPO_ROOT/scripts/addons.sh" "$root/scripts/"
   cp "$REPO_ROOT/scripts/lib/ui.sh" "$REPO_ROOT/scripts/lib/contexto.sh" \
@@ -42,10 +42,15 @@ crear_checkout() {
   : > "$root/runtime/addons/catalogo.txt"
   printf 'FROM odoo:19.0\n' > "$root/stacks/odoo/image/Dockerfile"
   for entorno in desarrollo staging produccion; do
+    case "$entorno" in
+      desarrollo) referencia=feat/desarrollo ;;
+      staging) referencia=19.0-stag ;;
+      produccion) referencia=19.0 ;;
+    esac
     mkdir -p "$root/runtime/$entorno"
     printf 'services: {}\n' > "$root/runtime/$entorno/compose.yaml"
-    printf 'COMPOSE_PROJECT_NAME=test-%s\nODOO_EDITION=community\nTAG=19.0-ce-2026-09-16\n' \
-      "$entorno" > "$root/runtime/$entorno/compose.env"
+    printf 'COMPOSE_PROJECT_NAME=test-%s\nODOO_EDITION=community\nTAG=19.0-ce-2026-09-16\nADDONS_REF=%s\n' \
+      "$entorno" "$referencia" > "$root/runtime/$entorno/compose.env"
   done
   printf '%s' "$root"
 }
@@ -66,9 +71,14 @@ codigo() {
   printf '%s' "$retorno"
 }
 commit_candidato() { cat "$1/runtime/addons/custom/$2/$3/.candidate-commit" 2>/dev/null; }
+referencia_entorno() {
+  local root="$1" entorno="$2" referencia="$3"
+  sed -i.bak "s#^ADDONS_REF=.*#ADDONS_REF=$referencia#" "$root/runtime/$entorno/compose.env"
+  rm -f "$root/runtime/$entorno/compose.env.bak"
+}
 
 # Ramas por runtime
-# Desarrollo publica una feature explícita; staging y producción conservan sus referencias fijas.
+# Desarrollo inicializa su feature; staging y producción conservan sus referencias fijas.
 ADDON=$(crear_addon dominio_ventas)
 ROOT=$(crear_checkout caso-ramas)
 declarar "$ROOT" "$ADDON"
@@ -87,26 +97,31 @@ igual "el bare compartido vive en runtime/addons" "0" \
 contiene "status registra el commit publicado" "$STAGING_COMMIT" \
   "$(ejecutar "$ROOT" staging status)"
 
-igual "desarrollo sin ADDONS_REF falla" "2" "$(codigo "$ROOT" desarrollo sync)"
-igual "sync de desarrollo con feature termina bien" "0" \
-  "$(ADDONS_REF=feat/prueba codigo "$ROOT" desarrollo sync)"
-DEV_COMMIT=$(git -C "$ADDON" rev-parse feat/prueba)
-igual "desarrollo publica el commit de feat/prueba" "$DEV_COMMIT" \
+igual "sync de desarrollo inicializa la feature" "0" "$(codigo "$ROOT" desarrollo sync)"
+DEV_COMMIT=$(git -C "$ADDON" rev-parse feat/desarrollo)
+PROD_BASE=$(git -C "$ADDON" rev-parse 19.0)
+igual "desarrollo crea la feature desde producción" "$PROD_BASE" "$DEV_COMMIT"
+igual "desarrollo publica el commit de feat/desarrollo" "$DEV_COMMIT" \
   "$(commit_candidato "$ROOT" desarrollo dominio_ventas)"
+igual "sync de desarrollo reutiliza la feature" "0" "$(codigo "$ROOT" desarrollo sync)"
+referencia_entorno "$ROOT" desarrollo main
 igual "desarrollo rechaza una referencia que no es feature" "2" \
-  "$(ADDONS_REF=main codigo "$ROOT" desarrollo sync)"
+  "$(codigo "$ROOT" desarrollo sync)"
 igual "la referencia inválida conserva el candidato" "$DEV_COMMIT" \
   "$(commit_candidato "$ROOT" desarrollo dominio_ventas)"
+referencia_entorno "$ROOT" desarrollo feat/desarrollo
 igual "desarrollo no comparte la ruta de staging" "1" \
   "$([ "$ROOT/runtime/addons/custom/desarrollo/dominio_ventas" -ef "$ROOT/runtime/addons/custom/staging/dominio_ventas" ]; echo $?)"
-igual "staging rechaza ADDONS_REF" "2" \
-  "$(ADDONS_REF=feat/prueba codigo "$ROOT" staging sync)"
+referencia_entorno "$ROOT" staging feat/prueba
+igual "staging rechaza una referencia distinta" "2" "$(codigo "$ROOT" staging sync)"
+referencia_entorno "$ROOT" staging 19.0-stag
 igual "sync de producción termina bien" "0" "$(codigo "$ROOT" produccion sync)"
 PROD_COMMIT=$(git -C "$ADDON" rev-parse 19.0)
 igual "producción publica el commit base" "$PROD_COMMIT" \
   "$(commit_candidato "$ROOT" produccion dominio_ventas)"
-igual "producción rechaza ADDONS_REF" "2" \
-  "$(ADDONS_REF=feat/prueba codigo "$ROOT" produccion sync)"
+referencia_entorno "$ROOT" produccion feat/prueba
+igual "producción rechaza una referencia distinta" "2" "$(codigo "$ROOT" produccion sync)"
+referencia_entorno "$ROOT" produccion 19.0
 igual "sync conserva la referencia base de Odoo" "FROM odoo:19.0" \
   "$(cat "$ROOT/stacks/odoo/image/Dockerfile")"
 no_contiene "no materializa candidatos en addons raíz" "addons/custom-addons" \
@@ -208,11 +223,10 @@ contiene "y nombra la plantilla para copiar" "runtime/addons/catalogo.txt.exampl
   "$(ejecutar "$ROOT" staging sync)"
 printf '%s\n' "$ADDON" > "$ROOT/runtime/addons/catalogo.txt"
 
-RAMA_ANTERIOR=$(commit_candidato "$ROOT" desarrollo dominio_ventas)
+referencia_entorno "$ROOT" desarrollo feat/prueba
 git -C "$ADDON" branch -D feat/prueba >/dev/null
-igual "una feature ausente hace fallar el sync" "1" \
-  "$(ADDONS_REF=feat/prueba codigo "$ROOT" desarrollo sync)"
-igual "un fallo conserva el candidato anterior" "$RAMA_ANTERIOR" \
+igual "una feature ausente se inicializa" "0" "$(codigo "$ROOT" desarrollo sync)"
+igual "la feature inicializada reemplaza el candidato" "$(git -C "$ADDON" rev-parse 19.0)" \
   "$(commit_candidato "$ROOT" desarrollo dominio_ventas)"
 
 # Catálogo vacío y huérfanos

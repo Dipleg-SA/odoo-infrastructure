@@ -22,13 +22,13 @@ Mantener una lista blanca de repositorios propios para candidatos e imágenes.
 
 ```bash
 $EDITOR runtime/addons/catalogo.txt
-ENTORNO=desarrollo ADDONS_REF=feat/<nombre> make repo-sync
+ENTORNO=desarrollo make repo-sync
 ENTORNO=staging make repo-sync
 ENTORNO=produccion make repo-sync
-ENTORNO=desarrollo ADDONS_REF=feat/<nombre> make repo-status
+ENTORNO=desarrollo make repo-status
 ```
 
-Cada repositorio nuevo debe tener `19.0-stag` y `19.0`; las features se crean localmente como `feat/*` y se publican de forma controlada sobre `19.0-stag` cuando corresponde probarlas en el servidor. El webhook solo acepta repositorios del catálogo y publica candidatos de staging o producción.
+Cada repositorio nuevo debe tener `19.0-stag` y `19.0`. Desarrollo usa la `feat/*` declarada en su runtime y la inicializa desde `19.0` cuando falta; staging y producción solo consumen sus referencias declaradas. El webhook solo acepta repositorios del catálogo y publica candidatos de staging o producción.
 
 Antes de retirar un repositorio, desinstalá sus módulos, limpiá datos y dependencias manualmente en todos los entornos. Después descartá y recreá desarrollo/staging, eliminá la línea del catálogo y construí nuevas imágenes.
 
