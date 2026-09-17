@@ -112,13 +112,32 @@ requirement_name() {
   sed -E 's/^[[:space:]]*([A-Za-z0-9][A-Za-z0-9._-]*).*/\1/' | norm
 }
 
+# Distribuciones instalables
+# Los manifiestos declaran módulos importables; pip recibe el nombre de su distribución.
+distribution_requirement() {
+  local requirement="$1" name suffix
+  name=$(printf '%s\n' "$requirement" | sed -E 's/^[[:space:]]*([A-Za-z0-9][A-Za-z0-9._-]*).*/\1/')
+  suffix=$(printf '%s\n' "$requirement" | sed -E 's/^[[:space:]]*[A-Za-z0-9][A-Za-z0-9._-]*//')
+  case "$(printf '%s\n' "$name" | norm)" in
+    openssl) printf 'pyOpenSSL%s\n' "$suffix" ;;
+    pil) printf 'Pillow%s\n' "$suffix" ;;
+    yaml) printf 'PyYAML%s\n' "$suffix" ;;
+    dateutil) printf 'python-dateutil%s\n' "$suffix" ;;
+    jwt) printf 'PyJWT%s\n' "$suffix" ;;
+    magic) printf 'python-magic%s\n' "$suffix" ;;
+    ldap) printf 'python-ldap%s\n' "$suffix" ;;
+    *) printf '%s\n' "$requirement" ;;
+  esac
+}
+
 declared_pairs() {
-  local files=() f requirement
+  local files=() f requirement distribution
   while IFS= read -r f; do files+=("$f"); done < <(manifest_files)
   [ "${#files[@]}" -eq 0 ] && return 0
 
   while IFS= read -r requirement; do
-    printf '%s\t%s\n' "$(printf '%s\n' "$requirement" | requirement_name)" "$requirement"
+    distribution=$(distribution_requirement "$requirement")
+    printf '%s\t%s\n' "$(printf '%s\n' "$distribution" | requirement_name)" "$distribution"
   done < <(declared_deps "${files[@]}")
 }
 
