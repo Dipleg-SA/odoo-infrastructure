@@ -53,6 +53,7 @@
 ## Fase 8: Corrección descubierta en verificación
 
 - [x] T026 [FIX][US2] Hacer que `require-odoo-image` cargue el `compose.env` en la misma receta de Make y agregar una regresión que acepte una imagen válida cargada desde el archivo privado.
+- [x] T027 [FIX][US3] Corregir la publicación atómica del webhook en Linux para no volver a mover una carpeta temporal después de `renameat2(RENAME_EXCHANGE)` y confirmar las entregas consecutivas y simultáneas.
 
 ## Verificación
 

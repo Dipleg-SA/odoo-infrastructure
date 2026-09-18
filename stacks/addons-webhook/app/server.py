@@ -429,18 +429,19 @@ def publish_candidate(bare: Path, domain: str, environment: str, commit: str, co
 
         if candidate.exists() and exchange_paths(temporary, candidate):
             clean_path(temporary)
-        elif candidate.exists():
-            backup = candidate_parent / f".{domain}.previous.{os.getpid()}.{uuid.uuid4().hex}"
-            os.replace(candidate, backup)
-        try:
-            os.replace(temporary, candidate)
-        except OSError:
-            if backup is not None and backup.exists():
-                os.replace(backup, candidate)
-                backup = None
-            raise
-        if backup is not None:
-            clean_path(backup)
+        else:
+            if candidate.exists():
+                backup = candidate_parent / f".{domain}.previous.{os.getpid()}.{uuid.uuid4().hex}"
+                os.replace(candidate, backup)
+            try:
+                os.replace(temporary, candidate)
+            except OSError:
+                if backup is not None and backup.exists():
+                    os.replace(backup, candidate)
+                    backup = None
+                raise
+            if backup is not None:
+                clean_path(backup)
     finally:
         if temporary.exists():
             clean_path(temporary)
