@@ -50,12 +50,16 @@
 - [x] T024 [P][DOCS] Actualizar `docs/operacion/operar-backups.md`, `docs/operacion/operar-odoo.md` y `docs/operacion/operar-webhook-addons.md` para retirar referencias a slots, rollback, `apply-image` e `images.json` operativo.
 - [x] T025 [P][DOCS] Actualizar `docs/backup-restore/migrar-deployment-externo.md`, `docs/credenciales/rotar-credenciales-r2.md`, `docs/credenciales/rotar-token-cloudflare-tunnel.md` y `docs/credenciales/rotar-token-git.md` para retirar instrucciones obsoletas vinculadas al ciclo de imágenes.
 
+## Fase 8: Corrección descubierta en verificación
+
+- [x] T026 [FIX][US2] Hacer que `require-odoo-image` cargue el `compose.env` en la misma receta de Make y agregar una regresión que acepte una imagen válida cargada desde el archivo privado.
+
 ## Verificación
 
 - [x] VERIFY Ejecutar `bash -n` sobre `scripts/build-odoo-image.sh`, `scripts/odoo-edition-check.sh`, `scripts/odoo-module-operation.sh`, `scripts/promotion-verify.sh`, los scripts de backup modificados y los tests modificados.
 - [x] VERIFY Ejecutar `make test` y confirmar que todos los tests terminan, sin dejar procesos pendientes.
-- [ ] VERIFY Ejecutar `docker compose config` para desarrollo, staging y producción con sus perfiles requeridos y confirmar que cada composición conserva sus servicios y redes esperados.
-- [ ] VERIFY Ejecutar un build y levantamiento real de desarrollo respetando el orden documentado, ejecutar la verificación correspondiente después de cada stack y confirmar que `postgres-verify` termina correctamente antes de `odoo-up`; finalizar con `make verify`.
+- [x] VERIFY Ejecutar `docker compose config` para desarrollo, staging y producción con sus perfiles requeridos y confirmar que cada composición conserva sus servicios y redes esperados.
+- [x] VERIFY Ejecutar un build y levantamiento real de desarrollo respetando el orden documentado, ejecutar la verificación correspondiente después de cada stack y confirmar que `postgres-verify` termina correctamente antes de `odoo-up`; finalizar con `make verify`.
 - [ ] VERIFY Comprobar staging y producción con sus procedimientos de restore, backup, timers, promoción de código y monitoring, sin exigir `images.json` ni rollback de imagen.
 - [x] VERIFY Confirmar todos los escenarios de aceptación y NFR de `spec.md`.
 - [x] VERIFY Confirmar que ningún MUST de `.specs/constitution.md` queda incumplido y que no se agregaron dependencias nuevas.

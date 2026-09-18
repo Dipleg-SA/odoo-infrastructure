@@ -237,7 +237,9 @@ build: ## Construye las imágenes propias del runtime
 # Impide levantar el runtime con un tag inicial, flotante o inexistente.
 require-odoo-image: require-entorno
 	@. scripts/lib/ui.sh; \
-	image="$${ODOO_IMAGE:-}"; \
+	  . scripts/lib/contexto.sh; \
+	  contexto_iniciar || exit $$?; \
+	  image="$${ODOO_IMAGE:-}"; \
 	if [[ ! "$$image" =~ ^local/odoo:[0-9]+([.][0-9]+)*-(desarrollo|staging|produccion)-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}$$ ]]; then \
 	  ui_bad "ODOO_IMAGE inválida" "ejecutá ENTORNO=$$ENTORNO make build antes de levantar el runtime" >&2; exit 2; \
 	fi; \

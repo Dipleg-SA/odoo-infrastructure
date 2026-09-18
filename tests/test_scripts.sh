@@ -430,6 +430,28 @@ no_contiene "Makefile no expone apply-image" "apply-image:" "$(cat "$REPO_ROOT/M
 no_contiene "Makefile no expone rollback-image" "rollback-image:" "$(cat "$REPO_ROOT/Makefile")"
 no_contiene "la operación de módulos no exige Actual" "no hay imagen Actual" "$(cat "$REPO_ROOT/scripts/odoo-module-operation.sh")"
 
+# La guarda debe cargar compose.env dentro de su propia receta: require-entorno
+# corre en otro proceso y no puede dejar ODOO_IMAGE exportada para el siguiente.
+ROOT_VALID=$(crear_root image-valid)
+printf '%s\n' 'ODOO_IMAGE=local/odoo:19.0-desarrollo-20260918T112428Z-fa588059f4932d2f' >> "$ROOT_VALID/runtime/desarrollo/compose.env"
+mkdir -p "$ROOT_VALID/fakebin"
+cat > "$ROOT_VALID/fakebin/docker" <<'EOF'
+#!/usr/bin/env bash
+# Stub de Docker para comprobar la inspección de una imagen válida.
+# No se ejecuta Compose: solo confirma que la guarda cargó ODOO_IMAGE.
+printf '%s\n' "$*" >> "$STUB_DIR/llamadas"
+case "$*" in
+  *'image inspect local/odoo:'*) exit 0 ;;
+  *) exit 99 ;;
+esac
+EOF
+chmod +x "$ROOT_VALID/fakebin/docker"
+reset_stub
+sale_con "la guarda acepta el selector cargado desde compose.env" 0 env ENTORNO=desarrollo \
+  STUB_DIR="$STUB_DIR" PATH="$ROOT_VALID/fakebin:$PATH" \
+  make -C "$ROOT_VALID" require-odoo-image
+contiene "la guarda inspecciona la imagen seleccionada" "image inspect local/odoo:19.0-desarrollo-20260918T112428Z-fa588059f4932d2f" "$(llamadas)"
+
 # =====================================================================
 titulo "integrity-check, failure-notify y workspace — contratos de auxiliares"
 # =====================================================================
