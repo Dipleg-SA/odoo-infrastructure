@@ -44,9 +44,9 @@ en_backup() {
 
 ui_run "restore del filestore" en_backup restic restore "$SNAPSHOT" --target / --include /data/odoo
 
-# Metadata de procedencia
-# El restore debe usar la metadata del snapshot, no una copia local que puede pertenecer a otro estado.
-ui_run "restore de metadata" en_backup restic restore "$SNAPSHOT" --target / --include /data/meta
+# Metadata del backup
+# El restore recupera el diagnóstico junto con los datos, sin seleccionar una imagen.
+ui_run "restore de metadata del backup" en_backup restic restore "$SNAPSHOT" --target / --include /data/meta
 
 # 100:101 son los uid/gid de Odoo: restaurado como root, el filestore le queda
 # ilegible a la aplicación si no se le devuelve el owner.
@@ -66,15 +66,6 @@ ui_run "recrear la base" compose exec -T postgres sh -c \
 ui_run "cargar el dump" compose exec -T postgres sh -c \
   "psql -U odoo -d odoo -v ON_ERROR_STOP=1 -f $DUMP_PATH"
 
-# Procedencia de imagen
-# El restore debe dejar Actual y Anterior alineadas con el snapshot recuperado.
-if [ -f "$META_DIR/images.json" ]; then
-  scripts/image-state.sh restore-meta "$META_DIR/images.json"
-else
-  ui_bad "falta procedencia de imágenes" "el snapshot no contiene state/meta/images.json"
-  exit 1
-fi
-
 ui_plan_end
-ui_ok "restore listo — levantá la aplicación con make odoo-up para reaplicar la configuración de reportes"
+ui_ok "restore listo — reconstruí o seleccioná la imagen y levantá la aplicación con make odoo-up"
 echo

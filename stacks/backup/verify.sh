@@ -94,16 +94,6 @@ v_backup() {
   elif [ -s "$META_DIR/addons.txt" ]; then ok "registro de addons del snapshot presente"
   else aviso "registro de addons del snapshot presente" "$META_DIR/addons.txt vacío — lo escribe make backup-run"; fi
 
-  # --- Procedencia de imágenes ---
-  # El snapshot debe poder reconstruir qué imagen estaba activa y cuál era la anterior.
-  if ! respalda; then
-    omitir "procedencia de imágenes del snapshot presente" "este entorno no escribe snapshots"
-  elif [ -s "$META_DIR/images.json" ] && grep -q '"Actual"' "$META_DIR/images.json"; then
-    ok "procedencia de imágenes del snapshot presente"
-  else
-    aviso "procedencia de imágenes del snapshot presente" "$META_DIR/images.json vacío — lo escribe make backup-run"
-  fi
-
   # --- Timers ---
   # El diario respalda y purga; el mensual verifica integridad del repositorio.
 

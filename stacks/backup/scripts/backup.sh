@@ -99,24 +99,10 @@ registrar_addons() {
   return 0
 }
 
-# Registro de imágenes
-# Actual y Anterior deben entrar en el mismo snapshot que el dump y el filestore.
-registrar_imagenes() {
-  local tmp="$META_DIR/.images.$$.tmp"
-  mkdir -p "$META_DIR"
-  if [ -x scripts/image-state.sh ] && [ -n "${ENTORNO:-}" ]; then
-    scripts/image-state.sh show > "$tmp"
-  else
-    printf '%s\n' '{"Nueva":null,"Actual":null,"Anterior":null,"validation":null}' > "$tmp"
-  fi
-  chmod 644 "$tmp"
-  mv -f "$tmp" "$META_DIR/images.json"
-}
-
 # Metadata de backup asociado
-# Registra de forma atómica el snapshot y la imagen Actual que quedaron respaldados.
+# Registra de forma atómica el snapshot y el selector vigente como diagnóstico.
 registrar_backup_metadata() {
-  local backup_json="$1" snapshot_id actual_tag tmp
+  local backup_json="$1" snapshot_id odoo_image tmp
   [ -n "${ENTORNO:-}" ] || return 0
   [ -n "${ODOO_EDITION:-}" ] || return 0
 
@@ -138,29 +124,19 @@ print(next((value for value in reversed(ids) if value), ""))
     return 1
   fi
 
-  actual_tag=$(python3 - "$META_DIR/images.json" <<'PY'
-import json, sys
-
-try:
-    state = json.load(open(sys.argv[1], encoding='utf-8'))
-except (OSError, json.JSONDecodeError):
-    state = {}
-actual = state.get('Actual')
-print(actual.get('tag', '') if isinstance(actual, dict) else '')
-PY
-  )
+  odoo_image="${ODOO_IMAGE:-}"
   mkdir -p "$META_DIR"
   tmp=$(mktemp "$META_DIR/.last-backup.XXXXXX")
-  python3 - "$tmp" "$snapshot_id" "$ENTORNO" "$ODOO_EDITION" "$actual_tag" <<'PY'
+  python3 - "$tmp" "$snapshot_id" "$ENTORNO" "$ODOO_EDITION" "$odoo_image" <<'PY'
 import json, sys
 from datetime import datetime, timezone
 
-path, snapshot_id, entorno, edition, actual_tag = sys.argv[1:]
+path, snapshot_id, entorno, edition, odoo_image = sys.argv[1:]
 payload = {
     'snapshot_id': snapshot_id,
     'entorno': entorno,
     'edition': edition,
-    'actual_tag': actual_tag or None,
+    'odoo_image': odoo_image or None,
     'created_at': datetime.now(timezone.utc).isoformat(),
 }
 with open(path, 'w', encoding='utf-8') as output:
@@ -191,14 +167,13 @@ dump_base() {
 ui_plan_start "backup $MODE"
 case "$MODE" in
   daily)
-    # --- Las dos mitades del estado, en un solo snapshot ---
+    # --- Las dos mitades de datos, en un solo snapshot ---
     # Dump y filestore deben entrar en el mismo snapshot.
 
     ui_step 1 "Dump de la base y el filestore en un snapshot restic, con retención GFS aplicada."
     validar_endpoint
     dump_base
     registrar_addons
-    registrar_imagenes
     backup_json=$(res backup --json /data/odoo /data/dump /data/meta --exclude=/data/odoo/sessions)
     registrar_backup_metadata "$backup_json"
     res forget --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" \

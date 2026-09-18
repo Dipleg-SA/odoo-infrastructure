@@ -27,10 +27,10 @@
 
 ## Fase 4: Usar el mismo ciclo en los tres entornos (US3) (P1)
 
-- [ ] T013 [US3] Adaptar `scripts/promotion-verify.sh` para comparar candidatos, edición y procedencia de código de staging y producción sin exigir una imagen `Actual` ni `runtime/staging/state/images.json`.
-- [ ] T014 [US3] Adaptar `stacks/backup/scripts/backup.sh`, `stacks/backup/scripts/restore.sh` y `stacks/backup/verify.sh` para conservar base y filestore, ignorar metadatos legacy de slots de imagen y no restaurar selecciones de imágenes.
-- [ ] T015 [TEST][US3] Actualizar `tests/test_backup.sh` para cubrir backups y restores nuevos, la tolerancia ante metadatos legacy y la ausencia de dependencia operativa de `images.json`.
-- [ ] T016 [TEST][US3] Actualizar `tests/test_promotion_verify.sh` para cubrir la comparación de candidatos y edición sin estado de imágenes.
+- [x] T013 [US3] Adaptar `scripts/promotion-verify.sh` para comparar candidatos, edición y procedencia de código de staging y producción sin exigir una imagen `Actual` ni `runtime/staging/state/images.json`.
+- [x] T014 [US3] Adaptar `stacks/backup/scripts/backup.sh`, `stacks/backup/scripts/restore.sh` y `stacks/backup/verify.sh` para conservar base y filestore, ignorar metadatos legacy de slots de imagen y no restaurar selecciones de imágenes.
+- [x] T015 [TEST][US3] Actualizar `tests/test_backup.sh` para cubrir backups y restores nuevos, la tolerancia ante metadatos legacy y la ausencia de dependencia operativa de `images.json`.
+- [x] T016 [TEST][US3] Actualizar `tests/test_promotion_verify.sh` para cubrir la comparación de candidatos y edición sin estado de imágenes.
 
 ## Fase 5: Levantar el runtime por orden de stacks (US4) (P1)
 

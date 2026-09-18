@@ -49,8 +49,8 @@ services:
       # Dump compartido
       # Restore repone el archivo antes de cargarlo en Postgres.
       - dumps:/data/dump
-      # Metadatos del runtime
-      # Addons e imágenes viajan en el snapshot; los scripts corren en el host.
+      # Metadatos del backup
+      # El registro de addons y del snapshot viaja junto con los datos.
       - ${RUNTIME_STATE_DIR:?falta RUNTIME_STATE_DIR}/meta:/data/meta:rw
     # Healthcheck de repositorio y frescura
     # Detecta tanto fallos de backup como ausencia de corridas recientes.
