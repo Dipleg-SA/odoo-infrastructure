@@ -6,46 +6,73 @@ Para preparar y probar localmente los candidatos de una feature antes de publica
 
 ## Objetivo
 
-Un checkout local aislado que recibe candidatos de la rama `feat/*` declarada en su runtime, ejecuta su propia imagen Odoo y no escribe backups productivos. No existe una rama operativa `19.0-dev` ni un runtime de desarrollo obligatorio en el servidor.
+Un checkout aislado que recibe candidatos de una rama `feat/*`, construye una única imagen Odoo y no ejecuta backups productivos.
 
-## Flujo rápido
-
-1. Preparar el checkout, catálogo, dependencias, secretos y configuración local.
-2. Inicializar o reutilizar la feature declarada desde `19.0`.
-3. Sincronizar addons, resolver dependencias y construir la imagen.
-4. Levantar el runtime y ejecutar `verify`.
-
-## A mano
-
-Copiá las tres plantillas antes de iniciar el runtime. `ADDONS_REF` queda declarada en `runtime/desarrollo/compose.env`; si la rama no existe en un dominio del catálogo, `repo-sync` la crea desde `origin/19.0`. La credencial de esta máquina necesita permiso para crear ramas `feat/*`; staging y producción no reciben ese permiso.
-
-## Comandos
+## Preparación
 
 ```bash
 cp runtime/desarrollo/compose.env.example runtime/desarrollo/compose.env
 cp runtime/addons/catalogo.txt.example runtime/addons/catalogo.txt
 cp runtime/addons/requirements.override.txt.example runtime/addons/requirements.override.txt
+
 ENTORNO=desarrollo make secrets-init config-init
 sudo ENTORNO=desarrollo make secrets-perms
+ENTORNO=desarrollo make secrets-check
 ENTORNO=desarrollo make host-verify
 ENTORNO=desarrollo make repo-sync
 ENTORNO=desarrollo make addons-deps
 ENTORNO=desarrollo make build
-ENTORNO=desarrollo make up
+```
+
+`make build` construye Odoo y las imágenes auxiliares. Al terminar correctamente deja `ODOO_IMAGE` apuntando a la imagen local construida. No hay promoción ni rollback de imagen.
+
+## Flujo por stacks
+
+### 1. Edge
+
+```bash
+ENTORNO=desarrollo make nginx-up
+ENTORNO=desarrollo make nginx-verify
+```
+
+Cloudflared y dnsmasq no están incluidos en desarrollo.
+
+### 2. PostgreSQL
+
+```bash
+ENTORNO=desarrollo make postgres-up
+ENTORNO=desarrollo make postgres-verify
+```
+
+No continúes si `postgres-verify` falla.
+
+### 3. Odoo
+
+```bash
+ENTORNO=desarrollo make odoo-up
+ENTORNO=desarrollo make odoo-verify
+```
+
+`odoo-up` rechaza una referencia ausente, inicial, flotante o que no exista localmente.
+
+### 4. Backup
+
+No aplica: desarrollo no incluye el servicio de backup.
+
+### 5. Monitoring
+
+No aplica: desarrollo no incluye la capa de observabilidad.
+
+## Cambios de código o edición
+
+Cuando cambie la feature, repetí `repo-sync`, `addons-deps` si cambiaron requisitos y `build`. El webhook no altera la imagen ni reinicia contenedores.
+
+Para cambiar de Community a Enterprise, editá `ODOO_EDITION` y `TAG` en `runtime/desarrollo/compose.env`, construí una nueva imagen y ejecutá el preflight antes de levantar Odoo. El preflight solo consulta módulos instalados.
+
+## Verificación final
+
+```bash
 ENTORNO=desarrollo make verify
 ```
 
-Cuando cambie la feature, repetí `ENTORNO=desarrollo make repo-sync`, `addons-deps` si cambiaron requisitos y `build`. Los repositorios declaran sus dependencias en `requirements.txt`; el archivo `requirements.override.txt` queda solo para excepciones del deployment. El webhook no usa `feat/*`: solo sincroniza candidatos de staging y producción, y nunca altera la imagen Actual ni reinicia contenedores.
-
-Para cambiar de Community a Enterprise, editá el `compose.env` plano con `ODOO_EDITION=enterprise` y `TAG=19.0-ee-YYYY-MM-DD`, construí la imagen y validá el runtime aislado antes de aplicar. El preflight solo consulta módulos instalados; no los instala, actualiza ni desinstala.
-
-Para aplicar una imagen validada:
-
-```bash
-ENTORNO=desarrollo make validate-image NOTE="prueba manual"
-ENTORNO=desarrollo make apply-image
-```
-
-## Verificación
-
-`ENTORNO=desarrollo make verify` debe mostrar el proyecto propio, la imagen Actual y ninguna referencia a `/mnt/extra-addons`. Desarrollo no incluye backup por defecto; si necesitás repetir la siembra, descartá el runtime local y volvé a levantarlo. Una vez validada la feature, publicala de forma controlada en `19.0-stag` para continuar la prueba en el servidor.
+La recuperación se hace desde los datos locales y una reconstrucción explícita de la imagen; los tags anteriores no forman parte del flujo operativo.

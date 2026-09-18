@@ -30,6 +30,39 @@ igual "no conserva el árbol legacy de addons" "0" "$([ ! -e addons ]; echo $?)"
 DOCUMENTACION=$(seccion README.md '## Documentación' '## Cómo está pensado')
 contiene "README explica registro en release" "release correspondiente" "$DOCUMENTACION"
 
+titulo "Runbooks — orden de levantamiento por stacks"
+
+orden_runbook() {
+  local archivo="$1" edge postgres odoo backup monitoring
+  edge=$(grep -n '^### 1\. Edge$' "$archivo" | head -1 | cut -d: -f1)
+  postgres=$(grep -n '^### 2\. PostgreSQL' "$archivo" | head -1 | cut -d: -f1)
+  odoo=$(grep -n '^### 3\. Odoo$' "$archivo" | head -1 | cut -d: -f1)
+  backup=$(grep -n '^### 4\. Backup$' "$archivo" | head -1 | cut -d: -f1)
+  monitoring=$(grep -n '^### 5\. Monitoring$' "$archivo" | head -1 | cut -d: -f1)
+  [ -n "$edge" ] && [ -n "$postgres" ] && [ -n "$odoo" ] && [ -n "$backup" ] && [ -n "$monitoring" ] \
+    && [ "$edge" -lt "$postgres" ] && [ "$postgres" -lt "$odoo" ] \
+    && [ "$odoo" -lt "$backup" ] && [ "$backup" -lt "$monitoring" ]
+}
+
+for entorno in desarrollo staging produccion; do
+  runbook="docs/entorno/levantar-$entorno.md"
+  igual "$entorno declara el orden Edge/PostgreSQL/Odoo/Backup/Monitoring" "0" \
+    "$(orden_runbook "$runbook"; echo $?)"
+  postgres_line=$(grep -n 'make postgres-verify' "$runbook" | head -1 | cut -d: -f1)
+  odoo_line=$(grep -n 'make odoo-up' "$runbook" | head -1 | cut -d: -f1)
+  igual "$entorno verifica PostgreSQL antes de Odoo" "0" \
+    "$([ -n "$postgres_line" ] && [ -n "$odoo_line" ] && [ "$postgres_line" -lt "$odoo_line" ]; echo $?)"
+  no_contiene "$entorno no usa promoción de imagen" "apply-image" "$(cat "$runbook")"
+  no_contiene "$entorno no usa rollback de imagen" "rollback-image" "$(cat "$runbook")"
+done
+
+no_contiene "desarrollo declara Edge ausente" "cloudflared-up" "$(cat docs/entorno/levantar-desarrollo.md)"
+no_contiene "desarrollo declara Backup ausente como target" "backup-up" "$(cat docs/entorno/levantar-desarrollo.md)"
+no_contiene "staging declara DNS ausente" "dnsmasq-up" "$(cat docs/entorno/levantar-staging.md)"
+no_contiene "staging declara Monitoring ausente como target" "prometheus-up" "$(cat docs/entorno/levantar-staging.md)"
+contiene "producción levanta Backup" "make backup-up" "$(cat docs/entorno/levantar-produccion.md)"
+contiene "producción levanta Monitoring" "make prometheus-up" "$(cat docs/entorno/levantar-produccion.md)"
+
 titulo "Spec-Flow — estado, estructura y backlog"
 
 for artefacto in \

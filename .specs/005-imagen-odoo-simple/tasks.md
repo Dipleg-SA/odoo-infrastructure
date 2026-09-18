@@ -34,9 +34,9 @@
 
 ## Fase 5: Levantar el runtime por orden de stacks (US4) (P1)
 
-- [ ] T017 [US4] Reorganizar `docs/entorno/levantar-desarrollo.md`, `docs/entorno/levantar-staging.md` y `docs/entorno/levantar-produccion.md` con las fases comunes Edge → PostgreSQL → Odoo → Backup → Monitoring. Cada fase aplicable debe indicar su target de levantamiento y su verificación antes de continuar; en particular, `postgres-verify` debe terminar correctamente antes de ejecutar `odoo-up`.
-- [ ] T018 [US4] Actualizar `docs/backup-restore/restore-staging.md` y `docs/backup-restore/restore-perdida-total.md` para ubicar restore, reconstrucción y levantamiento dentro del orden de stacks nuevo.
-- [ ] T019 [TEST][US4] Agregar a `tests/test_architecture.sh` aserciones que detecten el orden de fases, comprueben que `postgres-up` y `postgres-verify` aparecen antes de `odoo-up`, y validen que los stacks no incluidos se declaran como no aplicables.
+- [x] T017 [US4] Reorganizar `docs/entorno/levantar-desarrollo.md`, `docs/entorno/levantar-staging.md` y `docs/entorno/levantar-produccion.md` con las fases comunes Edge → PostgreSQL → Odoo → Backup → Monitoring. Cada fase aplicable debe indicar su target de levantamiento y su verificación antes de continuar; en particular, `postgres-verify` debe terminar correctamente antes de ejecutar `odoo-up`.
+- [x] T018 [US4] Actualizar `docs/backup-restore/restore-staging.md` y `docs/backup-restore/restore-perdida-total.md` para ubicar restore, reconstrucción y levantamiento dentro del orden de stacks nuevo.
+- [x] T019 [TEST][US4] Agregar a `tests/test_architecture.sh` aserciones que detecten el orden de fases, comprueben que `postgres-up` y `postgres-verify` aparecen antes de `odoo-up`, y validen que los stacks no incluidos se declaran como no aplicables.
 
 ## Fase 6: Verificar sin estado de promoción (US5) (P1)
 

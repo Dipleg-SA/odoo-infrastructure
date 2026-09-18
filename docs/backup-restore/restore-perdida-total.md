@@ -2,101 +2,83 @@
 
 ## Cuándo se usa
 
-El servidor de producción no existe más, o sus datos son irrecuperables. Para sembrar
-staging o correr el simulacro semestral, usá [restore-staging](restore-staging.md):
-ese entorno tiene otros nombres de proyecto y credenciales de solo lectura.
+Cuando el servidor productivo no existe o sus datos locales son irrecuperables. Para sembrar staging, usá [restore-staging](restore-staging.md).
 
 ## Objetivo
 
-Recuperar la base y el filestore desde el último snapshot, sobre un checkout que puede
-no ser el que lo escribió.
-
-## Flujo rápido
-
-Este procedimiento es para recuperar producción. Para sembrar staging, seguí
-[restore-staging](restore-staging.md).
-
-1. **Reconstruir el checkout de producción.** Recuperar el nombre de proyecto original, configs,
-   secrets y addons; ver [A mano](#a-mano).
-2. **Restaurar las dos partes del estado.** Consultar el inventario de addons si hace falta,
-   iniciar Postgres y restaurar filestore y base desde el mismo snapshot; ver [Comandos](#comandos).
-3. **Reponer código y levantar servicios.** Sincronizar addons, resolver dependencias, reemitir el
-   certificado, preparar el monitoreo y arrancar el stack antes de reactivar backups y timers; ver
-   [Comandos](#comandos).
-4. **Confirmar la recuperación.** Ejecutar las verificaciones y descargar un adjunto desde la
-   aplicación; ver [Verificación](#verificación).
+Reconstruir el checkout, recuperar base y filestore desde un snapshot y levantar producción con una imagen Odoo reconstruida explícitamente.
 
 ## A mano
 
-Antes de empezar, el checkout tiene que estar bootstrapeado: `runtime/produccion/compose.env`
-con su `COMPOSE_PROJECT_NAME`, los configs reales copiados de sus `.example`, y los secrets
-cargados —incluidos `restic_password` y `restic_r2_credentials`, que tienen que ser
-**los del repositorio de origen**, o no hay nada que leer.
+Recuperá `runtime/produccion/compose.env`, configs, secrets, `runtime/addons/catalogo.txt` y, si corresponde, el checkout Enterprise etiquetado. `RESTIC_REPOSITORY` y las credenciales deben ser las del repositorio de origen. Conservá el `COMPOSE_PROJECT_NAME` original.
 
-`RESTIC_REPOSITORY` en `stacks/backup/config/r2.env` apunta al repositorio de origen,
-letra por letra. En la recuperación de producción, conserva el `COMPOSE_PROJECT_NAME`
-original: restic agrupa los snapshots por ese nombre y `backup-verify` lo usa para
-encontrar los de este stack.
+El snapshot contiene base, filestore, inventario de addons y metadata del backup; no contiene repositorios ni selecciona imágenes. Los commits registrados en el inventario tienen que seguir disponibles en sus remotos.
 
-El snapshot guarda la base, el filestore, la procedencia de imágenes con edición y un
-inventario informativo de ramas y commits de addons en `runtime/<entorno>/state/meta/`; no guarda los repositorios ni el catálogo.
-Recuperá `runtime/addons/catalogo.txt` y, si la edición es Enterprise, el checkout
-privado etiquetado desde su copia externa. Los commits de addons que registra el inventario tienen que seguir
-disponibles en sus repositorios remotos. Odoo aborta si levantás sin addons.
+## Flujo de recuperación
 
-Antes de levantar Odoo, leé `runtime/produccion/state/images.json` y configurá
-`ODOO_EDITION` y `TAG` con la edición registrada en la fotografía `Actual`. No elijas
-Community solo porque el checkout no tenga Enterprise: la base puede conservar módulos Enterprise.
+### 1. Edge
 
-Si se perdió el servidor entero, primero reconstruí Docker y los prerrequisitos del
-host con [configurar-docker-host](../operacion/configurar-docker-host.md). En el
-checkout nuevo, seguí [levantar-produccion](../entorno/levantar-produccion.md) hasta
-completar el bootstrap, incluido `sudo make host-init`, y recuperar `runtime/produccion/compose.env`, secrets,
-configs, el manifiesto de addons y las imágenes. Detenete antes de levantar Odoo.
-
-## Comandos
-
-Completá `runtime/addons/catalogo.txt` antes de sincronizar. Si no tenés la copia externa, podés
-consultar el inventario que guarda el snapshot. Si vas a restaurar uno concreto, poné
-el mismo ID en `SNAPSHOT` para ambos comandos:
+Primero reconstruí Docker y el host; después prepará los servicios de borde:
 
 ```bash
-SNAPSHOT=latest   # o el ID del snapshot elegido
-docker compose run --rm --entrypoint restic -T backup dump "$SNAPSHOT" /data/meta/addons.txt
+ENTORNO=produccion make nginx-up
+ENTORNO=produccion make nginx-verify
+ENTORNO=produccion make cloudflared-up
+ENTORNO=produccion make cloudflared-verify
 ```
+
+### 2. PostgreSQL y restore
 
 ```bash
-make postgres-up                 # el motor tiene que estar arriba: el dump entra por psql
-make restore SNAPSHOT="$SNAPSHOT"
-make repo-sync                   # primero completar runtime/addons/catalogo.txt
-make addons-deps
-make build                       # solo si addons-deps agregó o cambió pines
-make cert-issue                  # el volumen de certificados no está en el backup
-make monitoring-role             # el dump lógico no restaura roles de Postgres
-sudo make up-timers
-make up                          # levanta Edge, backup y observabilidad también
-make backup-run                  # crea un snapshot nuevo de la instancia recuperada
+ENTORNO=produccion make postgres-up
+ENTORNO=produccion make postgres-verify
+ENTORNO=produccion make restore SNAPSHOT=latest
 ```
 
-Para recuperar hacia Community desde una fotografía Enterprise, restaurá primero la copia en staging con la edición Enterprise, retirá manualmente los módulos Enterprise y validá la base. Luego configurá `ODOO_EDITION=community` y `TAG=19.0-ce-YYYY-MM-DD`, construí y validá la imagen Community, y repetí el restore controlado antes de aplicarla. Conservá el snapshot Enterprise asociado: `apply-image` exige el backup correspondiente y `rollback-image` no puede reactivar una edición distinta contra la base resultante.
+El restore exige Odoo detenido y Postgres activo. Recupera filestore, dump y metadata del backup; no ejecuta ninguna selección de imagen.
 
-**El orden interno no es simétrico al del backup, y es deliberado:** primero el
-filestore, después la base. Un filestore más nuevo que la base deja archivos huérfanos,
-que son inofensivos; uno más viejo deja filas de `ir_attachment` apuntando a archivos
-que no existen, que es destructivo y silencioso.
+### 3. Odoo
 
-`restore` se niega a correr con Odoo levantado: las conexiones vivas bloquean el `DROP`
-y lo que sí entra queda mezclado.
+Completá código, dependencias y configuración antes de levantar la aplicación:
 
-**El restore corre como root** y le devuelve al filestore el owner `100:101` que Odoo
-necesita. Eso se eleva en la invocación, no en el compose, para que la operación
-recurrente —el backup diario— siga corriendo sin privilegios.
+```bash
+ENTORNO=produccion make repo-sync
+ENTORNO=produccion make addons-deps
+ENTORNO=produccion make build
+ENTORNO=produccion make odoo-up
+ENTORNO=produccion make odoo-verify
+```
+
+### 4. Backup
+
+```bash
+ENTORNO=produccion make backup-up
+ENTORNO=produccion make backup-verify
+ENTORNO=produccion make backup-run
+sudo ENTORNO=produccion make up-timers
+```
+
+### 5. Monitoring
+
+```bash
+ENTORNO=produccion make prometheus-up
+ENTORNO=produccion make prometheus-verify
+ENTORNO=produccion make loki-up
+ENTORNO=produccion make loki-verify
+ENTORNO=produccion make grafana-up
+ENTORNO=produccion make grafana-verify
+ENTORNO=produccion make alloy-up
+ENTORNO=produccion make alloy-verify
+```
+
+## Edición Community/Enterprise
+
+Conservá la edición del snapshot durante el primer restore. Para pasar a Community, retir&aacute; los módulos Enterprise en un entorno aislado, ejecutá el preflight, cambiá `ODOO_EDITION`/`TAG`, construí una imagen Community y validá nuevamente. La recuperación no usa rollback de imagen ni una imagen anterior.
 
 ## Verificación
 
 ```bash
-make verify
+ENTORNO=produccion make verify
 ```
 
-Y lo que ninguna verificación automática cubre: **abrir la aplicación y comprobar que un
-adjunto se descarga**. Es lo único que prueba que las dos mitades corresponden entre sí.
+Comprobá además que un adjunto se descargue desde la aplicación: es la prueba funcional de que base y filestore corresponden.
