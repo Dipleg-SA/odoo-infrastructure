@@ -103,3 +103,7 @@ ENTORNO=produccion make verify
 ```
 
 `promotion-verify` debe terminar correctamente antes del build productivo. La validación funcional de staging es evidencia de código y datos, no una promoción de imagen.
+
+## Verificación aislada sin afectar producción
+
+Para ensayar restore y operación de producción sin reemplazar el stack activo, copiá el checkout a una ruta de verificación y seguí [`verificar-runtime-aislado.md`](verificar-runtime-aislado.md). Usá un snapshot exacto, credenciales autorizadas del entorno y una identidad Compose distinta. La copia no ejecuta `backup-run` ni instala timers; Cloudflare puede quedar fuera de alcance cuando la prueba se limita a aplicación, datos, backup y monitoring.

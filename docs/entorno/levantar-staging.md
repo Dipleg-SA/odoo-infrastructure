@@ -87,3 +87,7 @@ ENTORNO=staging make addons-modules
 ```
 
 La evidencia funcional identifica la revisión o el conjunto completo de `19.0-stag`. Si la prueba incluyó operaciones de módulos, volvé a sembrar staging antes de otro intento.
+
+## Verificación aislada sin Cloudflare
+
+Para ensayar staging en el servidor sin interferir con el stack activo, copiá el checkout a una ruta de verificación y seguí [`verificar-runtime-aislado.md`](verificar-runtime-aislado.md). La copia usa identidad, puertos, volúmenes y hostname propios; restaura un snapshot exacto y no ejecuta `backup-run` ni timers. En esta modalidad Cloudflare queda fuera de alcance y la verificación se hace por Nginx/HTTPS local.
