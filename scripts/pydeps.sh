@@ -297,10 +297,10 @@ def resolve_vcs(line, sources_dir, checkout_root, mirrors):
         mirrors[url] = mirror
 
     repository = normalize(url.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git"))
-    filename = f"{repository}-{sha[:12]}-{hashlib.sha256(url.encode()).hexdigest()[:8]}.tar.gz"
+    filename = f"{repository}-{sha[:12]}-{hashlib.sha256(url.encode()).hexdigest()[:8]}.tar"
     archive = sources_dir / filename
     result = subprocess.run(
-        ["git", f"--git-dir={mirror}", "archive", "--format=tar.gz", f"--output={archive}", sha],
+        ["git", f"--git-dir={mirror}", "archive", "--format=tar", f"--output={archive}", sha],
         check=False,
         capture_output=True,
         text=True,
@@ -309,7 +309,7 @@ def resolve_vcs(line, sources_dir, checkout_root, mirrors):
     if result.returncode != 0:
         message = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "sin detalle"
         raise ValueError(f"no se pudo archivar {url}@{sha}: {message}")
-    with tarfile.open(archive, "r:gz") as source_archive:
+    with tarfile.open(archive, "r:") as source_archive:
         if any(member.name == ".gitmodules" for member in source_archive.getmembers()):
             raise ValueError(f"{url}@{sha} usa submódulos Git, formato todavía no soportado")
 

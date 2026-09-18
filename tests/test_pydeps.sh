@@ -139,6 +139,10 @@ contiene "un SHA completo se conserva" "# VCS: file://$PYAFIP@$PYAFIP_SHA#egg=ot
 contiene "pip recibe fuentes locales" 'file:///tmp/requirements.sources/' "$LOCK"
 igual "genera un archivo por repositorio" "2" \
   "$(find "$ROOT/runtime/addons/requirements.sources" -type f | wc -l | tr -d ' ')"
+igual "las fuentes Git viajan como tar sin compresión" "2" \
+  "$(find "$ROOT/runtime/addons/requirements.sources" -name '*.tar' -type f | wc -l | tr -d ' ')"
+igual "no depende de archivos gzip" "0" \
+  "$(find "$ROOT/runtime/addons/requirements.sources" -name '*.tar.gz' -type f | wc -l | tr -d ' ')"
 no_contiene "el lock no conserva la rama móvil" '@stable_py3k' "$LOCK"
 
 # =====================================================================
