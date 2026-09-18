@@ -10,7 +10,7 @@ CONTEXTO_COMPOSE := scripts/lib/contexto.sh compose
 
 include .make/main.mk
 
-.PHONY: help up down logs ps nuke reset build promotion-verify \
+.PHONY: help up down logs ps nuke reset build require-odoo-image promotion-verify \
         secrets-init secrets-perms secrets-check config-init workspace \
         odoo-report-config \
         host-init host-verify up-timers down-timers notify-test monitoring-role \
@@ -29,7 +29,7 @@ RUNTIME_TARGETS := secrets-init secrets-perms secrets-check config-init workspac
                    backup-run backup-integrity restore repo-sync repo-status \
                    integrity-check \
                    addons-install addons-update addons-uninstall addons-modules addons-deps \
-                   require-backups require-restore require-not-production verify \
+                   require-odoo-image require-backups require-restore require-not-production verify \
                    up down logs ps nuke reset build promotion-verify
 RUNTIME_TARGETS += $(foreach s,$(STACKS),$(s)-up $(s)-down $(s)-restart $(s)-logs $(s)-ps $(s)-verify)
 RUNTIME_TARGETS += $(foreach s,$(STACKS_ONESHOT),$(s)-logs $(s)-ps $(s)-verify)
@@ -232,6 +232,21 @@ integrity-check: ## Comprueba adjuntos de Odoo contra el filestore
 build: ## Construye las imágenes propias del runtime
 	scripts/build-odoo-image.sh
 	@. scripts/lib/ui.sh; ui_run "construir imágenes auxiliares" $(CONTEXTO_COMPOSE) build postgres nginx
+
+# Selector único de Odoo
+# Impide levantar el runtime con un tag inicial, flotante o inexistente.
+require-odoo-image: require-entorno
+	@. scripts/lib/ui.sh; \
+	image="$${ODOO_IMAGE:-}"; \
+	if [[ ! "$$image" =~ ^local/odoo:[0-9]+([.][0-9]+)*-(desarrollo|staging|produccion)-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}$$ ]]; then \
+	  ui_bad "ODOO_IMAGE inválida" "ejecutá ENTORNO=$$ENTORNO make build antes de levantar el runtime" >&2; exit 2; \
+	fi; \
+	if ! docker image inspect "$$image" >/dev/null 2>&1; then \
+	  ui_bad "falta la imagen Odoo" "no existe $$image — ejecutá ENTORNO=$$ENTORNO make build" >&2; exit 2; \
+	fi
+
+up: require-odoo-image
+odoo-up: require-odoo-image
 
 promotion-verify: ## Verifica que producción equivale a staging validado antes del build
 	scripts/promotion-verify.sh

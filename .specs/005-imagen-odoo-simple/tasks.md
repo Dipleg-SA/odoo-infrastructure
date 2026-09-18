@@ -18,12 +18,12 @@
 
 ## Fase 3: Levantar Odoo sin promoción ni rollback (US2) (P1)
 
-- [ ] T007 [US2] Eliminar `scripts/image-state.sh` y retirar de `Makefile` `apply-image`, `rollback-image`, `validate-image` y las guardas de transición que dependan de sus ranuras.
-- [ ] T008 [US2] Adaptar `Makefile` para que `up` y `odoo-up` validen, antes de invocar Compose para Odoo, que `ODOO_IMAGE` está definida, no es bootstrap ni flotante y corresponde a una imagen local existente; ante un fallo deben detenerse con una causa operativa identificable.
-- [ ] T009 [US2] Adaptar `scripts/odoo-module-operation.sh` para exigir un runtime Odoo configurado y operativo, sin exigir una imagen `Actual` ni registrar bloqueos de rollback.
-- [ ] T010 [US2] Adaptar `scripts/odoo-edition-check.sh` para comprobar la compatibilidad Community/Enterprise desde la configuración y la base vigente, sin leer `images.json`.
-- [ ] T011 [TEST][US2] Actualizar `tests/test_scripts.sh`, `tests/test_addon_operations.sh` y `tests/test_edition_transition.sh` para cubrir la guarda previa de `up` y `odoo-up`, comprobar mediante stubs que Compose no se invoca con una referencia inválida y cubrir operaciones de módulos y cambios de edición con el selector único.
-- [ ] T012 [TEST][US2] Eliminar `tests/test_image_state.sh` y retirar del resto de la suite cualquier fixture o aserción que dependa de `Nueva`, `Actual`, `Anterior` o `rollback_blocked`.
+- [x] T007 [US2] Eliminar `scripts/image-state.sh` y retirar de `Makefile` `apply-image`, `rollback-image`, `validate-image` y las guardas de transición que dependan de sus ranuras.
+- [x] T008 [US2] Adaptar `Makefile` para que `up` y `odoo-up` validen, antes de invocar Compose para Odoo, que `ODOO_IMAGE` está definida, no es bootstrap ni flotante y corresponde a una imagen local existente; ante un fallo deben detenerse con una causa operativa identificable.
+- [x] T009 [US2] Adaptar `scripts/odoo-module-operation.sh` para exigir un runtime Odoo configurado y operativo, sin exigir una imagen `Actual` ni registrar bloqueos de rollback.
+- [x] T010 [US2] Adaptar `scripts/odoo-edition-check.sh` para comprobar la compatibilidad Community/Enterprise desde la configuración y la base vigente, sin leer `images.json`.
+- [x] T011 [TEST][US2] Actualizar `tests/test_scripts.sh`, `tests/test_addon_operations.sh` y `tests/test_edition_transition.sh` para cubrir la guarda previa de `up` y `odoo-up`, comprobar mediante stubs que Compose no se invoca con una referencia inválida y cubrir operaciones de módulos y cambios de edición con el selector único.
+- [x] T012 [TEST][US2] Eliminar `tests/test_image_state.sh` y retirar del resto de la suite cualquier fixture o aserción que dependa de `Nueva`, `Actual`, `Anterior` o `rollback_blocked`.
 
 ## Fase 4: Usar el mismo ciclo en los tres entornos (US3) (P1)
 

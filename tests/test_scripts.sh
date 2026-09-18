@@ -32,6 +32,8 @@ crear_root() {
   cp "$REPO_ROOT/scripts/lib/ui.sh" "$REPO_ROOT/scripts/lib/compose.sh" \
     "$REPO_ROOT/scripts/lib/contexto.sh" "$root/scripts/lib/"
   for s in "$@"; do cp "$REPO_ROOT/scripts/$s" "$root/scripts/"; done
+  cp "$REPO_ROOT/Makefile" "$root/"
+  cp -R "$REPO_ROOT/.make" "$root/"
   for entorno in desarrollo staging produccion; do
     mkdir -p "$root/runtime/$entorno"
     printf 'services: {}\n' > "$root/runtime/$entorno/compose.yaml"
@@ -413,13 +415,20 @@ reset_stub
 sale_con "sin composición legible aborta" 1 \
   bash -c "cd '$ROOT' && SYSTEMD_DIR='$ROOT/systemd' ./scripts/timers.sh install"
 
-# --- Operación de imagen ---
-# Los verbos de promoción quedan disponibles bajo el entorno explícito.
-contiene "Makefile expone apply-image" "apply-image:" "$(cat "$REPO_ROOT/Makefile")"
-contiene "Makefile expone rollback-image" "rollback-image:" "$(cat "$REPO_ROOT/Makefile")"
-contiene "Makefile expone guarda de edición" "require-edition-transition:" "$(cat "$REPO_ROOT/Makefile")"
-contiene "Makefile exige backup previo cuando corresponde" "backup-run" "$(cat "$REPO_ROOT/Makefile")"
-contiene "la operación de módulos exige Actual" "no hay imagen Actual" "$(cat "$REPO_ROOT/scripts/odoo-module-operation.sh")"
+# --- Selector de imagen Odoo ---
+# up y odoo-up deben detenerse antes de Compose si la referencia no es operativa.
+ROOT_IMAGE=$(crear_root image-guard)
+reset_stub
+for target in up odoo-up; do
+  sale_con "$target rechaza un selector inicial" 2 env ENTORNO=desarrollo \
+    STUB_DIR="$STUB_DIR" PATH="$REPO_ROOT/tests/stubs:$PATH" \
+    make -C "$ROOT_IMAGE" "$target"
+done
+igual "selector inválido no invoca Docker" "" "$(llamadas)"
+contiene "Makefile expone la guarda de imagen" "require-odoo-image:" "$(cat "$REPO_ROOT/Makefile")"
+no_contiene "Makefile no expone apply-image" "apply-image:" "$(cat "$REPO_ROOT/Makefile")"
+no_contiene "Makefile no expone rollback-image" "rollback-image:" "$(cat "$REPO_ROOT/Makefile")"
+no_contiene "la operación de módulos no exige Actual" "no hay imagen Actual" "$(cat "$REPO_ROOT/scripts/odoo-module-operation.sh")"
 
 # =====================================================================
 titulo "integrity-check, failure-notify y workspace — contratos de auxiliares"

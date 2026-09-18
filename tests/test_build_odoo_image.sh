@@ -69,7 +69,7 @@ contiene "instala wheels sin desinstalar paquetes Debian" '--ignore-installed' "
 contiene "copia wheels a la imagen final" 'COPY --from=python-deps /tmp/wheels/' "$DOCKERFILE"
 
 # Fallos de selección Enterprise
-# Ningún tag o checkout inválido puede publicar Nueva.
+# Ningún tag o checkout inválido puede reemplazar el selector seleccionado.
 printf '%s\n' 'TAG=' >> runtime/desarrollo/compose.env
 sale_con "tag Enterprise ausente falla antes del build" 2 scripts/build-odoo-image.sh
 printf '%s\n' 'TAG=19.0-ee-2026-09-14' >> runtime/desarrollo/compose.env
@@ -87,7 +87,7 @@ rm -f runtime/addons/enterprise/edicion.local
 igual "los fallos conservan la imagen seleccionada" "$IMAGEN_DESARROLLO" "$(sed -n 's/^ODOO_IMAGE=//p' runtime/desarrollo/compose.env)"
 
 export BUILD_FAIL=1
-sale_con "build fallido no publica Nueva" 1 scripts/build-odoo-image.sh
+sale_con "build fallido no reemplaza el selector" 1 scripts/build-odoo-image.sh
 igual "build fallido conserva el selector" "$IMAGEN_DESARROLLO" "$(sed -n 's/^ODOO_IMAGE=//p' runtime/desarrollo/compose.env)"
 
 # Community con residual Enterprise
