@@ -47,23 +47,25 @@ git merge --no-ff feat/mi-cambio
 git push origin 19.0-stag
 ```
 
-En el servidor, construí y validá manualmente la imagen seleccionada:
+En el servidor, publicá, recreá y validá manualmente la selección:
 
 ```bash
 ENTORNO=staging make repo-sync
-ENTORNO=staging make build
-ENTORNO=staging make odoo-up
+ENTORNO=staging make addons-deps
+ENTORNO=staging make odoo-restart
 ENTORNO=staging make verify
 ```
 
 Para descartar commits y realinear staging exactamente con producción, conservá una
 referencia publicada y ejecutá la operación Git destructiva con `--force-with-lease`.
-Después sincronizá el candidato y repetí build y validación; no se ejecutan solos.
+Después sincronizá el candidato, recreá Odoo y repetí la validación; no se ejecutan
+solos. Construí únicamente si cambian base, edición o huellas.
 
 ## Verificación
 
 Antes de promover, verificá el delta completo del PR y el `make verify` exitoso en
-staging. Después de fusionarlo:
+staging. La referencia es `/tmp/odoo-addons-startup.json`, no el candidato que pueda
+haberse publicado después. Después de fusionarlo:
 
 ```bash
 ENTORNO=produccion make repo-sync

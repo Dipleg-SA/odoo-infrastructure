@@ -36,6 +36,12 @@ contiene "staging monta la plantilla runtime vacía" \
   "/runtime/staging/config/nginx/addons-webhook.locations" "$STAGE"
 igual "el receptor no publica puertos del host" "" \
   "$(printf '%s\n' "$PROD" | sed -n '/^  addons-webhook:/,/^  [a-z0-9_-]*:$/p' | sed -n 's/^ *published: //p')"
+for entorno in desarrollo staging produccion; do
+  contiene "el receptor monta custom de $entorno" "/runtime/$entorno/addons/custom" "$PROD"
+  contiene "el receptor separa el destino $entorno" "target: /var/lib/addons/$entorno" "$PROD"
+done
+no_contiene "el receptor no monta Enterprise" "/addons/enterprise" \
+  "$(printf '%s\n' "$PROD" | sed -n '/^  addons-webhook:/,/^  [a-z0-9_-]*:$/p')"
 
 # Verificación del stack
 # La fixture devuelve la composición real y simula el servicio detenido.
@@ -49,6 +55,7 @@ printf '%s\n' addons-webhook > "$TMP/verify/servicios-sin-perfil"
 cp runtime/produccion/compose.env.example "$TMP/verify/config.env"
 STUB_DIR="$TMP/verify" docker compose --env-file runtime/produccion/compose.env.example \
   -f runtime/produccion/compose.yaml config > "$TMP/verify/config"
+cp "$TMP/verify/config" "$TMP/verify/config-valida"
 SALIDA=$(STUB_DIR="$TMP/verify" PATH="$PWD/tests/stubs:$PATH" ENTORNO=produccion \
   scripts/verify-stacks.sh addons-webhook 2>&1 || true)
 contiene "el stack con guion se descubre y ejecuta" "addons-webhook" "$SALIDA"
@@ -58,6 +65,33 @@ contiene "el verify exige usuario no privilegiado" \
   "receptor no privilegiado y filesystem de imagen inmutable" "$SALIDA"
 no_contiene "el verify no confunde el nombre del checkout con Odoo" \
   "la composición del receptor contiene una referencia prohibida" "$SALIDA"
+for entorno in desarrollo staging produccion; do
+  contiene "el verify valida el destino custom de $entorno" \
+    "destino custom de $entorno limitado" "$SALIDA"
+done
+
+# Mutaciones de mounts
+# El verificador del stack debe rechazar ausencia, Enterprise y creación implícita.
+sed '/source: .*runtime\/staging\/addons\/custom/,+4d' \
+  "$TMP/verify/config-valida" > "$TMP/verify/config"
+SALIDA=$(STUB_DIR="$TMP/verify" PATH="$PWD/tests/stubs:$PATH" ENTORNO=produccion \
+  scripts/verify-stacks.sh addons-webhook 2>&1 || true)
+contiene "el verify detecta un destino faltante" \
+  "✗ destino custom de staging limitado" "$SALIDA"
+
+sed 's@target: /var/lib/addons/staging@target: /var/lib/addons/enterprise@' \
+  "$TMP/verify/config-valida" > "$TMP/verify/config"
+SALIDA=$(STUB_DIR="$TMP/verify" PATH="$PWD/tests/stubs:$PATH" ENTORNO=produccion \
+  scripts/verify-stacks.sh addons-webhook 2>&1 || true)
+contiene "el verify detecta un mount Enterprise" \
+  "la composición del receptor contiene una referencia prohibida" "$SALIDA"
+
+sed '/source: .*runtime\/staging\/addons\/custom/,+4 s/create_host_path: false/create_host_path: true/' \
+  "$TMP/verify/config-valida" > "$TMP/verify/config"
+SALIDA=$(STUB_DIR="$TMP/verify" PATH="$PWD/tests/stubs:$PATH" ENTORNO=produccion \
+  scripts/verify-stacks.sh addons-webhook 2>&1 || true)
+contiene "el verify detecta creación implícita" \
+  "✗ destino custom de staging limitado" "$SALIDA"
 
 # Targets del contenedor
 # El receptor usa el mismo sexteto Make que los demás stacks.
@@ -66,9 +100,12 @@ for target in addons-webhook-up addons-webhook-down addons-webhook-restart \
   addons-webhook-logs addons-webhook-ps addons-webhook-verify; do
   contiene "Make registra $target" "${target}:" "$TARGETS"
 done
+TARGET_UP=$(make -n ENTORNO=produccion addons-webhook-up 2>&1 || true)
+contiene "addons-webhook-up ejecuta el bootstrap de mounts" \
+  "scripts/addons-runtime.sh init" "$TARGET_UP"
 
 sed 's@target: /var/lib/addons-webhook@target: /var/run/docker.sock@' \
-  "$TMP/verify/config" > "$TMP/verify/config-insegura"
+  "$TMP/verify/config-valida" > "$TMP/verify/config-insegura"
 cp "$TMP/verify/config-insegura" "$TMP/verify/config"
 SALIDA=$(STUB_DIR="$TMP/verify" PATH="$PWD/tests/stubs:$PATH" ENTORNO=produccion \
   scripts/verify-stacks.sh addons-webhook 2>&1 || true)
@@ -125,7 +162,9 @@ environment_paths = {
 }
 previous_environment = {key: os.environ.get(key) for key in environment_paths}
 os.environ.update({key: str(value) for key, value in environment_paths.items()})
-check("Config funciona desde el WORKDIR /app del contenedor", webhook.Config.from_env().catalog_path == environment_paths["ADDONS_CATALOG"])
+environment_config = webhook.Config.from_env()
+check("Config funciona desde el WORKDIR /app del contenedor", environment_config.catalog_path == environment_paths["ADDONS_CATALOG"])
+check("Config usa la raíz explícita de destinos", environment_config.candidate_root == environment_paths["ADDONS_CANDIDATE_ROOT"])
 for key, value in previous_environment.items():
     if value is None:
         os.environ.pop(key, None)
@@ -208,10 +247,25 @@ check("una línea Odoo distinta se ignora", send("20.0-stag", stage_sha, "versio
 check("un repositorio ausente del catálogo se ignora", send("19.0-stag", stage_sha, "unknown-1", url=temporary / "desconocido.git")[0] == 202)
 check("un evento del repositorio Enterprise se ignora", send("19.0-stag", stage_sha, "enterprise-1", url=temporary / "enterprise.git")[0] == 202 and not (candidates / "staging" / "enterprise").exists())
 
-status, result = send("19.0-stag", stage_sha, "stage-1")
+observed_commands = []
+original_subprocess_run = webhook.subprocess.run
+def observed_run(arguments, *args, **kwargs):
+    observed_commands.append([str(value) for value in arguments])
+    return original_subprocess_run(arguments, *args, **kwargs)
+webhook.subprocess.run = observed_run
+try:
+    status, result = send("19.0-stag", stage_sha, "stage-1")
+finally:
+    webhook.subprocess.run = original_subprocess_run
 stage_candidate = candidates / "staging" / "ventas"
 check("HMAC válido publica el candidato de staging", status == 200 and result.get("environment") == "staging")
+check("el webhook no construye imágenes", observed_commands and all(command[0] == "git" and "build" not in command for command in observed_commands))
+check("el webhook no recrea ni reinicia Odoo", all(not ({"up", "restart", "compose"} & set(command)) for command in observed_commands))
+check("el webhook no instala, actualiza ni desinstala módulos", all(not ({"install", "update", "uninstall", "-i", "-u"} & set(command)) for command in observed_commands))
 check("el candidato contiene el commit recibido", (stage_candidate / ".candidate-commit").read_text().strip() == stage_sha)
+expected_tree = subprocess.check_output(["git", "-C", str(work), "rev-parse", f"{stage_sha}^{{tree}}"], text=True).strip()
+check("el candidato contiene el árbol Git recibido", (stage_candidate / ".candidate-tree").read_text().strip() == expected_tree)
+check("staging no publica en otros entornos", not (candidates / "desarrollo" / "ventas").exists() and not (candidates / "produccion" / "ventas").exists())
 run("git", "-C", str(work), "checkout", "-q", "19.0-stag")
 with (work / "__manifest__.py").open("a") as output:
     output.write("v2\n")
@@ -224,6 +278,7 @@ check("el reintento no reemplaza el commit ya publicado", (stage_candidate / ".c
 check("una entrega nueva publica el commit actualizado", send("19.0-stag", new_stage_sha, "stage-2")[0] == 200 and (stage_candidate / ".candidate-commit").read_text().strip() == new_stage_sha)
 prod_sha = commit_for(work, "19.0")
 check("producción publica solo bajo su ruta", send("19.0", prod_sha, "prod-1")[0] == 200 and (candidates / "produccion" / "ventas" / ".candidate-commit").read_text().strip() == prod_sha)
+check("producción no reemplaza staging", (stage_candidate / ".candidate-commit").read_text().strip() == new_stage_sha)
 check("Odoo activo no recibe cambios por webhook", active_odoo.read_bytes() == active_before)
 
 active = 0
@@ -247,6 +302,44 @@ finally:
     webhook.sync_candidate = original_sync
 check("entregas simultáneas del mismo entorno se serializan", maximum == 1 and all(status == 200 for status, _ in results))
 check("el receptor no altera la referencia de Odoo durante la serie", active_odoo.read_bytes() == active_before)
+
+# Contención con una operación funcional
+# El lock Bash de módulos y el lock Python del webhook deben ser el mismo inode lógico.
+run("git", "-C", str(work), "checkout", "-q", "19.0-stag")
+with (work / "__manifest__.py").open("a") as output:
+    output.write("v3\n")
+run("git", "-C", str(work), "commit", "-qam", "staging v3")
+run("git", "-C", str(work), "checkout", "-q", "19.0")
+third_stage_sha = commit_for(work, "19.0-stag")
+held = temporary / "module-lock-held"
+release = temporary / "module-lock-release"
+holder_code = (
+    "import pathlib,time,sys; "
+    "held=pathlib.Path(sys.argv[1]); release=pathlib.Path(sys.argv[2]); "
+    "held.write_text('held'); "
+    "[(time.sleep(0.01)) for _ in iter(lambda: release.exists(), True)]"
+)
+holder_environment = os.environ.copy()
+holder_environment["ADDONS_STATE_DIR"] = str(state)
+holder = subprocess.Popen(
+    ["bash", str(root / "scripts/lib/candidate-lock.sh"), "run", "staging", "--",
+     sys.executable, "-c", holder_code, str(held), str(release)],
+    env=holder_environment,
+)
+for _ in range(200):
+    if held.exists():
+        break
+    time.sleep(0.01)
+before_locked_publish = (stage_candidate / ".candidate-commit").read_text().strip()
+with ThreadPoolExecutor(max_workers=1) as pool:
+    pending = pool.submit(send, "19.0-stag", third_stage_sha, "module-contention")
+    time.sleep(0.1)
+    check("el webhook espera mientras una operación de módulo conserva el lock", not pending.done())
+    check("el árbol no cambia durante la operación funcional", (stage_candidate / ".candidate-commit").read_text().strip() == before_locked_publish)
+    release.write_text("release")
+    locked_result = pending.result(timeout=10)
+holder.wait(timeout=10)
+check("el candidato se publica después de liberar la operación", locked_result[0] == 200 and (stage_candidate / ".candidate-commit").read_text().strip() == third_stage_sha)
 print(f"\n{checks - failures} ok · {failures} fallas")
 sys.exit(0 if failures == 0 else 1)
 PY

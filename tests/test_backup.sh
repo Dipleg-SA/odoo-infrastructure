@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # --- Backup diario ---
-# Prueba que un inventario de addons fallido se diagnostica sin afectar el snapshot.
+# Prueba que cada snapshot conserva la selección realmente ejecutada por Odoo.
 
 cd "$(dirname "$0")/.."
 REPO_ROOT="$PWD"
@@ -9,7 +9,22 @@ REPO_ROOT="$PWD"
 TMP=$(mktemp -d)
 STUB_DIR="$TMP/stub"; mkdir -p "$STUB_DIR"; export STUB_DIR
 printf '%s\n' '{"snapshot_id":"snap-test"}' > "$STUB_DIR/salida"
+printf '%s\n' '{"addons":{"dominio_ventas":{"commit":"inicio123","tree":"tree123"}},"edition":"community","enterprise":null,"entorno":"desarrollo"}' > "$STUB_DIR/salida-startup"
 trap 'rm -rf "$TMP"' EXIT
+
+# Stub especializado del inventario de arranque
+# El resto de las llamadas conserva el contrato estricto del stub compartido.
+TEST_BIN="$TMP/bin"
+mkdir -p "$TEST_BIN"
+cat > "$TEST_BIN/docker" <<EOF
+#!/usr/bin/env bash
+if [[ "\$*" == *"cat /tmp/odoo-addons-startup.json"* ]]; then
+  cat "\$STUB_DIR/salida-startup"
+  exit "\$(cat "\$STUB_DIR/exit-salida-startup" 2>/dev/null || echo 0)"
+fi
+exec "$REPO_ROOT/tests/stubs/docker" "\$@"
+EOF
+chmod 755 "$TEST_BIN/docker"
 
 # --- Checkout mínimo ---
 # Solo contiene las rutas que toca backup.sh y usa el stub compartido de Docker.
@@ -33,61 +48,51 @@ crear_checkout() {
 }
 
 ejecutar_backup() {
-  (cd "$1" && ENTORNO=desarrollo PATH="$REPO_ROOT/tests/stubs:$PATH" ./stacks/backup/scripts/backup.sh daily 2>&1)
+  (cd "$1" && ENTORNO=desarrollo PATH="$TEST_BIN:$REPO_ROOT/tests/stubs:$PATH" ./stacks/backup/scripts/backup.sh daily 2>&1)
 }
 
 codigo_backup() {
-  (cd "$1" && ENTORNO=desarrollo PATH="$REPO_ROOT/tests/stubs:$PATH" ./stacks/backup/scripts/backup.sh daily >/dev/null 2>&1; echo $?)
-}
-
-definir_addons() {
-  cat > "$1/scripts/addons.sh"
-  chmod 755 "$1/scripts/addons.sh"
+  (cd "$1" && ENTORNO=desarrollo PATH="$TEST_BIN:$REPO_ROOT/tests/stubs:$PATH" ./stacks/backup/scripts/backup.sh daily >/dev/null 2>&1; echo $?)
 }
 
 # =====================================================================
-titulo "backup.sh — registro de addons best-effort"
+titulo "backup.sh — selección ejecutada obligatoria"
 # =====================================================================
 
 ROOT=$(crear_checkout)
 printf 'inventario anterior\n' > "$ROOT/runtime/desarrollo/state/meta/addons.txt"
 
-# --- Fallo informado ---
-# El backup conserva el inventario previo y el error de addons queda visible.
+# --- Fallo anterior al snapshot ---
+# Sin un contenedor que exponga su selección no se inventa procedencia desde candidatos.
 
-definir_addons "$ROOT" <<'EOF'
-#!/usr/bin/env bash
-echo 'fallo de git simulado' >&2
-exit 7
-EOF
-
-igual "un fallo de addons no falla el backup" "0" "$(codigo_backup "$ROOT")"
-contiene "conserva el diagnóstico de addons" "fallo de git simulado" "$(ejecutar_backup "$ROOT")"
-contiene "y conserva su código de salida" "salió con 7" "$(ejecutar_backup "$ROOT")"
-igual "no pisa el inventario anterior" "inventario anterior" "$(cat "$ROOT/runtime/desarrollo/state/meta/addons.txt")"
+printf '%s\n' 1 > "$STUB_DIR/exit-salida-startup"
+igual "sin selección ejecutada el backup falla" "1" "$(codigo_backup "$ROOT")"
+contiene "explica que Odoo debe estar verificado" "levantar y verificar Odoo" "$(ejecutar_backup "$ROOT")"
+no_contiene "no llega al snapshot restic" "restic backup" "$(cat "$STUB_DIR/llamadas")"
+rm -f "$STUB_DIR/exit-salida-startup"
 
 # --- Entorno obligatorio ---
 # Una invocación directa sin entorno falla antes de crear estado global.
 
-salida=$(cd "$ROOT" && PATH="$REPO_ROOT/tests/stubs:$PATH" ./stacks/backup/scripts/backup.sh daily 2>&1); codigo=$?
+salida=$(cd "$ROOT" && PATH="$TEST_BIN:$REPO_ROOT/tests/stubs:$PATH" ./stacks/backup/scripts/backup.sh daily 2>&1); codigo=$?
 igual "backup sin entorno falla antes de operar" "2" "$codigo"
 contiene "backup sin entorno informa la corrección" "usar ENTORNO=desarrollo, staging o produccion" "$salida"
 igual "backup sin entorno no crea estado raíz" "0" "$([ ! -e "$ROOT/state" ]; echo $?)"
 
 # --- Registro válido ---
-# La salida se filtra al formato del snapshot y reemplaza el inventario en forma atómica.
+# La fotografía del proceso se conserva aunque otro candidato exista en el host.
 
-definir_addons "$ROOT" <<'EOF'
-#!/usr/bin/env bash
-printf '%s\n' 'runtime: produccion · rama: 19.0' 'enterprise: 19.0-ee-2026-09-15 · commit: ee123' 'dominio_ventas publicado abc123'
-EOF
-
-igual "un registro válido deja exitoso el backup" "0" "$(codigo_backup "$ROOT")"
-contiene "guarda el estado de Enterprise" "enterprise: 19.0-ee-2026-09-15 · commit: ee123" \
-  "$(cat "$ROOT/runtime/desarrollo/state/meta/addons.txt")"
-contiene "guarda el commit del candidato" "dominio_ventas publicado abc123" \
-  "$(cat "$ROOT/runtime/desarrollo/state/meta/addons.txt")"
+printf '%s\n' 'candidato posterior que no debe entrar' > "$ROOT/runtime/desarrollo/state/meta/candidato-actual.txt"
+igual "una selección ejecutada válida deja exitoso el backup" "0" "$(codigo_backup "$ROOT")"
+contiene "guarda el commit cargado al inicio" '"commit":"inicio123"' \
+  "$(cat "$ROOT/runtime/desarrollo/state/meta/addons-startup.json")"
+no_contiene "no sustituye por el candidato posterior" "candidato posterior" \
+  "$(cat "$ROOT/runtime/desarrollo/state/meta/addons-startup.json")"
 contiene "registra el selector como metadata de backup" '"odoo_image": "local/odoo:19.0-desarrollo-20260917T183719Z-fa588059f4932d2f"' \
+  "$(cat "$ROOT/runtime/desarrollo/state/meta/last-backup.json")"
+contiene "metadata nueva declara versión 2" '"metadata_version": 2' \
+  "$(cat "$ROOT/runtime/desarrollo/state/meta/last-backup.json")"
+contiene "metadata asocia la selección ejecutada" '"commit": "inicio123"' \
   "$(cat "$ROOT/runtime/desarrollo/state/meta/last-backup.json")"
 no_contiene "no registra actual_tag" '"actual_tag"' \
   "$(cat "$ROOT/runtime/desarrollo/state/meta/last-backup.json")"
@@ -111,11 +116,8 @@ printf 'COMPOSE_PROJECT_NAME=backup-context\nODOO_EDITION=community\nTAG=19.0-ce
 printf '%s\n' 'RESTIC_REPOSITORY=s3:https://cuenta.r2.cloudflarestorage.com/bucket/restic' \
   > "$ROOT/stacks/backup/config/r2.env"
 printf '%s\n' '{"message_type":"summary","snapshot_id":"snap-context"}' > "$STUB_DIR/salida"
-definir_addons "$ROOT" <<'EOF'
-#!/usr/bin/env bash
-printf '%s\n' 'dominio_ventas publicado abc123'
-EOF
-(cd "$ROOT" && STUB_DIR="$STUB_DIR" ENTORNO=produccion PATH="$REPO_ROOT/tests/stubs:$PATH" \
+printf '%s\n' '{"addons":{},"edition":"community","enterprise":null,"entorno":"produccion"}' > "$STUB_DIR/salida-startup"
+(cd "$ROOT" && STUB_DIR="$STUB_DIR" ENTORNO=produccion PATH="$TEST_BIN:$REPO_ROOT/tests/stubs:$PATH" \
   ./stacks/backup/scripts/backup.sh daily >/dev/null 2>&1)
 igual "el backup con contexto usa la composición del entorno" "0" \
   "$(grep -F -- "-f $ROOT/runtime/produccion/compose.yaml" "$STUB_DIR/llamadas" >/dev/null; echo $?)"

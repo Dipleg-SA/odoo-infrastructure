@@ -6,7 +6,9 @@ Para sembrar y validar staging con datos de producción antes de continuar el c�
 
 ## Objetivo
 
-Un runtime aislado que recibe exclusivamente `19.0-stag`, con SMTP desactivado y credenciales Restic de solo lectura.
+Un runtime aislado que publica exclusivamente `19.0-stag` en
+`runtime/staging/addons/custom`, conserva su propio checkout Enterprise, mantiene SMTP
+desactivado y usa credenciales Restic de solo lectura.
 
 ## Preparación
 
@@ -19,12 +21,26 @@ ENTORNO=staging make secrets-init config-init
 sudo ENTORNO=staging make secrets-perms
 ENTORNO=staging make secrets-check
 ENTORNO=staging make host-verify
+ENTORNO=staging make addons-runtime-init
 ENTORNO=staging make repo-sync
 ENTORNO=staging make addons-deps
 ENTORNO=staging make build
 ```
 
 `make build` deja `ODOO_IMAGE` apuntando a la imagen de staging construida. La validación funcional es manual y no requiere una ranura de imagen.
+
+Para una revisión posterior sin cambios de base, edición ni dependencias:
+
+```bash
+ENTORNO=staging make repo-sync
+ENTORNO=staging make addons-deps
+ENTORNO=staging make odoo-restart
+ENTORNO=staging make odoo-verify
+```
+
+Si `addons-deps` cambia una huella, construí antes una imagen nueva. Un cambio exclusivo
+de código recrea Odoo sin build; staging nunca instala ni actualiza módulos por publicar
+el candidato.
 
 ## Flujo por stacks
 

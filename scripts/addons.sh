@@ -21,7 +21,7 @@ ROOT="$PWD"
 ADDONS_ROOT="$ROOT/runtime/addons"
 CATALOGO="$ADDONS_ROOT/catalogo.txt"
 BARE_DIR="$ADDONS_ROOT/.repos"
-CANDIDATE_ROOT="$ADDONS_ROOT/custom/$ENTORNO"
+CANDIDATE_ROOT="$RUNTIME_DIR/addons/custom"
 VERSION="$(contexto_odoo_version | head -1)"
 
 if [ -z "$VERSION" ]; then
@@ -75,9 +75,9 @@ BARE_RESULT=""
 fail() { printf 'addons.sh: %s\n' "$1" >&2; FAILED=1; }
 warn() { printf 'addons.sh: aviso: %s\n' "$1" >&2; }
 
-# Checkout único de Enterprise
-# Vive fuera del catálogo y solo se selecciona por un tag fechado de la línea.
-ENTERPRISE_ROOT="$ADDONS_ROOT/enterprise"
+# Checkout Enterprise por entorno
+# Vive fuera del catálogo y cada runtime selecciona su propio tag fechado.
+ENTERPRISE_ROOT="$RUNTIME_DIR/addons/enterprise"
 
 enterprise_usage() {
   printf 'uso: %s enterprise <sync|status|validate> [URL] [TAG]\n' "$(basename "$0")" >&2
@@ -109,11 +109,11 @@ enterprise_tag_validar() {
 enterprise_checkout_validar() {
   local url="$1" tag="$2" remoto commit tag_commit estado nuevo=0
   if [ -L "$ENTERPRISE_ROOT" ]; then
-    fail "runtime/addons/enterprise no puede ser un enlace simbólico"
+    fail "runtime/$ENTORNO/addons/enterprise no puede ser un enlace simbólico"
     return 1
   fi
   if [ ! -d "$ENTERPRISE_ROOT/.git" ]; then
-    mkdir -p "$ADDONS_ROOT"
+    mkdir -p "$RUNTIME_DIR/addons"
     if ! git clone --no-checkout -- "$url" "$ENTERPRISE_ROOT"; then
       rm -rf "$ENTERPRISE_ROOT"
       fail "no se pudo clonar Enterprise"
@@ -122,7 +122,7 @@ enterprise_checkout_validar() {
     nuevo=1
   fi
   remoto=$(git -C "$ENTERPRISE_ROOT" remote get-url origin 2>/dev/null) || {
-    fail "runtime/addons/enterprise no tiene un remoto origin"; return 1;
+    fail "runtime/$ENTORNO/addons/enterprise no tiene un remoto origin"; return 1;
   }
   if [ "$remoto" != "$url" ]; then
     fail "la URL de Enterprise difiere del remoto origin; revisar manualmente"
@@ -176,7 +176,7 @@ enterprise_validate() {
     return 2
   fi
   enterprise_tag_validar "$tag" || return 1
-  [ -d "$ENTERPRISE_ROOT/.git" ] || { fail "falta runtime/addons/enterprise; ejecutar enterprise sync"; return 1; }
+  [ -d "$ENTERPRISE_ROOT/.git" ] || { fail "falta runtime/$ENTORNO/addons/enterprise; ejecutar enterprise sync"; return 1; }
   commit=$(git -C "$ENTERPRISE_ROOT" rev-parse --verify HEAD 2>/dev/null) || { fail "Enterprise no tiene HEAD resoluble"; return 1; }
   expected=$(git -C "$ENTERPRISE_ROOT" rev-parse --verify "$tag^{commit}" 2>/dev/null) || { fail "el tag de Enterprise no existe localmente: $tag"; return 1; }
   [ "$(git -C "$ENTERPRISE_ROOT" cat-file -t "refs/tags/$tag" 2>/dev/null || true)" = tag ] || { fail "el tag de Enterprise debe ser anotado e inmutable: $tag"; return 1; }
@@ -348,11 +348,42 @@ inicializar_feature_desarrollo() {
   ui_ok "$dominio: origin/$RAMA inicializada desde ${base:0:12}"
 }
 
+# Huella del árbol exportado
+# Reconstruye un objeto Git sin incluir los dos marcadores derivados del candidato.
+candidate_tree_calcular() {
+  local candidato="$1" temporal tree
+  temporal=$(mktemp -d) || return 1
+  if ! git init --bare -q "$temporal/repo.git" \
+      || ! tree=$(GIT_DIR="$temporal/repo.git" GIT_WORK_TREE="$candidato" \
+        git -C "$candidato" add -f -A -- . \
+          ':(exclude).candidate-commit' ':(exclude).candidate-tree' \
+        && GIT_DIR="$temporal/repo.git" git write-tree); then
+    rm -rf "$temporal"
+    return 1
+  fi
+  rm -rf "$temporal"
+  printf '%s\n' "$tree"
+}
+
+# Integridad del candidato
+# Compara commit, árbol esperado y árbol reconstruido antes de consumir el export.
+candidate_validar() {
+  local bare="$1" candidato="$2" commit tree esperado actual
+  commit=$(cat "$candidato/.candidate-commit" 2>/dev/null || true)
+  tree=$(cat "$candidato/.candidate-tree" 2>/dev/null || true)
+  [[ "$commit" =~ ^[0-9a-f]{40,64}$ ]] || return 1
+  [[ "$tree" =~ ^[0-9a-f]{40,64}$ ]] || return 1
+  esperado=$(git -C "$bare" rev-parse --verify "$commit^{tree}" 2>/dev/null) || return 1
+  [ "$tree" = "$esperado" ] || return 1
+  actual=$(candidate_tree_calcular "$candidato") || return 1
+  [ "$actual" = "$tree" ]
+}
+
 # Publicación de candidato
 # Exporta un commit completo y reemplaza el árbol solo después de extraerlo.
 publicar_candidato() {
   local bare="$1" dominio="$2" commit="$3" candidato="$CANDIDATE_ROOT/$dominio"
-  local temporal anterior="" padre="$CANDIDATE_ROOT" respaldo err
+  local temporal anterior="" padre="$CANDIDATE_ROOT" respaldo err tree
   mkdir -p "$padre"
   if ! temporal=$(mktemp -d "$padre/.${dominio}.XXXXXX"); then
     fail "$dominio: no se pudo crear el directorio temporal del candidato"
@@ -364,6 +395,17 @@ publicar_candidato() {
     return 1
   fi
   printf '%s\n' "$commit" > "$temporal/.candidate-commit"
+  tree=$(git -C "$bare" rev-parse --verify "$commit^{tree}") || {
+    rm -rf "$temporal"
+    fail "$dominio: no se pudo resolver el árbol del commit $commit"
+    return 1
+  }
+  printf '%s\n' "$tree" > "$temporal/.candidate-tree"
+  candidate_validar "$bare" "$temporal" || {
+    rm -rf "$temporal"
+    fail "$dominio: el export no coincide con el árbol $tree"
+    return 1
+  }
 
   for respaldo in "$padre/.${dominio}.previous."*; do
     [ -e "$respaldo" ] || continue
@@ -441,7 +483,7 @@ cmd_sync() {
 # Estado de candidatos
 # Muestra el commit publicado y señala dominios que ya no aparecen en el catálogo.
 cmd_status() {
-  local indice=0 dominio candidato commit conocidos=" " ruta nombre
+  local indice=0 dominio candidato commit conocidos=" " ruta nombre bare
   require_catalogo
   if ! catalogo_validar; then exit 1; fi
   printf 'runtime: %s · rama: %s\n\n' "$ENTORNO" "$RAMA"
@@ -450,9 +492,13 @@ cmd_status() {
     dominio="${DOMINIOS[$indice]}"
     conocidos="$conocidos$dominio "
     candidato="$CANDIDATE_ROOT/$dominio"
-    if [ -f "$candidato/.candidate-commit" ]; then
+    bare="$BARE_DIR/$dominio.git"
+    if [ -f "$candidato/.candidate-commit" ] && candidate_validar "$bare" "$candidato"; then
       commit=$(cat "$candidato/.candidate-commit")
       printf '%-24s %-16s %s\n' "$dominio" "publicado" "$commit"
+    elif [ -e "$candidato" ] || [ -L "$candidato" ]; then
+      printf '%-24s %-16s %s\n' "$dominio" "inválido" "-"
+      FAILED=1
     else
       printf '%-24s %-16s %s\n' "$dominio" "sin candidato" "-"
     fi
@@ -463,9 +509,10 @@ cmd_status() {
     nombre=$(basename "$ruta")
     case "$conocidos" in
       *" $nombre "*) ;;
-      *) printf 'huérfano: custom/%s/%s (no está en runtime/addons/catalogo.txt)\n' "$ENTORNO" "$nombre" ;;
+      *) printf 'huérfano: runtime/%s/addons/custom/%s (no está en runtime/addons/catalogo.txt)\n' "$ENTORNO" "$nombre" ;;
     esac
   done
+  [ "$FAILED" -eq 0 ]
 }
 
 case "${1:-}" in

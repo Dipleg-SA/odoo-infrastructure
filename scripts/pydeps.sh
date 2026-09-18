@@ -10,7 +10,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 contexto_iniciar
 
 OVERRIDE="${PYDEPS_OVERRIDE:-runtime/addons/requirements.override.txt}"
-OUTPUT="${PYDEPS_OUTPUT:-runtime/addons/requirements.lock.txt}"
+OUTPUT="${PYDEPS_OUTPUT:-$RUNTIME_DIR/addons/requirements.lock.txt}"
+INPUTS_HASH_OUTPUT="${PYDEPS_INPUTS_HASH_OUTPUT:-$(dirname "$OUTPUT")/requirements.inputs.sha256}"
+LOCK_HASH_OUTPUT="${PYDEPS_LOCK_HASH_OUTPUT:-$(dirname "$OUTPUT")/requirements.lock.sha256}"
 
 # Snapshot del runtime
 # Los comandos manuales leen candidatos; el build inyecta la fotografía exportada.
@@ -18,15 +20,16 @@ if [ -n "${PYDEPS_SNAPSHOT_ROOT:-}" ]; then
   ENTERPRISE_ROOT="$PYDEPS_SNAPSHOT_ROOT/enterprise"
   CUSTOM_ROOT="$PYDEPS_SNAPSHOT_ROOT/custom"
 else
-  ENTERPRISE_ROOT="runtime/addons/enterprise"
-  CUSTOM_ROOT="runtime/addons/custom/$ENTORNO"
+  ENTERPRISE_ROOT="$RUNTIME_DIR/addons/enterprise"
+  CUSTOM_ROOT="$RUNTIME_DIR/addons/custom"
 fi
 
 # Analizador y compilador
 # Python valida los formatos sin ejecutar manifiestos y conserva cada requisito literal.
 run_pydeps() {
   local command="$1"
-  python3 - "$command" "$ENTERPRISE_ROOT" "$CUSTOM_ROOT" "$OVERRIDE" "$OUTPUT" <<'PY'
+  python3 - "$command" "$ENTERPRISE_ROOT" "$CUSTOM_ROOT" "$OVERRIDE" "$OUTPUT" \
+    "$INPUTS_HASH_OUTPUT" "$LOCK_HASH_OUTPUT" <<'PY'
 import ast
 import hashlib
 import os
@@ -38,10 +41,12 @@ import sys
 import tarfile
 import tempfile
 
-command, enterprise_arg, custom_arg, override_arg, output_arg = sys.argv[1:]
+command, enterprise_arg, custom_arg, override_arg, output_arg, inputs_hash_arg, lock_hash_arg = sys.argv[1:]
 roots = [pathlib.Path(enterprise_arg), pathlib.Path(custom_arg)]
 override = pathlib.Path(override_arg)
 output = pathlib.Path(output_arg)
+inputs_hash_output = pathlib.Path(inputs_hash_arg)
+lock_hash_output = pathlib.Path(lock_hash_arg)
 
 ALIASES = {
     "openssl": "pyopenssl",
@@ -240,6 +245,17 @@ def validate(declared, collected):
         raise ValueError("requisitos incompatibles: " + "; ".join(conflicts))
 
 
+def inputs_fingerprint(declared, collected):
+    records = []
+    for line, name, source, _number in collected:
+        records.append(f"requirement\t{source_label(source)}\t{name}\t{line}")
+    for name, paths in declared.items():
+        for path in paths:
+            records.append(f"external-python\t{source_label(path)}\t{name}")
+    payload = "\n".join(sorted(records)) + ("\n" if records else "")
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def resolve_vcs(line, sources_dir, checkout_root, mirrors):
     requirement, marker = split_marker(line)
     vcs = vcs_parts(requirement)
@@ -322,6 +338,7 @@ try:
     declared = manifest_dependencies()
     collected = collect_requirements()
     validate(declared, collected)
+    inputs_hash = inputs_fingerprint(declared, collected)
     if command == "compile":
         compiled = []
         seen = set()
@@ -346,6 +363,9 @@ try:
                 seen.add(resolved)
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text("\n".join(compiled) + ("\n" if compiled else ""), encoding="utf-8")
+        lock_hash = hashlib.sha256(output.read_bytes()).hexdigest()
+        inputs_hash_output.write_text(inputs_hash + "\n", encoding="ascii")
+        lock_hash_output.write_text(lock_hash + "\n", encoding="ascii")
         print(f"{len(seen)} requisito(s) compilados en {output}")
     elif command == "check":
         print(f"{len(collected)} requisito(s) cubren {len(declared)} dependencia(s) declaradas")

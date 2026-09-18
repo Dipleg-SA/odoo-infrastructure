@@ -10,9 +10,14 @@ Reconstruir el checkout, recuperar base y filestore desde un snapshot y levantar
 
 ## A mano
 
-Recuperá `runtime/produccion/compose.env`, configs, secrets, `runtime/addons/catalogo.txt` y, si corresponde, el checkout Enterprise etiquetado. `RESTIC_REPOSITORY` y las credenciales deben ser las del repositorio de origen. Conservá el `COMPOSE_PROJECT_NAME` original.
+Recuperá `runtime/produccion/compose.env`, configs, secrets y
+`runtime/addons/catalogo.txt`. El checkout Enterprise se reconstruye después bajo
+`runtime/produccion/addons/enterprise`. `RESTIC_REPOSITORY` y las credenciales deben ser
+las del repositorio de origen. Conservá el `COMPOSE_PROJECT_NAME` original.
 
-El snapshot contiene base, filestore, inventario de addons y metadata del backup; no contiene repositorios ni selecciona imágenes. Los commits registrados en el inventario tienen que seguir disponibles en sus remotos.
+El snapshot contiene base, filestore, la selección ejecutada y metadata del backup; no
+contiene repositorios ni selecciona imágenes. Los commits registrados tienen que seguir
+disponibles en sus remotos.
 
 ## Flujo de recuperación
 
@@ -42,6 +47,7 @@ El restore exige Odoo detenido y Postgres activo. Recupera filestore, dump y met
 Completá código, dependencias y configuración antes de levantar la aplicación:
 
 ```bash
+ENTORNO=produccion make addons-runtime-init
 ENTORNO=produccion make repo-sync
 ENTORNO=produccion make addons-deps
 ENTORNO=produccion make build
@@ -73,7 +79,10 @@ ENTORNO=produccion make alloy-verify
 
 ## Edición Community/Enterprise
 
-Conservá la edición del snapshot durante el primer restore. Para pasar a Community, retir&aacute; los módulos Enterprise en un entorno aislado, ejecutá el preflight, cambiá `ODOO_EDITION`/`TAG`, construí una imagen Community y validá nuevamente. La recuperación no usa rollback de imagen ni una imagen anterior.
+Conservá la edición y los commits ejecutados del snapshot durante el primer restore. Para
+pasar a Community, retirá los módulos Enterprise en un entorno aislado, ejecutá el
+preflight, cambiá `ODOO_EDITION`/`TAG`, construí una imagen Community y validá
+nuevamente. La recuperación no usa rollback de imagen ni una imagen anterior.
 
 ## Verificación
 

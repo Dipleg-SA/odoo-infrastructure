@@ -22,8 +22,8 @@ mediante `ODOO_EDITION` y `TAG`; no existe un `.env` raíz ni un manifiesto de e
 paralelo.
 
 Los addons se declaran en `runtime/addons/catalogo.txt`, se sincronizan en el host y
-se fotografían desde `runtime/addons/`. `enterprise`, `custom-addons`, `oca` y
-`third-party` son categorías del árbol, no stacks de Compose. `addons-webhook` sí es
+se publican por entorno bajo `runtime/<entorno>/addons/`. `custom` y `enterprise` son
+árboles del runtime, no stacks de Compose. `addons-webhook` sí es
 un stack porque tiene imagen, configuración, verificación y targets propios de Make;
 la composición lo incluye únicamente donde corresponde.
 
@@ -62,9 +62,10 @@ a este.
 
 La relación entre ambos es de **orquestación, no de contención**: este repo no
 incorpora ese código a su propia historia — lo clona, lo actualiza y lo monta. Lo único
-que sabe de cada módulo es una línea en `runtime/addons/catalogo.txt`: su URL y su categoría
-(`enterprise` · `custom-addons` · `oca` · `third-party`, el mismo orden que resuelve el
-`addons_path` — ver «Gestión de addons: candidatos y fotografía inmutable» más abajo).
+que sabe de cada módulo es una línea con su URL en `runtime/addons/catalogo.txt`.
+El `addons_path` conserva la precedencia de Enterprise sobre los dominios custom y
+Community — ver «Gestión de addons: imagen, dependencias, candidatos y selección
+ejecutada» más abajo.
 `make repo-sync` recorre ese manifiesto, clona cada repo en bare y publica un candidato
 por entorno sobre la rama correspondiente — el mecanismo completo está en los comentarios de
 [`scripts/addons.sh`](scripts/addons.sh). El resultado es un árbol en disco que el
@@ -323,30 +324,37 @@ migración de la comunidad, porque el fabricante no ofrece servicio oficial para
 edición. Detalle práctico: los scripts de migración suelen tardar cerca de un año en
 madurar tras cada release, lo que conviene tener en cuenta al planificar.
 
-### Gestión de addons: candidatos y fotografía inmutable
+### Gestión de addons: imagen, dependencias, candidatos y selección ejecutada
 
 Los módulos se sincronizan en el host desde `runtime/addons/catalogo.txt`. Los clones
 bare compartidos viven en `runtime/addons/.repos/` y cada entorno publica sus candidatos
-en `runtime/addons/custom/<entorno>/`. El webhook solo actualiza esos candidatos; no
+en `runtime/<entorno>/addons/custom/`. El webhook solo actualiza esos candidatos; no
 construye imágenes, no reinicia Odoo y no modifica la base.
 
-El build toma una fotografía bajo lock, exporta los commits seleccionados y los copia a
-la imagen Odoo en `/opt/odoo/enterprise/` y `/opt/odoo/custom/`. Por eso el Odoo activo
-no monta código de addons desde el host: cambiar un candidato no cambia la imagen
-seleccionada. Cuando el build termina correctamente, actualiza `ODOO_IMAGE` con el tag
-inmutable de esa fotografía y conserva su procedencia en `runtime/addons/builds/`.
+La imagen Odoo contiene la base oficial, el entrypoint y las dependencias Python
+compiladas; no contiene custom ni Enterprise. Compose monta
+`runtime/<entorno>/addons/{custom,enterprise}` en `/opt/odoo/` como solo lectura. Un
+cambio exclusivo de código conserva `ODOO_IMAGE`: el operador sincroniza y recrea Odoo
+con `up -d --force-recreate`. No se usa `docker compose restart`, porque un candidato
+se publica reemplazando el directorio y un contenedor existente puede conservar el bind
+anterior.
 
 Cada repositorio de addons declara cómo instalar sus dependencias Python mediante sus
 propios `requirements.txt`, tanto en la raíz como dentro de módulos. `pydeps` los descubre
-en la fotografía, comprueba que cubran `external_dependencies.python`, agrega únicamente
+en una fotografía temporal, comprueba que cubran `external_dependencies.python`, agrega únicamente
 los overrides del deployment y fija ramas o tags Git a commits completos. El lock resultante
 es el único archivo que recibe Docker; los manifiestos validan cobertura, no inventan nombres
 de distribuciones ni versiones. Las fuentes Git fijadas se archivan junto al lock y una etapa
 temporal instala las herramientas nativas necesarias para compilar todos los wheels; la imagen
 final recibe esos wheels, pero no los compiladores.
 
+La identidad de la imagen depende de `odoo_base`, edición y huellas reproducibles de
+entradas y lock. Cambiar cualquiera exige un build explícito; cambiar solo commits de
+addons no. Antes de levantar, recrear u operar módulos, el preflight compara esas huellas
+y valida los árboles montados bajo el lock compartido del entorno.
+
 Enterprise se administra fuera del catálogo de dominios, desde el checkout privado
-`runtime/addons/enterprise/`, y se selecciona mediante un tag anotado e inmutable.
+`runtime/<entorno>/addons/enterprise/`, y se selecciona mediante un tag anotado e inmutable.
 Community no exige ese checkout. Ambos caminos usan el mismo contrato `ODOO_EDITION` y
 `TAG`; la transición entre ediciones exige preflight, backup y validación manual cuando
 corresponde. La recuperación se hace con datos restaurados y un build explícito.
@@ -356,6 +364,12 @@ Las operaciones de módulos pasan por la API ORM de Odoo mediante los targets
 la única imagen seleccionada por `ODOO_IMAGE`; una operación funcional exige conservar
 el backup asociado y volver a validar el entorno si algo falla. La instalación o
 actualización no se dispara por webhook.
+
+Antes de delegar el proceso, el entrypoint escribe `/tmp/odoo-addons-startup.json` con
+entorno, edición, commits y árboles cargados. Esa fotografía es la procedencia operativa:
+`verify` la compara con candidatos actuales, el backup la guarda en el snapshot y la
+promoción compara producción con lo que staging ejecutó. Un candidato posterior queda
+pendiente de recreación; nunca se presenta como código ya validado.
 
 **Un repo por módulo, tres referencias por entorno.** Producción consume `19.0`, staging
 consume `19.0-stag` y desarrollo declara una `feat/*`. Al sincronizar desarrollo, una
@@ -828,12 +842,10 @@ Un **entorno** es una combinación de tres cosas: un checkout del repositorio, u
 de proyecto de Compose y el `compose.yaml` de `runtime/<entorno>/` que elige qué stacks entran. Cambiar
 cualquiera de las tres da un entorno distinto.
 
-**Un entorno por checkout.** Cuál es lo dice `ENTORNO` y `runtime/<entorno>/compose.env`, no la ruta de un
-archivo. No existe `config/production/` ni ningún otro subdirectorio por entorno: los
-stacks quedan idénticos en forma, sin excepciones. Se descartó el subdirectorio por
-entorno dentro de cada stack: superpone dos aislamientos —el del checkout y el de la
-ruta— y el resultado es uno que no aísla nada, por el mismo motivo que el árbol de
-addons es uno por checkout.
+**Cada runtime aísla estado y código.** Cuál es lo dice `ENTORNO` y
+`runtime/<entorno>/compose.env`. Los stacks quedan idénticos en forma, mientras base,
+filestore, configuración, secretos y addons ejecutables pertenecen al entorno. Los
+clones bare y el catálogo se comparten porque no son código cargado por Odoo.
 
 Los entrypoints **difieren en composición**, porque la naturaleza de cada entorno es
 distinta:
@@ -1006,9 +1018,9 @@ decisión pendiente sobre dónde vive el repositorio, no trabajo técnico pendie
 ```
 odoo-infrastructure/
 ├── runtime/                     ← composición, variables privadas, secretos y estado por entorno
-│   ├── desarrollo/{compose.yaml,compose.env.example}
-│   ├── staging/{compose.yaml,compose.env.example}
-│   ├── produccion/{compose.yaml,compose.env.example}
+│   ├── desarrollo/{compose.yaml,compose.env.example,addons/{custom,enterprise}}
+│   ├── staging/{compose.yaml,compose.env.example,addons/{custom,enterprise}}
+│   ├── produccion/{compose.yaml,compose.env.example,addons/{custom,enterprise}}
 │   ├── addons/{catalogo.txt.example,requirements.override.txt.example}
 │   └── control/compose.yaml     ← composición aislada del receptor
 ├── stacks/                      ← un stack por contenedor, con imagen, config y verify

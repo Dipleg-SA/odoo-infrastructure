@@ -58,14 +58,15 @@ printf 'edición destino: %s\n' "$DESTINO"
 printf 'módulos instalados: %s\n' "${modulos:-ninguno}"
 
 if [ "$DESTINO" = community ]; then
-  # Procedencia de la imagen seleccionada
-  # Para retirar Enterprise se consulta el inventario del build que usa ODOO_IMAGE.
+  # Procedencia Enterprise
+  # La imagen indica la edición vigente y el checkout del runtime aporta los módulos reales.
   BUILD_ROOT="$(cd "$RUNTIME_DIR/../addons/builds/$ENTORNO" 2>/dev/null && pwd -P || true)"
-  if ! python3 - "$ODOO_IMAGE" "$modulos" "$BUILD_ROOT" <<'PY'
+  ENTERPRISE_ROOT="$RUNTIME_DIR/addons/enterprise"
+  if ! python3 - "$ODOO_IMAGE" "$modulos" "$BUILD_ROOT" "$ENTERPRISE_ROOT" <<'PY'
 import json, sys
 from pathlib import Path
 
-selected_tag, installed_raw, build_root = sys.argv[1:]
+selected_tag, installed_raw, build_root, enterprise_root = sys.argv[1:]
 installed = set(filter(None, installed_raw.split(',')))
 metadata = None
 if build_root:
@@ -79,10 +80,11 @@ if build_root:
             break
 if metadata is None or metadata.get('edition') != 'enterprise':
     raise SystemExit(0)
-enterprise = metadata.get('enterprise_modules')
-if not isinstance(enterprise, list):
+root = Path(enterprise_root)
+enterprise = {path.parent.name for path in root.rglob('__manifest__.py')} if root.is_dir() else set()
+if not enterprise:
+    print('no se pudo inventariar el checkout Enterprise del runtime', file=sys.stderr)
     raise SystemExit(1)
-enterprise = set(enterprise)
 if installed & enterprise:
     print('módulos Enterprise instalados: ' + ', '.join(sorted(installed & enterprise)), file=sys.stderr)
     raise SystemExit(1)

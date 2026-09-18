@@ -73,30 +73,49 @@ marcar_exito() {
   mv -f "$tmp" "$dir/backup-$1.prom"
 }
 
-# --- Registro de addons ---
-# El snapshot registra el código de addons que estaba montado.
+# --- Selección ejecutada ---
+# El snapshot registra lo que el contenedor Odoo cargó, no el candidato publicado después.
 
 registrar_addons() {
-  local dir="$META_DIR" tmp error detalle estado
-  mkdir -p "$dir" 2>/dev/null || { ui_warn "no se pudo crear $dir" "backup sigue sin el registro de addons" >&2; return 0; }
-  tmp=$(mktemp "$dir/.addons.XXXXXX" 2>/dev/null) || { ui_warn "no se pudo escribir el registro de addons" "" >&2; return 0; }
-  error=$(mktemp "$dir/.addons-error.XXXXXX" 2>/dev/null) || { ui_warn "no se pudo escribir el diagnóstico de addons" "" >&2; rm -f "$tmp"; return 0; }
-  if scripts/addons.sh status > "$tmp" 2> "$error"; then
-    if grep -E '^(enterprise:|[[:alnum:]_.-]+[[:space:]]+(publicado|sin candidato)[[:space:]]+)' "$tmp" > "$tmp.registro"; then
-      chmod 644 "$tmp.registro"
-      mv -f "$tmp.registro" "$dir/addons.txt"
-    else
-      ui_warn "no se pudo generar el registro de addons" "scripts/addons.sh status no informó worktrees" >&2
-      rm -f "$tmp.registro"
-    fi
-  else
-    estado=$?
-    detalle=$(tr '\n' ' ' < "$error")
-    ui_warn "no se pudo generar el registro de addons" \
-      "scripts/addons.sh status salió con $estado: ${detalle:-sin diagnóstico}" >&2
+  local dir="$META_DIR" tmp
+  mkdir -p "$dir"
+  tmp=$(mktemp "$dir/.addons-startup.XXXXXX")
+  if ! compose exec -T odoo cat /tmp/odoo-addons-startup.json > "$tmp"; then
+    rm -f "$tmp"
+    ui_bad "no se pudo leer la selección ejecutada de Odoo" \
+      "levantar y verificar Odoo antes de crear el backup" >&2
+    return 1
   fi
-  rm -f "$tmp" "$error"
-  return 0
+  if ! python3 - "$tmp" "$ENTORNO" "$ODOO_EDITION" <<'PY'
+import json
+import pathlib
+import sys
+
+path, environment, edition = sys.argv[1:]
+try:
+    data = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+except (OSError, UnicodeError, json.JSONDecodeError):
+    raise SystemExit(1)
+if data.get("entorno") != environment or data.get("edition") != edition:
+    raise SystemExit(1)
+addons = data.get("addons")
+if not isinstance(addons, dict):
+    raise SystemExit(1)
+for value in addons.values():
+    if not isinstance(value, dict) or not value.get("commit") or not value.get("tree"):
+        raise SystemExit(1)
+if edition == "enterprise" and not (data.get("enterprise") or {}).get("commit"):
+    raise SystemExit(1)
+PY
+  then
+    rm -f "$tmp"
+    ui_bad "selección ejecutada de Odoo inválida" \
+      "recrear Odoo y ejecutar ENTORNO=$ENTORNO make odoo-verify" >&2
+    return 1
+  fi
+  chmod 644 "$tmp"
+  mv -f "$tmp" "$dir/addons-startup.json"
+  ui_ok "selección ejecutada de addons registrada"
 }
 
 # Metadata de backup asociado
@@ -127,16 +146,20 @@ print(next((value for value in reversed(ids) if value), ""))
   odoo_image="${ODOO_IMAGE:-}"
   mkdir -p "$META_DIR"
   tmp=$(mktemp "$META_DIR/.last-backup.XXXXXX")
-  python3 - "$tmp" "$snapshot_id" "$ENTORNO" "$ODOO_EDITION" "$odoo_image" <<'PY'
+  python3 - "$tmp" "$snapshot_id" "$ENTORNO" "$ODOO_EDITION" "$odoo_image" "$META_DIR/addons-startup.json" <<'PY'
 import json, sys
 from datetime import datetime, timezone
 
-path, snapshot_id, entorno, edition, odoo_image = sys.argv[1:]
+path, snapshot_id, entorno, edition, odoo_image, startup_path = sys.argv[1:]
+with open(startup_path, encoding='utf-8') as source:
+    startup = json.load(source)
 payload = {
+    'metadata_version': 2,
     'snapshot_id': snapshot_id,
     'entorno': entorno,
     'edition': edition,
     'odoo_image': odoo_image or None,
+    'addons_startup': startup,
     'created_at': datetime.now(timezone.utc).isoformat(),
 }
 with open(path, 'w', encoding='utf-8') as output:

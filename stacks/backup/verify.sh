@@ -86,13 +86,57 @@ v_backup() {
     esac
   fi
 
-  # --- Registro de addons en el snapshot ---
-  # Sin pineo por commit, es lo único que dice a qué código corresponde el backup.
+  # --- Procedencia ejecutada del snapshot ---
+  # Metadata versión 2 exige la fotografía del arranque; registros anteriores son solo diagnóstico.
+  local metadata_version snapshot_id startup_snapshot provenance_error
+  metadata_version=""
+  snapshot_id=""
+  if [ -s "$META_DIR/last-backup.json" ]; then
+    read -r metadata_version snapshot_id < <(python3 - "$META_DIR/last-backup.json" <<'PY' 2>/dev/null || true
+import json
+import pathlib
+import sys
 
+try:
+    data = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+except (OSError, UnicodeError, json.JSONDecodeError):
+    raise SystemExit(1)
+print(data.get("metadata_version", ""), data.get("snapshot_id", ""))
+PY
+    )
+  fi
   if ! respalda; then
-    omitir "registro de addons del snapshot presente" "este entorno no escribe snapshots"
-  elif [ -s "$META_DIR/addons.txt" ]; then ok "registro de addons del snapshot presente"
-  else aviso "registro de addons del snapshot presente" "$META_DIR/addons.txt vacío — lo escribe make backup-run"; fi
+    omitir "procedencia ejecutada del snapshot presente" "este entorno no escribe snapshots"
+  elif [ "$metadata_version" = 2 ] && [ -n "$snapshot_id" ]; then
+    startup_snapshot=$(contexto_compose exec -T backup restic dump "$snapshot_id" \
+      /data/meta/addons-startup.json 2>/dev/null || true)
+    provenance_error=$(python3 - "$startup_snapshot" "$ENTORNO" "$ODOO_EDITION" <<'PY' 2>/dev/null || true
+import json
+import sys
+
+try:
+    data = json.loads(sys.argv[1])
+except (json.JSONDecodeError, TypeError):
+    print("el snapshot no contiene addons-startup.json válido")
+    raise SystemExit
+if data.get("entorno") != sys.argv[2] or data.get("edition") != sys.argv[3]:
+    print("la selección ejecutada pertenece a otro entorno o edición")
+elif not isinstance(data.get("addons"), dict):
+    print("la selección ejecutada no contiene el inventario de addons")
+PY
+    )
+    if [ -z "$provenance_error" ]; then
+      ok "procedencia ejecutada del snapshot presente"
+    else
+      bad "procedencia ejecutada del snapshot presente" "$provenance_error"
+    fi
+  elif [ -s "$META_DIR/addons.txt" ] || [ -s "$META_DIR/last-backup.json" ]; then
+    aviso "procedencia ejecutada del snapshot presente" \
+      "metadata histórica disponible solo para diagnóstico; no representa una selección aplicable"
+  else
+    bad "procedencia ejecutada del snapshot presente" \
+      "falta metadata del último backup; ejecutar ENTORNO=$ENTORNO make backup-run"
+  fi
 
   # --- Timers ---
   # El diario respalda y purga; el mensual verifica integridad del repositorio.

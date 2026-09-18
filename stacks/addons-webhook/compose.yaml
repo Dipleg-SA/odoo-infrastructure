@@ -14,10 +14,9 @@ services:
     expose:
       - "8080"
     environment:
-      ADDONS_PROJECT_NAME: ${COMPOSE_PROJECT_NAME}
       ADDONS_CATALOG: /etc/addons/catalogo.txt
       ADDONS_BARE_DIR: /var/lib/addons/.repos
-      ADDONS_CANDIDATE_ROOT: /var/lib/addons/custom
+      ADDONS_CANDIDATE_ROOT: /var/lib/addons
       ADDONS_STATE_DIR: /var/lib/addons-webhook
       ADDONS_SECRET_FILE: /run/secrets/addons_webhook_secret
       ADDONS_GIT_TOKEN_FILE: /run/secrets/git_readonly_token
@@ -64,9 +63,21 @@ services:
         target: /var/lib/addons/.repos
         bind:
           create_host_path: false
+      # Candidatos custom por entorno
+      # Cada bind limita la escritura del receptor al árbol que publica.
       - type: bind
-        source: ../../runtime/addons/custom
-        target: /var/lib/addons/custom
+        source: ../../runtime/desarrollo/addons/custom
+        target: /var/lib/addons/desarrollo
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../runtime/staging/addons/custom
+        target: /var/lib/addons/staging
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../runtime/produccion/addons/custom
+        target: /var/lib/addons/produccion
         bind:
           create_host_path: false
     read_only: true

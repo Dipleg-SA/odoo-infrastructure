@@ -6,7 +6,7 @@ Para inspeccionar el contenedor de backup o ejecutar un backup y su verificació
 
 ## Objetivo
 
-Conservar base, filestore, addons y metadata de procedencia en el mismo snapshot de
+Conservar base, filestore y la selección de addons ejecutada en el mismo snapshot de
 producción para poder reconstruir el runtime.
 
 ## Flujo rápido
@@ -25,9 +25,10 @@ ENTORNO=produccion make backup-verify
 ENTORNO=produccion make backup-logs
 ```
 
-El backup registra el `ODOO_IMAGE` usado como dato diagnóstico junto con la procedencia
-de `runtime/addons/catalogo.txt`, base y filestore. La imagen no se restaura como estado:
-si hace falta, se reconstruye explícitamente a partir de los candidatos y la edición.
+El backup lee `/tmp/odoo-addons-startup.json` del contenedor Odoo y registra esos commits,
+no el candidato actual. `last-backup.json` versión 2 asocia la selección ejecutada,
+`ODOO_IMAGE`, base y filestore. Metadata histórica sin esa versión queda disponible solo
+como diagnóstico. La imagen no se restaura como estado: si hace falta, se reconstruye.
 
 Para restaurar en staging:
 
@@ -41,6 +42,6 @@ seleccionada.
 
 ## Verificación
 
-`ENTORNO=produccion make backup-verify` debe confirmar snapshots, base, filestore,
-registro de addons y metadata de procedencia. Staging solo lee el repositorio y no
-ejecuta `backup-run`.
+`ENTORNO=produccion make backup-verify` debe confirmar snapshots, base, filestore y
+`addons-startup.json` dentro del snapshot. Staging solo lee el repositorio y no ejecuta
+`backup-run`.

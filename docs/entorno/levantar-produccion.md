@@ -6,7 +6,9 @@ Para preparar o recuperar el runtime productivo de una línea mayor de Odoo.
 
 ## Objetivo
 
-Producción ejecuta la única imagen Odoo declarada en su runtime, conserva backup de base y filestore y opera con `ENTORNO=produccion` explícito.
+Producción ejecuta la única imagen Odoo declarada y monta
+`runtime/produccion/addons/{custom,enterprise}` como solo lectura. Conserva backup de
+base y filestore y opera con `ENTORNO=produccion` explícito.
 
 ## Preparación
 
@@ -22,13 +24,31 @@ sudo ENTORNO=produccion make secrets-perms
 ENTORNO=produccion make secrets-check
 ENTORNO=produccion make host-verify
 ENTORNO=produccion make cert-issue
+ENTORNO=produccion make addons-runtime-init
 ENTORNO=produccion make repo-sync
 ENTORNO=produccion make promotion-verify
 ENTORNO=produccion make addons-deps
 ENTORNO=produccion make build
 ```
 
-`make build` actualiza `ODOO_IMAGE` solo después de construir y verificar la identidad Docker. El entorno opera con una única referencia seleccionada.
+`make build` actualiza `ODOO_IMAGE` solo después de construir y verificar la identidad
+Docker. Es obligatorio en el bootstrap o si cambian `odoo_base`, edición o dependencias;
+un commit nuevo con las mismas huellas conserva la imagen.
+
+El flujo frecuente posterior al PR es:
+
+```bash
+ENTORNO=produccion make repo-sync
+ENTORNO=produccion make promotion-verify
+ENTORNO=produccion make addons-deps
+ENTORNO=produccion make backup-run
+ENTORNO=produccion make odoo-restart
+ENTORNO=produccion make odoo-verify
+```
+
+`promotion-verify` compara `19.0` con la selección que staging tiene cargada. Si el
+preflight de la recreación exige una imagen nueva, ejecutá `make build` antes de
+`odoo-restart`. Las operaciones de módulos siguen siendo explícitas y posteriores.
 
 ## Flujo por stacks
 
@@ -75,7 +95,8 @@ ENTORNO=produccion make backup-run
 sudo ENTORNO=produccion make up-timers
 ```
 
-El backup conserva base, filestore, inventario de addons y metadata del snapshot. No selecciona ni restaura imágenes.
+El backup conserva base, filestore y la selección de addons cargada por el contenedor,
+además de la metadata del snapshot. No selecciona ni restaura imágenes.
 
 ### 5. Monitoring
 

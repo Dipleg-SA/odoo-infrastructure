@@ -10,8 +10,8 @@ contexto_iniciar
 
 ROOT="$(pwd)"
 OUT="$COMPOSE_PROJECT_NAME.code-workspace"
-CANDIDATES_WORKSPACE="$ROOT/runtime/addons/custom/$ENTORNO"
-ENTERPRISE_WORKSPACE="$ROOT/runtime/addons/enterprise"
+CANDIDATES_WORKSPACE="$RUNTIME_DIR/addons/custom"
+ENTERPRISE_WORKSPACE="$RUNTIME_DIR/addons/enterprise"
 COLOR="1a4d7a"
 
 # Candidatos del entorno
@@ -30,7 +30,7 @@ if [ "$ODOO_EDITION" = "enterprise" ] && [ -d "$ENTERPRISE_WORKSPACE" ]; then
   enterprise_folder=",
     { \"name\": \"enterprise — candidato operativo\", \"path\": \"$ENTERPRISE_WORKSPACE\" }"
 elif [ "$ODOO_EDITION" = "enterprise" ]; then
-  ui_warn "Enterprise no está sincronizado" "el workspace no incluirá runtime/addons/enterprise"
+  ui_warn "Enterprise no está sincronizado" "el workspace no incluirá runtime/$ENTORNO/addons/enterprise"
 fi
 
 # Workspace generado
@@ -52,6 +52,7 @@ cat > "$OUT" <<EOF
     },
     "files.exclude": {
       "runtime/addons": true,
+      "runtime/*/addons": true,
       ".repos": true,
       "builds": true
     }

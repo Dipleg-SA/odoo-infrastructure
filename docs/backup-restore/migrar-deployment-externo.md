@@ -8,19 +8,21 @@ configuración, secretos ni código privado como si fueran parte del producto.
 ## Objetivo
 
 Reconstruir un runtime reproducible, elegir Community o Enterprise con la configuración
-plana y conservar la procedencia de la base, el filestore y el build restaurado.
+plana y conservar la procedencia de la base, el filestore, la imagen y el código
+ejecutado.
 
 ## Flujo rápido
 
 1. Obtener un backup verificable de base, filestore y procedencia de la instancia.
 2. Preparar el runtime y restaurar primero una copia en staging.
-3. Elegir la edición, construir y validar el resultado en staging.
-4. Construir y levantar producción con el backup asociado.
+3. Elegir la edición, reconstruir los mounts, construir y validar staging.
+4. Reconstruir los mounts y levantar producción con el backup asociado.
 
 ## A mano
 
-Copiá únicamente secretos, configuraciones privadas y datos necesarios. No copies un
-`.env` externo como fuente de selección ni mezcles su checkout de addons con el catálogo.
+Copiá únicamente secretos, configuraciones privadas, datos y evidencia verificable de
+los commits ejecutados. No copies un `.env` externo como fuente de selección ni mezcles
+su checkout de addons con los árboles de este runtime.
 
 La elección usa solo estas variables en `runtime/<entorno>/compose.env`:
 
@@ -44,8 +46,10 @@ tag anotado e inmutable y procedencia correspondiente.
 ```bash
 cp runtime/staging/compose.env.example runtime/staging/compose.env
 ENTORNO=staging make secrets-init config-init
+ENTORNO=staging make addons-runtime-init
 ENTORNO=staging make restore SNAPSHOT=<snapshot>
 ENTORNO=staging make repo-sync
+ENTORNO=staging make addons-deps
 ENTORNO=staging make build
 ENTORNO=staging make up
 ENTORNO=staging make verify
@@ -58,6 +62,9 @@ una copia aislada, cambiá el par de variables, construí y repetí la validaci�
 
 ```bash
 ENTORNO=produccion make backup-run
+ENTORNO=produccion make addons-runtime-init
+ENTORNO=produccion make repo-sync
+ENTORNO=produccion make addons-deps
 ENTORNO=produccion make build
 ENTORNO=produccion make up
 ENTORNO=produccion make verify
@@ -65,7 +72,8 @@ ENTORNO=produccion make verify
 
 ## Verificación
 
-Confirmá que edición, tag, digest, commits de addons y procedencia Enterprise —si
-corresponde— coincidan con el snapshot y el build seleccionado. Si la base conserva
+Confirmá que edición, tag, digest y huellas de la imagen coincidan, y que los commits de
+`/tmp/odoo-addons-startup.json` correspondan a la procedencia importada. Enterprise se
+reconstruye por entorno bajo su propio `addons/enterprise`. Si la base conserva
 módulos Enterprise, el destino Community queda bloqueado hasta completar la validación
 y el retiro manual sobre una copia.

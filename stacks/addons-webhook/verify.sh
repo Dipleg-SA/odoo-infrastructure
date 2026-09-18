@@ -26,6 +26,57 @@ sin_referencias_prohibidas() {
   fi
 }
 
+# Destinos custom
+# Exige un bind por entorno, sin creación implícita ni acceso Enterprise.
+verificar_destinos_custom() {
+  local configuracion="$1" entorno bloque fallos=0
+  for entorno in desarrollo staging produccion; do
+    bloque=$(printf '%s\n' "$configuracion" | grep -A5 -E \
+      "^[[:space:]]*source: .*/runtime/$entorno/addons/custom$")
+    if printf '%s\n' "$bloque" | grep -qE "^[[:space:]]*target: /var/lib/addons/$entorno$" \
+      && printf '%s\n' "$bloque" | grep -qE '^[[:space:]]*create_host_path: false$'; then
+      ok "destino custom de $entorno limitado"
+    else
+      bad "destino custom de $entorno limitado" \
+        "exigir source runtime/$entorno/addons/custom, target propio y create_host_path=false"
+      fallos=1
+    fi
+  done
+  [ "$fallos" -eq 0 ] || return 1
+}
+
+# Permisos del host
+# El operador conserva ownership y el receptor obtiene escritura por el GID 65532.
+verificar_permisos_custom() {
+  local entorno ruta modo fallos=0
+  modo=2775
+  [ "$(uname -s)" != Darwin ] || modo=0775
+  for entorno in desarrollo staging produccion; do
+    ruta="runtime/$entorno/addons/custom"
+    if python3 - "$ruta" "$modo" <<'PY'
+import os
+import stat
+import sys
+
+path, expected_mode = sys.argv[1], int(sys.argv[2], 8)
+try:
+    value = os.stat(path, follow_symlinks=False)
+except OSError:
+    raise SystemExit(1)
+valid = stat.S_ISDIR(value.st_mode) and value.st_uid == os.getuid()
+valid = valid and value.st_gid == 65532 and stat.S_IMODE(value.st_mode) == expected_mode
+raise SystemExit(0 if valid else 1)
+PY
+    then
+      ok "permisos custom de $entorno"
+    else
+      bad "permisos custom de $entorno" "ejecutar make addons-runtime-init"
+      fallos=1
+    fi
+  done
+  [ "$fallos" -eq 0 ] || return 1
+}
+
 v_addons_webhook() {
   titulo "addons-webhook"
   sano addons-webhook
@@ -56,6 +107,8 @@ v_addons_webhook() {
     'odoo_admin_password|postgres_password|zeptomail_smtp_password|admin_passwd|smtp_password' "$configuracion"
   sin_referencias_prohibidas "sin referencia a la imagen de Odoo" \
     '^[[:space:]]*image:|ODOO_IMAGE' "$configuracion"
+  verificar_destinos_custom "$configuracion" || true
+  verificar_permisos_custom || true
   if grep -Eiq '^[[:space:]]*FROM[[:space:]]+odoo|enterprise' stacks/addons-webhook/image/Dockerfile; then
     bad "la imagen del receptor no deriva de Odoo ni contiene Enterprise" "Dockerfile con base o contenido prohibido"
   else

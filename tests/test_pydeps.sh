@@ -13,7 +13,8 @@ trap 'rm -rf "$TMP"' EXIT
 # Cada caso recibe el script real y un runtime aislado de staging.
 crear_checkout() {
   local root="$TMP/$1"
-  mkdir -p "$root/scripts/lib" "$root/runtime/addons/custom/staging" "$root/runtime/staging"
+  mkdir -p "$root/scripts/lib" "$root/runtime/addons" \
+    "$root/runtime/staging/addons/custom" "$root/runtime/staging"
   cp "$REPO_ROOT/scripts/pydeps.sh" "$root/scripts/"
   cp "$REPO_ROOT/scripts/lib/ui.sh" "$REPO_ROOT/scripts/lib/contexto.sh" "$root/scripts/lib/"
   printf 'name: prueba-staging\nservices: {}\n' > "$root/runtime/staging/compose.yaml"
@@ -27,7 +28,7 @@ crear_checkout() {
 # Los requisitos pueden vivir en la raíz del repositorio o junto a un módulo.
 declarar_modulo() {
   local root="$1" repo="$2" modulo="$3"; shift 3
-  local dir="$root/runtime/addons/custom/staging/$repo/$modulo" deps
+  local dir="$root/runtime/staging/addons/custom/$repo/$modulo" deps
   mkdir -p "$dir"
   if [ "$#" -eq 0 ]; then
     printf "{'name': '%s'}\n" "$modulo" > "$dir/__manifest__.py"
@@ -40,13 +41,13 @@ declarar_modulo() {
 
 requisitos_repo() {
   local root="$1" repo="$2"; shift 2
-  mkdir -p "$root/runtime/addons/custom/staging/$repo"
-  printf '%s\n' "$@" > "$root/runtime/addons/custom/staging/$repo/requirements.txt"
+  mkdir -p "$root/runtime/staging/addons/custom/$repo"
+  printf '%s\n' "$@" > "$root/runtime/staging/addons/custom/$repo/requirements.txt"
 }
 
 requisitos_modulo() {
   local root="$1" repo="$2" modulo="$3"; shift 3
-  printf '%s\n' "$@" > "$root/runtime/addons/custom/staging/$repo/$modulo/requirements.txt"
+  printf '%s\n' "$@" > "$root/runtime/staging/addons/custom/$repo/$modulo/requirements.txt"
 }
 
 check() { (cd "$1" && ENTORNO=staging ./scripts/pydeps.sh check 2>&1); }
@@ -77,7 +78,7 @@ ROOT=$(crear_checkout vacio)
 declarar_modulo "$ROOT" repo modulo
 igual "check termina bien" "0" "$(check_code "$ROOT")"
 igual "compile termina bien" "0" "$(compile_code "$ROOT")"
-igual "el lock queda vacío" "0" "$([ ! -s "$ROOT/runtime/addons/requirements.lock.txt" ]; echo $?)"
+igual "el lock queda vacío" "0" "$([ ! -s "$ROOT/runtime/staging/addons/requirements.lock.txt" ]; echo $?)"
 
 # =====================================================================
 titulo "descubrimiento: conserva rangos desde raíz y módulo"
@@ -89,10 +90,10 @@ requisitos_repo "$ROOT" repo 'authlib>=1.6.12,<1.7.0'
 requisitos_modulo "$ROOT" repo servidor packaging
 igual "los dos requirements cubren el manifiesto" "0" "$(check_code "$ROOT")"
 igual "compile termina bien" "0" "$(compile_code "$ROOT")"
-LOCK=$(cat "$ROOT/runtime/addons/requirements.lock.txt")
+LOCK=$(cat "$ROOT/runtime/staging/addons/requirements.lock.txt")
 contiene "conserva el rango de authlib" 'authlib>=1.6.12,<1.7.0' "$LOCK"
 contiene "conserva el requisito del módulo" 'packaging' "$LOCK"
-contiene "registra la procedencia" '# Fuente: custom/staging/repo/requirements.txt' "$LOCK"
+contiene "registra la procedencia" '# Fuente: custom/repo/requirements.txt' "$LOCK"
 
 # =====================================================================
 titulo "override: cubre aliases que el repositorio no declara"
@@ -104,16 +105,56 @@ printf 'pyOpenSSL==25.3.0\n' > "$ROOT/runtime/addons/requirements.override.txt"
 igual "pyOpenSSL cubre el import OpenSSL" "0" "$(check_code "$ROOT")"
 compile "$ROOT" >/dev/null
 contiene "el override llega al lock" 'pyOpenSSL==25.3.0' \
-  "$(cat "$ROOT/runtime/addons/requirements.lock.txt")"
+  "$(cat "$ROOT/runtime/staging/addons/requirements.lock.txt")"
 
 ROOT=$(crear_checkout reemplazo_override)
 declarar_modulo "$ROOT" repo afip pysimplesoap
 requisitos_repo "$ROOT" repo 'git+https://example.invalid/pysimplesoap.git@0123456789012345678901234567890123456789'
 printf 'pysimplesoap==1.8.22\n' > "$ROOT/runtime/addons/requirements.override.txt"
 igual "el override puede reemplazar una fuente del repositorio" "0" "$(compile_code "$ROOT")"
-LOCK=$(cat "$ROOT/runtime/addons/requirements.lock.txt")
+LOCK=$(cat "$ROOT/runtime/staging/addons/requirements.lock.txt")
 contiene "conserva el reemplazo local" 'pysimplesoap==1.8.22' "$LOCK"
 no_contiene "descarta la fuente reemplazada" 'example.invalid' "$LOCK"
+
+# =====================================================================
+titulo "huellas: cambian solo con declaraciones relevantes"
+# =====================================================================
+
+ROOT=$(crear_checkout huellas)
+declarar_modulo "$ROOT" repo modulo requests
+requisitos_repo "$ROOT" repo 'requests==2.32.5' packaging
+igual "compile inicial termina bien" "0" "$(compile_code "$ROOT")"
+INPUTS_INICIAL=$(cat "$ROOT/runtime/staging/addons/requirements.inputs.sha256")
+LOCK_INICIAL=$(cat "$ROOT/runtime/staging/addons/requirements.lock.sha256")
+igual "la huella de entradas tiene SHA-256" "64" "${#INPUTS_INICIAL}"
+igual "la huella del lock tiene SHA-256" "64" "${#LOCK_INICIAL}"
+
+printf 'código sin dependencias\n' > "$ROOT/runtime/staging/addons/custom/repo/modulo/modelo.py"
+igual "compile tras cambiar código termina bien" "0" "$(compile_code "$ROOT")"
+igual "cambiar código no altera entradas" "$INPUTS_INICIAL" \
+  "$(cat "$ROOT/runtime/staging/addons/requirements.inputs.sha256")"
+igual "cambiar código no altera el lock" "$LOCK_INICIAL" \
+  "$(cat "$ROOT/runtime/staging/addons/requirements.lock.sha256")"
+
+requisitos_repo "$ROOT" repo 'requests==2.32.6' packaging
+igual "compile tras cambiar requirements termina bien" "0" "$(compile_code "$ROOT")"
+INPUTS_REQUIREMENTS=$(cat "$ROOT/runtime/staging/addons/requirements.inputs.sha256")
+LOCK_REQUIREMENTS=$(cat "$ROOT/runtime/staging/addons/requirements.lock.sha256")
+igual "requirements cambia la huella de entradas" "0" "$([ "$INPUTS_INICIAL" != "$INPUTS_REQUIREMENTS" ]; echo $?)"
+igual "requirements cambia la huella del lock" "0" "$([ "$LOCK_INICIAL" != "$LOCK_REQUIREMENTS" ]; echo $?)"
+
+printf 'requests==2.32.7\n' > "$ROOT/runtime/addons/requirements.override.txt"
+igual "compile tras cambiar override termina bien" "0" "$(compile_code "$ROOT")"
+INPUTS_OVERRIDE=$(cat "$ROOT/runtime/staging/addons/requirements.inputs.sha256")
+LOCK_OVERRIDE=$(cat "$ROOT/runtime/staging/addons/requirements.lock.sha256")
+igual "override cambia la huella de entradas" "0" "$([ "$INPUTS_REQUIREMENTS" != "$INPUTS_OVERRIDE" ]; echo $?)"
+
+declarar_modulo "$ROOT" repo modulo requests packaging
+igual "compile tras declarar external dependency termina bien" "0" "$(compile_code "$ROOT")"
+igual "external_dependencies cambia la huella de entradas" "0" \
+  "$([ "$INPUTS_OVERRIDE" != "$(cat "$ROOT/runtime/staging/addons/requirements.inputs.sha256")" ]; echo $?)"
+igual "external_dependencies cubierto no altera el lock" "$LOCK_OVERRIDE" \
+  "$(cat "$ROOT/runtime/staging/addons/requirements.lock.sha256")"
 
 # =====================================================================
 titulo "VCS: fija HEAD y ramas a commits completos"
@@ -132,17 +173,17 @@ requisitos_repo "$ROOT" localizacion \
   "git+file://$PYAFIP@$PYAFIP_SHA#egg=otro_paquete"
 igual "check reconoce nombres desde las URL" "0" "$(check_code "$ROOT")"
 igual "compile resuelve las refs locales" "0" "$(compile_code "$ROOT")"
-LOCK=$(cat "$ROOT/runtime/addons/requirements.lock.txt")
+LOCK=$(cat "$ROOT/runtime/staging/addons/requirements.lock.txt")
 contiene "HEAD queda fijado" "# VCS: file://$PYAFIP@$PYAFIP_SHA" "$LOCK"
 contiene "la rama queda fijada" "# VCS: file://$SIMPLE@$SIMPLE_SHA" "$LOCK"
 contiene "un SHA completo se conserva" "# VCS: file://$PYAFIP@$PYAFIP_SHA#egg=otro_paquete" "$LOCK"
 contiene "pip recibe fuentes locales" 'file:///tmp/requirements.sources/' "$LOCK"
 igual "genera un archivo por repositorio" "2" \
-  "$(find "$ROOT/runtime/addons/requirements.sources" -type f | wc -l | tr -d ' ')"
+  "$(find "$ROOT/runtime/staging/addons/requirements.sources" -type f | wc -l | tr -d ' ')"
 igual "las fuentes Git viajan como tar sin compresión" "2" \
-  "$(find "$ROOT/runtime/addons/requirements.sources" -name '*.tar' -type f | wc -l | tr -d ' ')"
+  "$(find "$ROOT/runtime/staging/addons/requirements.sources" -name '*.tar' -type f | wc -l | tr -d ' ')"
 igual "no depende de archivos gzip" "0" \
-  "$(find "$ROOT/runtime/addons/requirements.sources" -name '*.tar.gz' -type f | wc -l | tr -d ' ')"
+  "$(find "$ROOT/runtime/staging/addons/requirements.sources" -name '*.tar.gz' -type f | wc -l | tr -d ' ')"
 no_contiene "el lock no conserva la rama móvil" '@stable_py3k' "$LOCK"
 
 # =====================================================================
@@ -190,8 +231,8 @@ titulo "contrato: exige entorno y manifiestos literales válidos"
 # =====================================================================
 
 ROOT=$(crear_checkout invalido)
-mkdir -p "$ROOT/runtime/addons/custom/staging/repo/modulo"
-printf "{'name': 'incompleto'" > "$ROOT/runtime/addons/custom/staging/repo/modulo/__manifest__.py"
+mkdir -p "$ROOT/runtime/staging/addons/custom/repo/modulo"
+printf "{'name': 'incompleto'" > "$ROOT/runtime/staging/addons/custom/repo/modulo/__manifest__.py"
 igual "un manifiesto inválido detiene check" "1" "$(check_code "$ROOT")"
 contiene "explica el manifiesto inválido" 'manifiestos inválidos' "$(check "$ROOT")"
 igual "sin ENTORNO falla antes de leer addons" "2" \

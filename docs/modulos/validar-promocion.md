@@ -2,18 +2,18 @@
 
 ## Cuándo se usa
 
-Antes de llevar el conjunto probado de staging a la rama estable y construir producción.
+Antes de llevar el conjunto probado de staging a la rama estable y recrear producción.
 
 ## Objetivo
 
-Validar el código y la imagen seleccionada en cada entorno, sin mantener estados de
+Validar la imagen y el código realmente cargado en cada entorno, sin mantener estados de
 promoción de imágenes.
 
 ## Flujo rápido
 
 1. Probar la feature localmente.
 2. Restaurar y validar en staging el conjunto completo de `19.0-stag`.
-3. Promover ese conjunto por PR y comprobar la equivalencia antes del build productivo.
+3. Promover ese conjunto por PR y comprobar la equivalencia antes de recrear producción.
 
 ## A mano
 
@@ -25,15 +25,13 @@ cada entorno y no ejecutes operaciones funcionales desde el webhook.
 ```bash
 ENTORNO=desarrollo make repo-sync
 ENTORNO=desarrollo make addons-deps
-ENTORNO=desarrollo make build
-ENTORNO=desarrollo make odoo-up
+ENTORNO=desarrollo make odoo-restart
 ENTORNO=desarrollo make verify
 
 ENTORNO=staging make restore SNAPSHOT=latest
 ENTORNO=staging make repo-sync
 ENTORNO=staging make addons-deps
-ENTORNO=staging make build
-ENTORNO=staging make odoo-up
+ENTORNO=staging make odoo-restart
 ENTORNO=staging make verify
 ```
 
@@ -45,9 +43,15 @@ sincronizados los candidatos productivos, ejecutá:
 ENTORNO=produccion make repo-sync
 ENTORNO=produccion make promotion-verify
 ENTORNO=produccion make addons-deps
-ENTORNO=produccion make build
-ENTORNO=produccion make odoo-up
+ENTORNO=produccion make backup-run
+ENTORNO=produccion make odoo-restart
 ```
+
+`promotion-verify` exige staging operativo y compara los árboles productivos con
+`/tmp/odoo-addons-startup.json` de staging, incluido su checkout Enterprise. Un
+candidato de staging publicado después de la validación no cuenta como probado. Si el
+preflight productivo detecta base, edición o dependencias distintas, ejecutá
+`make build` antes de recrear.
 
 El backup es la frontera de recuperación. Si una validación o una operación funcional
 falla, restaurá el backup aprobado y reconstruí explícitamente la imagen con los
@@ -61,4 +65,4 @@ ENTORNO=<entorno> make verify
 ```
 
 `promotion-verify` debe confirmar que los árboles de addons, la edición y la
-procedencia Enterprise de producción coinciden con lo validado en staging.
+procedencia Enterprise de producción coinciden con lo efectivamente cargado en staging.

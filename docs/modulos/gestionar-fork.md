@@ -15,7 +15,7 @@ el servidor solo recibe candidatos de staging y producción.
 
 1. Crear o forkear el repositorio y declararlo en el catálogo.
 2. Trabajar y probar los cambios en `feat/<nombre>` local.
-3. Integrar la feature en `19.0-stag`, construir y validar el conjunto en staging.
+3. Integrar la feature en `19.0-stag`, recrear y validar el conjunto en staging.
 4. Promover el conjunto completo por PR `19.0-stag → 19.0` y verificar producción.
 
 ## A mano
@@ -43,13 +43,12 @@ git merge upstream/19.0
 git push origin 19.0-stag
 ```
 
-En staging, sincronizá, construí y validá el conjunto completo:
+En staging, sincronizá, comprobá dependencias y recreá el conjunto completo:
 
 ```bash
 ENTORNO=staging make repo-sync
 ENTORNO=staging make addons-deps
-ENTORNO=staging make build
-ENTORNO=staging make odoo-up
+ENTORNO=staging make odoo-restart
 ENTORNO=staging make verify
 ```
 
@@ -59,12 +58,12 @@ Después de aprobar y fusionar el PR:
 ENTORNO=produccion make repo-sync
 ENTORNO=produccion make promotion-verify
 ENTORNO=produccion make addons-deps
-ENTORNO=produccion make build
-ENTORNO=produccion make odoo-up
+ENTORNO=produccion make odoo-restart
 ```
 
-La instalación, actualización o desinstalación de módulos sigue siendo manual y se
-realiza solo después de preservar el backup requerido.
+Si el preflight detecta nuevas dependencias o cambio de base/edición, ejecutá
+`make build` antes de recrear. La instalación, actualización o desinstalación de módulos
+sigue siendo manual y se realiza solo después de preservar el backup requerido.
 
 Retirar un repositorio:
 
@@ -81,4 +80,4 @@ se conservan visibles para limpieza manual.
 
 `repo-status` debe mostrar los candidatos esperados de `19.0-stag`. Después del PR,
 `ENTORNO=produccion make promotion-verify` debe confirmar árboles de addons, edición y
-procedencia Enterprise equivalentes antes del build productivo.
+procedencia Enterprise equivalentes antes de la recreación productiva.

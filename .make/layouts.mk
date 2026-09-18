@@ -3,14 +3,16 @@
 
 define stack_sextet
 $(1)-up:
-	@. scripts/lib/ui.sh; ui_run "$(1)-up" $(CONTEXTO_COMPOSE) up -d $(1)
+	@if [ "$(1)" = "odoo" ]; then scripts/odoo-lifecycle.sh up; \
+	else . scripts/lib/ui.sh; ui_run "$(1)-up" $(CONTEXTO_COMPOSE) up -d $(1); fi
 	@if [ "$(1)" = "odoo" ]; then $(MAKE) odoo-report-config; fi
 
 $(1)-down:
 	@. scripts/lib/ui.sh; ui_run "$(1)-down" $(CONTEXTO_COMPOSE) rm -sf $(1)
 
 $(1)-restart:
-	@. scripts/lib/ui.sh; ui_run "$(1)-restart" $(CONTEXTO_COMPOSE) restart $(1)
+	@if [ "$(1)" = "odoo" ]; then scripts/odoo-lifecycle.sh restart; \
+	else . scripts/lib/ui.sh; ui_run "$(1)-restart" $(CONTEXTO_COMPOSE) restart $(1); fi
 
 $(1)-logs:
 	@. scripts/ui/components.sh; ui_section "$(1)-logs: siguiendo (Ctrl-C para salir)"; $(CONTEXTO_COMPOSE) logs -f $(1)

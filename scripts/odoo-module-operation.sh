@@ -8,7 +8,15 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 . scripts/lib/ui.sh
 . scripts/lib/contexto.sh
+. scripts/lib/candidate-lock.sh
 contexto_iniciar
+
+# Exclusión compartida
+# La publicación y las operaciones funcionales no pueden observar árboles distintos.
+if [ "${CANDIDATE_LOCK_HELD:-0}" != 1 ]; then
+  candidate_lock_run "$ENTORNO" -- env CANDIDATE_LOCK_HELD=1 "$0" "$@"
+  exit $?
+fi
 
 ACCION="${1:-}"
 MODULOS="${MODULES:-}"
@@ -44,6 +52,7 @@ if ! make require-odoo-image >/dev/null 2>&1; then
   ui_bad "imagen Odoo no disponible" "ejecutá ENTORNO=$ENTORNO make build antes de operar módulos"
   exit 2
 fi
+scripts/addons-runtime.sh preflight
 
 # Identidad de la operación
 # El proyecto y el entorno evitan colisiones entre checkouts y composiciones concurrentes.
@@ -54,51 +63,6 @@ PROYECTO="${COMPOSE_PROJECT_NAME:-}"
 }
 IDENTIDAD_OPERACION="${PROYECTO}-${ENTORNO}"
 ONEOFF_NAME="${IDENTIDAD_OPERACION}-odoo-oneoff"
-
-# Lock local de módulos
-# El override conserva el aislamiento de los tests y permite diagnosticar un lock puntual.
-LOCK_DIR="${ODOO_OPERATION_LOCK_DIR:-${TMPDIR:-/tmp}/odoo-module-operation-${IDENTIDAD_OPERACION}.lock}"
-LOCK_PID="$LOCK_DIR/pid"
-LOCK_ADQUIRIDO=0
-
-adquirir_lock() {
-  if mkdir "$LOCK_DIR" 2>/dev/null; then
-    printf '%s\n' "$$" > "$LOCK_PID"
-    LOCK_ADQUIRIDO=1
-    return 0
-  fi
-
-  local pid=""
-  if [ -r "$LOCK_PID" ]; then
-    pid=$(cat "$LOCK_PID" 2>/dev/null || true)
-  fi
-  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-    ui_bad "hay otra operación de módulos en curso" "pid $pid — esperá a que termine"
-    exit 2
-  fi
-
-  # Si el proceso murió pero dejó el contenedor one-off, no liberar el lock a
-  # ciegas: ese contenedor podría seguir usando la base.
-  if docker ps -a --filter "name=^/${ONEOFF_NAME}$" --format '{{.Names}}' 2>/dev/null | grep -qx "$ONEOFF_NAME"; then
-    ui_bad "hay un contenedor one-off pendiente" "revisar $ONEOFF_NAME antes de reintentar"
-    exit 2
-  fi
-
-  rm -f "$LOCK_PID"
-  rmdir "$LOCK_DIR" 2>/dev/null || {
-    ui_bad "no se pudo recuperar el lock de operaciones" "$LOCK_DIR"
-    exit 2
-  }
-  adquirir_lock
-}
-
-liberar_lock() {
-  if [ "$LOCK_ADQUIRIDO" -eq 1 ]; then
-    rm -f "$LOCK_PID"
-    rmdir "$LOCK_DIR" 2>/dev/null || true
-    LOCK_ADQUIRIDO=0
-  fi
-}
 
 python_operacion() {
   contexto_compose run --rm --name "$ONEOFF_NAME" \
@@ -176,7 +140,7 @@ levantar_odoo() {
     return "$estado_original"
   fi
 
-  if ui_run "levantar Odoo" contexto_compose up -d odoo; then
+  if ui_run "levantar Odoo" scripts/odoo-lifecycle.sh up; then
     estado_up=0
   else
     estado_up=$?
@@ -205,11 +169,9 @@ limpiar() {
   set +e
   levantar_odoo "$estado"
   estado_restaurar=$?
-  liberar_lock
   exit "$estado_restaurar"
 }
 
-adquirir_lock
 trap limpiar EXIT
 
 ui_start "addons-$ACCION $MODULOS"

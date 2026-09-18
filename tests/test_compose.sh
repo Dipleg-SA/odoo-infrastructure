@@ -113,7 +113,6 @@ contiene "la imagen postgres usa la identidad del runtime" "local/postgres:odoo-
 contiene "la imagen nginx usa la identidad del runtime" "local/nginx:odoo-desarrollo" "$(printf '%s\n' "$DEV" | bloque nginx)"
 contiene "desarrollo desactiva SMTP de Odoo" 'ODOO_DISABLE_SMTP: "1"' "$(printf '%s\n' "$DEV" | bloque odoo)"
 contiene "desarrollo usa una imagen Odoo explícita" "local/odoo:19.0-desarrollo-inicial" "$(printf '%s\n' "$DEV" | bloque odoo)"
-no_contiene "desarrollo no monta addons del host" "/mnt/extra-addons" "$(printf '%s\n' "$DEV" | bloque odoo)"
 
 # Production
 # Certbot se activa de forma explícita y el proxy conserva el bind de la LAN.
@@ -123,7 +122,6 @@ igual "producción declara 9 secretos" "9" "$(printf '%s\n' "$PROD" | contar_sec
 igual "producción incluye sus once servicios" "addons-webhook alloy backup certbot cloudflared grafana loki nginx odoo postgres prometheus " \
   "$(COMPOSE_PROFILES=cert servicios produccion)"
 contiene "producción usa una imagen Odoo explícita" "local/odoo:19.0-produccion-inicial" "$(printf '%s\n' "$PROD" | bloque odoo)"
-no_contiene "producción no monta addons del host" "/mnt/extra-addons" "$(printf '%s\n' "$PROD" | bloque odoo)"
 contiene "producción monta la ruta versionada del receptor" \
   "/stacks/nginx/config/addons-webhook.locations" "$(printf '%s\n' "$PROD" | bloque nginx)"
 contiene "la ruta pública apunta solo al endpoint GitHub" \
@@ -159,7 +157,6 @@ igual "staging usa los puertos reservados" "8080 8443 " \
 contiene "staging conserva el secret de alertas" "zeptomail_smtp_password" "$(printf '%s\n' "$STAGE" | bloque odoo)"
 contiene "staging desactiva SMTP de Odoo" 'ODOO_DISABLE_SMTP: "1"' "$(printf '%s\n' "$STAGE" | bloque odoo)"
 contiene "staging usa una imagen Odoo explícita" "local/odoo:19.0-staging-inicial" "$(printf '%s\n' "$STAGE" | bloque odoo)"
-no_contiene "staging no monta addons del host" "/mnt/extra-addons" "$(printf '%s\n' "$STAGE" | bloque odoo)"
 no_contiene "staging no incluye dnsmasq aunque pida LAN" "dnsmasq" "$(COMPOSE_PROFILES=lan servicios staging)"
 no_contiene "backup no se activa por defecto en staging" "backup" "$(servicios staging)"
 no_contiene "backup queda fuera del perfil de certificado" "backup" "$(COMPOSE_PROFILES=cert servicios staging)"
@@ -183,9 +180,25 @@ no_contiene "staging no declara lan" "lan" \
 
 for entorno in desarrollo staging produccion; do
   cfg=$(resuelto "$entorno")
+  odoo_cfg=$(printf '%s\n' "$cfg" | bloque odoo)
   printf '%s\n' "$cfg" | recursos | sort -u > "$TMP/$entorno.recursos"
   esperado="odoo-$entorno"
   contiene "$entorno tiene identidad Compose propia" "name: $esperado" "$cfg"
+  contiene "$entorno pasa la edición a Odoo" "ODOO_EDITION: community" "$odoo_cfg"
+  contiene "$entorno monta su custom" "/runtime/$entorno/addons/custom" "$odoo_cfg"
+  contiene "$entorno monta su Enterprise" "/runtime/$entorno/addons/enterprise" "$odoo_cfg"
+  igual "$entorno monta ambos árboles de addons como solo lectura" "2" \
+    "$(printf '%s\n' "$odoo_cfg" | grep -A3 -E "/runtime/$entorno/addons/(custom|enterprise)$" | grep -c 'read_only: true')"
+  igual "$entorno impide crear ambos orígenes desde Compose" "2" \
+    "$(printf '%s\n' "$odoo_cfg" | grep -c 'create_host_path: false')"
+  case "$entorno" in
+    desarrollo) otros="staging produccion" ;;
+    staging) otros="desarrollo produccion" ;;
+    produccion) otros="desarrollo staging" ;;
+  esac
+  for otro in $otros; do
+    no_contiene "$entorno no monta addons de $otro" "/runtime/$otro/addons/" "$odoo_cfg"
+  done
   no_contiene "$entorno no tiene recursos sin prefijo" "name: edge" "$(printf '%s\n' "$cfg" | sed -n '/^networks:/,/^volumes:/p')"
   igual "$entorno prefija cada red y volumen" "" "$(grep -v "^${esperado}_" "$TMP/$entorno.recursos" || true)"
 done

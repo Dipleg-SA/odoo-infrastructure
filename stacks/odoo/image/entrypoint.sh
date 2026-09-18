@@ -4,16 +4,29 @@ shopt -s nullglob
 
 ADDONS_BASE=/opt/odoo
 RUNTIME_CONF=/tmp/odoo-runtime.conf
+STARTUP_INVENTORY=/tmp/odoo-addons-startup.json
 
 # addons_path interno
 # Un Enterprise con manifiestos precede dominios propios y Community cierra la precedencia.
 
 paths=()
-# Addons Enterprise opcionales
-# Solo un snapshot con manifiestos válidos se agrega a la precedencia del runtime.
-if [ -n "$(find "$ADDONS_BASE/enterprise" -name __manifest__.py -type f -print -quit 2>/dev/null)" ]; then
-  paths+=("$ADDONS_BASE/enterprise")
-fi
+# Selección de edición
+# Community ignora residuos Enterprise y Enterprise exige un árbol con manifiestos.
+case "${ODOO_EDITION:-}" in
+  community) ;;
+  enterprise)
+    if [ -n "$(find "$ADDONS_BASE/enterprise" -name __manifest__.py -type f -print -quit 2>/dev/null)" ]; then
+      paths+=("$ADDONS_BASE/enterprise")
+    else
+      echo "odoo-entrypoint: ODOO_EDITION=enterprise pero el árbol Enterprise está vacío" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "odoo-entrypoint: ODOO_EDITION debe ser community o enterprise" >&2
+    exit 2
+    ;;
+esac
 for repo in "$ADDONS_BASE/custom"/*/; do
   [ -d "$repo" ] && paths+=("${repo%/}")
 done
@@ -25,6 +38,70 @@ if [ "${#paths[@]}" -eq 0 ]; then
   echo "odoo-entrypoint: addons_path vacío — ¿corriste make repo-sync antes de levantar el stack?" >&2
   exit 1
 fi
+
+# Selección cargada al arranque
+# Persiste los marcadores que este proceso vio antes de delegar el inicio a Odoo.
+python3 - "$ADDONS_BASE" "$STARTUP_INVENTORY" "${ENTORNO:-}" "${ODOO_EDITION:-}" "${TAG:-}" <<'PY'
+import json
+import os
+import pathlib
+import sys
+import tempfile
+
+root_arg, output_arg, environment, edition, tag = sys.argv[1:]
+root = pathlib.Path(root_arg)
+output = pathlib.Path(output_arg)
+if environment not in {"desarrollo", "staging", "produccion"}:
+    print("odoo-entrypoint: ENTORNO debe identificar el runtime cargado", file=sys.stderr)
+    raise SystemExit(2)
+
+addons = {}
+for candidate in sorted((root / "custom").glob("*")):
+    if not candidate.is_dir():
+        continue
+    try:
+        commit = (candidate / ".candidate-commit").read_text(encoding="ascii").strip()
+        tree = (candidate / ".candidate-tree").read_text(encoding="ascii").strip()
+    except OSError:
+        print(f"odoo-entrypoint: faltan marcadores en {candidate}", file=sys.stderr)
+        raise SystemExit(1)
+    if not commit or not tree:
+        print(f"odoo-entrypoint: marcadores vacíos en {candidate}", file=sys.stderr)
+        raise SystemExit(1)
+    addons[candidate.name] = {"commit": commit, "tree": tree}
+
+enterprise = None
+if edition == "enterprise":
+    head = root / "enterprise" / ".git" / "HEAD"
+    try:
+        commit = head.read_text(encoding="ascii").strip()
+    except OSError:
+        print("odoo-entrypoint: Enterprise no expone el commit cargado", file=sys.stderr)
+        raise SystemExit(1)
+    if commit.startswith("ref:") or not commit:
+        print("odoo-entrypoint: Enterprise debe estar en HEAD separado", file=sys.stderr)
+        raise SystemExit(1)
+    enterprise = {"tag": tag, "commit": commit}
+
+payload = {
+    "entorno": environment,
+    "edition": edition,
+    "addons": addons,
+    "enterprise": enterprise,
+}
+fd, temporary = tempfile.mkstemp(prefix=f".{output.name}.", dir=output.parent)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        json.dump(payload, stream, ensure_ascii=False, sort_keys=True)
+        stream.write("\n")
+    os.replace(temporary, output)
+except BaseException:
+    try:
+        os.unlink(temporary)
+    except FileNotFoundError:
+        pass
+    raise
+PY
 
 # --- Config runtime: base + addons_path + secrets inyectados ---
 # Construye el archivo temporal que consume Odoo.
