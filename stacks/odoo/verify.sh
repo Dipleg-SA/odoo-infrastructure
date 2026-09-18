@@ -60,53 +60,63 @@ v_odoo() {
       curl -sS -o /dev/null -w '%{http_code}' http://localhost:8069/web/login
   fi
 
-  # --- Imagen Actual y addons internos ---
-  # La imagen declarada y el estado deben apuntar a la misma fotografía inmutable.
-  local estado tag digest edition edition_tag
-  local estado_runtime
-  if estado_runtime=$(scripts/image-state.sh validate-runtime 2>&1); then
-    ok "ranuras de imágenes coherentes con el runtime"
+  # --- Selector único y procedencia ---
+  # Compose y la metadata del build deben identificar la misma imagen local.
+  local selector metadata_dir metadata compose_image
+  selector="${ODOO_IMAGE:-}"
+  if [[ "$selector" =~ ^local/odoo:[0-9]+([.][0-9]+)*-(desarrollo|staging|produccion)-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}$ ]]; then
+    ok "ODOO_IMAGE tiene tag explícito"
   else
-    bad "ranuras de imágenes coherentes con el runtime" "$(printf '%s' "$estado_runtime" | tr '\n' ' ')"
+    bad "ODOO_IMAGE tiene tag explícito" "referencia ausente, inicial o flotante: ${selector:-vacía}"
   fi
-  estado=$(scripts/image-state.sh get Actual 2>/dev/null || true)
-  if [ -z "$estado" ] || [ "$estado" = "null" ]; then
-    aviso "imagen Actual declarada" "runtime/state/images.json no tiene Actual"
+  if [ -n "$selector" ] && docker image inspect "$selector" >/dev/null 2>&1; then
+    ok "ODOO_IMAGE existe localmente"
   else
-    tag=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["tag"])' <<<"$estado" 2>/dev/null || true)
-    digest=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])' <<<"$estado" 2>/dev/null || true)
-    edition=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("edition", ""))' <<<"$estado" 2>/dev/null || true)
-    edition_tag=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("edition_tag", ""))' <<<"$estado" 2>/dev/null || true)
-    if [ -z "$tag" ] || [ -z "$digest" ]; then
-      bad "procedencia de imagen Actual completa" "faltan tag o digest"
-    else
-      ok "procedencia de imagen Actual completa"
-      printf '    imagen: %s\n    digest: %s\n' "$tag" "$digest"
-      if [ "$edition" = "$ODOO_EDITION" ] && [ "$edition_tag" = "$TAG" ]; then
-        ok "edición y tag de imagen Actual coherentes"
-      else
-        bad "edición y tag de imagen Actual coherentes" \
-          "imagen=${edition:-desconocida}/${edition_tag:-sin tag}; runtime=$ODOO_EDITION/$TAG"
-      fi
-      if python3 - "$estado" <<'PY'
+    bad "ODOO_IMAGE existe localmente" "no existe ${selector:-la imagen seleccionada}"
+  fi
+
+  compose_image=$(contexto_compose config 2>/dev/null | awk '
+    /^  odoo:/ { dentro=1; next }
+    dentro && /^  [a-z]/ { exit }
+    dentro && /^[[:space:]]+image: / { sub(/^[[:space:]]+image: /, ""); print; exit }
+  ')
+  if [ -n "$selector" ] && [ "$compose_image" = "$selector" ]; then
+    ok "Compose usa ODOO_IMAGE"
+  else
+    bad "Compose usa ODOO_IMAGE" "Compose=${compose_image:-ausente}; selector=${selector:-ausente}"
+  fi
+
+  metadata_dir="$(cd "$RUNTIME_DIR/../addons/builds/$ENTORNO" 2>/dev/null && pwd -P || true)"
+  metadata=""
+  if [ -n "$metadata_dir" ]; then
+    while IFS= read -r candidato; do
+      if python3 - "$candidato" "$selector" <<'PY' >/dev/null 2>&1
 import json, sys
-data = json.loads(sys.argv[1])
-required = ("edition", "edition_tag", "odoo_version", "base_image", "infra_commit", "addons", "built_at")
-missing = [key for key in required if key not in data]
-if missing:
-    raise SystemExit("faltan " + ", ".join(missing))
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+except (OSError, json.JSONDecodeError):
+    raise SystemExit(1)
+raise SystemExit(0 if data.get("tag") == sys.argv[2] else 1)
 PY
       then
-        ok "procedencia técnica de imagen Actual completa"
-      else
-        bad "procedencia técnica de imagen Actual completa" "faltan campos de procedencia"
+        metadata="$candidato"
+        break
       fi
-      if grep -qE '^    image: ' <(contexto_compose config 2>/dev/null) && contexto_compose config 2>/dev/null | grep -q "image: $tag$"; then
-        ok "Compose usa la imagen Actual ($tag)"
-      else
-        bad "Compose usa la imagen Actual" "la referencia declarada no coincide con $tag"
-      fi
-    fi
+    done < <(find "$metadata_dir" -mindepth 2 -maxdepth 2 -name image.json -type f -print 2>/dev/null | sort)
+  fi
+  if [ -n "$metadata" ] && python3 - "$metadata" "$selector" "$ODOO_EDITION" "$TAG" <<'PY'
+import json, sys
+path, selector, edition, edition_tag = sys.argv[1:]
+data = json.load(open(path, encoding="utf-8"))
+required = ("tag", "digest", "edition", "edition_tag", "odoo_version", "base_image", "infra_commit", "addons", "built_at")
+missing = [key for key in required if key not in data or data[key] in (None, "")]
+if missing or data.get("tag") != selector or data.get("edition") != edition or data.get("edition_tag") != edition_tag:
+    raise SystemExit(1)
+PY
+  then
+    ok "procedencia técnica de ODOO_IMAGE completa"
+  else
+    bad "procedencia técnica de ODOO_IMAGE completa" "falta metadata, está incompleta o no coincide con el runtime"
   fi
 
   # --- Rutas internas ---

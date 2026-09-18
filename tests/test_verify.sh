@@ -451,4 +451,59 @@ igual "un unhealthy solo no pasa por sano" "1 1" \
 # total en 0 es lo que hace que v_alloy falle en vez de dar verde sobre nada.
 igual "una respuesta sin componentes no se disimula" "0 0" "$(alloy_salud '{"otra":"cosa"}')"
 
+# Selector único de Odoo
+# verify debe revisar la referencia efectiva, su imagen local y su procedencia.
+. stacks/odoo/verify.sh
+SERVICIOS="odoo"
+printf '%s\n' 'odoo-id' > "$STUB_DIR/ps-q"
+printf '%s\n' '200' > "$STUB_DIR/salida"
+VERIFY_ENV="runtime/desarrollo/compose.env"
+VERIFY_ENV_WAS=0
+VERIFY_ENV_BACKUP="$STUB_DIR/compose.env.backup"
+if [ -f "$VERIFY_ENV" ]; then cp "$VERIFY_ENV" "$VERIFY_ENV_BACKUP"; VERIFY_ENV_WAS=1; fi
+VERIFY_BUILDS="runtime/addons/builds/desarrollo/verify-test-$$"
+mkdir -p "$VERIFY_BUILDS"
+VERIFY_IMAGE="local/odoo:19.0-desarrollo-20990101T010101Z-a1b2c3d4e5f60789"
+printf '%s\n' 'COMPOSE_PROJECT_NAME=verify-test' 'ODOO_EDITION=community' \
+  'TAG=19.0-ce-2026-09-16' "ODOO_IMAGE=$VERIFY_IMAGE" > "$VERIFY_ENV"
+cat > "$VERIFY_BUILDS/image.json" <<EOF
+{"tag":"$VERIFY_IMAGE","digest":"sha256:verify","edition":"community","edition_tag":"19.0-ce-2026-09-16","odoo_version":"19.0","base_image":"odoo:19.0-20260810","infra_commit":"infra","addons":{},"built_at":"20260917T183719Z"}
+EOF
+verificar_odoo() {
+  unset CONTEXTO_ENTORNO RUNTIME_DIR RUNTIME_ROOT RUNTIME_COMPOSE_FILE RUNTIME_ENV_FILE
+  unset RUNTIME_CONFIG_DIR RUNTIME_SECRETS_DIR RUNTIME_STATE_DIR ODOO_IMAGE
+  contexto_iniciar >/dev/null 2>&1 || return $?
+  v_odoo
+}
+printf '%s\n' 'services:' '  odoo:' "    image: $VERIFY_IMAGE" > "$STUB_DIR/config"
+rm -f "$STUB_DIR/exit-salida"
+SALIDA=$(verificar_odoo 2>&1 || true)
+contiene "verify acepta selector explícito" "ok      ODOO_IMAGE tiene tag explícito" "$SALIDA"
+contiene "verify acepta imagen local" "ok      ODOO_IMAGE existe localmente" "$SALIDA"
+contiene "verify acepta Compose alineado" "ok      Compose usa ODOO_IMAGE" "$SALIDA"
+contiene "verify acepta procedencia completa" "ok      procedencia técnica de ODOO_IMAGE completa" "$SALIDA"
+
+printf '%s\n' 'COMPOSE_PROJECT_NAME=verify-test' 'ODOO_EDITION=community' \
+  'TAG=19.0-ce-2026-09-16' 'ODOO_IMAGE=local/odoo:19.0-desarrollo-inicial' > "$VERIFY_ENV"
+SALIDA=$(verificar_odoo 2>&1 || true)
+contiene "verify rechaza selector inicial" "FALLA   ODOO_IMAGE tiene tag explícito" "$SALIDA"
+
+printf '%s\n' "ODOO_IMAGE=$VERIFY_IMAGE" >> "$VERIFY_ENV"
+printf '%s\n' '1' > "$STUB_DIR/exit-salida"
+SALIDA=$(verificar_odoo 2>&1 || true)
+contiene "verify detecta imagen local ausente" "FALLA   ODOO_IMAGE existe localmente" "$SALIDA"
+rm -f "$STUB_DIR/exit-salida"
+
+printf '%s\n' 'services:' '  odoo:' '    image: local/odoo:19.0-desarrollo-otra' > "$STUB_DIR/config"
+SALIDA=$(verificar_odoo 2>&1 || true)
+contiene "verify detecta discrepancia con Compose" "FALLA   Compose usa ODOO_IMAGE" "$SALIDA"
+
+printf '%s\n' 'services:' '  odoo:' "    image: $VERIFY_IMAGE" > "$STUB_DIR/config"
+printf '%s\n' '{"tag":"'$VERIFY_IMAGE'","edition":"community"}' > "$VERIFY_BUILDS/image.json"
+SALIDA=$(verificar_odoo 2>&1 || true)
+contiene "verify detecta metadata incompleta" "FALLA   procedencia técnica de ODOO_IMAGE completa" "$SALIDA"
+
+if [ "$VERIFY_ENV_WAS" -eq 1 ]; then cp "$VERIFY_ENV_BACKUP" "$VERIFY_ENV"; else rm -f "$VERIFY_ENV"; fi
+rm -rf "$VERIFY_BUILDS"
+
 resumen

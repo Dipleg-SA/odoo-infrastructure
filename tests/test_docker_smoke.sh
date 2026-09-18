@@ -22,9 +22,21 @@ docker info >/dev/null 2>&1 || {
 }
 
 TMP=$(mktemp -d)
-ODOO_IMAGE="local/odoo-smoke:$$"
+ODOO_IMAGE="local/odoo:19.0-desarrollo-20990101T010101Z-a1b2c3d4e5f60789"
 GRAFANA_CONTAINER="odoo-smoke-grafana-$$"
 trap 'docker rm -f "$GRAFANA_CONTAINER" >/dev/null 2>&1 || true; docker image rm "$ODOO_IMAGE" >/dev/null 2>&1 || true; rm -rf "$TMP"' EXIT
+
+# Selector único en Compose
+# La composición mínima confirma la interpolación exacta que usa el runtime.
+printf 'ODOO_IMAGE=%s\n' "$ODOO_IMAGE" > "$TMP/compose.env"
+cat > "$TMP/compose.yaml" <<'EOF'
+services:
+  odoo:
+    image: ${ODOO_IMAGE:?falta ODOO_IMAGE}
+EOF
+docker compose --env-file "$TMP/compose.env" -f "$TMP/compose.yaml" config \
+  | grep -q "image: $ODOO_IMAGE"
+! grep -q 'images\.json' tests/test_docker_smoke.sh
 
 # Contexto real de Odoo
 # Enterprise, custom y el lock llegan como entradas separadas del contexto temporal.

@@ -40,8 +40,8 @@
 
 ## Fase 6: Verificar sin estado de promoción (US5) (P1)
 
-- [ ] T020 [US5] Adaptar `stacks/odoo/verify.sh` para informar la única referencia `ODOO_IMAGE` efectiva, comprobar su existencia local y su procedencia técnica, y fallar ante una referencia ausente, bootstrap, flotante o distinta de la imagen configurada en Compose, sin consultar `images.json`.
-- [ ] T021 [TEST][US5] Actualizar `tests/test_verify.sh` para cubrir todas las ramas de validación de `ODOO_IMAGE` mediante stubs, y `tests/test_docker_smoke.sh` para comprobar con Docker real que Compose usa la referencia seleccionada y que no depende de `images.json`.
+- [x] T020 [US5] Adaptar `stacks/odoo/verify.sh` para informar la única referencia `ODOO_IMAGE` efectiva, comprobar su existencia local y su procedencia técnica, y fallar ante una referencia ausente, bootstrap, flotante o distinta de la imagen configurada en Compose, sin consultar `images.json`.
+- [x] T021 [TEST][US5] Actualizar `tests/test_verify.sh` para cubrir todas las ramas de validación de `ODOO_IMAGE` mediante stubs, y `tests/test_docker_smoke.sh` para comprobar con Docker real que Compose usa la referencia seleccionada y que no depende de `images.json`.
 
 ## Fase 7: Documentación y contratos transversales
 
