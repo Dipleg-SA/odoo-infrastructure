@@ -45,18 +45,18 @@
 
 ## Fase 7: Documentación y contratos transversales
 
-- [ ] T022 [P][DOCS] Actualizar `ARCHITECTURE.md` y `docs/modulos/especificacion-gestion-addons.md` para eliminar la máquina de estados de imágenes y describir el selector único, la recuperación por backup y la reconstrucción explícita.
-- [ ] T023 [P][DOCS] Actualizar `docs/modulos/construir-y-aplicar-imagen.md`, `docs/modulos/gestionar-enterprise.md`, `docs/modulos/gestionar-fork.md`, `docs/modulos/gestionar-modulo.md`, `docs/modulos/gestionar-ramas-staging.md` y `docs/modulos/validar-promocion.md` para usar `build`, levantamiento y validación sin promoción de imagen.
-- [ ] T024 [P][DOCS] Actualizar `docs/operacion/operar-backups.md`, `docs/operacion/operar-odoo.md` y `docs/operacion/operar-webhook-addons.md` para retirar referencias a slots, rollback, `apply-image` e `images.json` operativo.
-- [ ] T025 [P][DOCS] Actualizar `docs/backup-restore/migrar-deployment-externo.md`, `docs/credenciales/rotar-credenciales-r2.md`, `docs/credenciales/rotar-token-cloudflare-tunnel.md` y `docs/credenciales/rotar-token-git.md` para retirar instrucciones obsoletas vinculadas al ciclo de imágenes.
+- [x] T022 [P][DOCS] Actualizar `ARCHITECTURE.md` y `docs/modulos/especificacion-gestion-addons.md` para eliminar la máquina de estados de imágenes y describir el selector único, la recuperación por backup y la reconstrucción explícita.
+- [x] T023 [P][DOCS] Actualizar `docs/modulos/construir-y-aplicar-imagen.md`, `docs/modulos/gestionar-enterprise.md`, `docs/modulos/gestionar-fork.md`, `docs/modulos/gestionar-modulo.md`, `docs/modulos/gestionar-ramas-staging.md` y `docs/modulos/validar-promocion.md` para usar `build`, levantamiento y validación sin promoción de imagen.
+- [x] T024 [P][DOCS] Actualizar `docs/operacion/operar-backups.md`, `docs/operacion/operar-odoo.md` y `docs/operacion/operar-webhook-addons.md` para retirar referencias a slots, rollback, `apply-image` e `images.json` operativo.
+- [x] T025 [P][DOCS] Actualizar `docs/backup-restore/migrar-deployment-externo.md`, `docs/credenciales/rotar-credenciales-r2.md`, `docs/credenciales/rotar-token-cloudflare-tunnel.md` y `docs/credenciales/rotar-token-git.md` para retirar instrucciones obsoletas vinculadas al ciclo de imágenes.
 
 ## Verificación
 
-- [ ] VERIFY Ejecutar `bash -n` sobre `scripts/build-odoo-image.sh`, `scripts/odoo-edition-check.sh`, `scripts/odoo-module-operation.sh`, `scripts/promotion-verify.sh`, los scripts de backup modificados y los tests modificados.
-- [ ] VERIFY Ejecutar `make test` y confirmar que todos los tests terminan, sin dejar procesos pendientes.
+- [x] VERIFY Ejecutar `bash -n` sobre `scripts/build-odoo-image.sh`, `scripts/odoo-edition-check.sh`, `scripts/odoo-module-operation.sh`, `scripts/promotion-verify.sh`, los scripts de backup modificados y los tests modificados.
+- [x] VERIFY Ejecutar `make test` y confirmar que todos los tests terminan, sin dejar procesos pendientes.
 - [ ] VERIFY Ejecutar `docker compose config` para desarrollo, staging y producción con sus perfiles requeridos y confirmar que cada composición conserva sus servicios y redes esperados.
 - [ ] VERIFY Ejecutar un build y levantamiento real de desarrollo respetando el orden documentado, ejecutar la verificación correspondiente después de cada stack y confirmar que `postgres-verify` termina correctamente antes de `odoo-up`; finalizar con `make verify`.
 - [ ] VERIFY Comprobar staging y producción con sus procedimientos de restore, backup, timers, promoción de código y monitoring, sin exigir `images.json` ni rollback de imagen.
-- [ ] VERIFY Confirmar todos los escenarios de aceptación y NFR de `spec.md`.
-- [ ] VERIFY Confirmar que ningún MUST de `.specs/constitution.md` queda incumplido y que no se agregaron dependencias nuevas.
-- [ ] VERIFY Confirmar que no se crearon archivos fuera de la estructura aprobada en `plan.md`.
+- [x] VERIFY Confirmar todos los escenarios de aceptación y NFR de `spec.md`.
+- [x] VERIFY Confirmar que ningún MUST de `.specs/constitution.md` queda incumplido y que no se agregaron dependencias nuevas.
+- [x] VERIFY Confirmar que no se crearon archivos fuera de la estructura aprobada en `plan.md`.

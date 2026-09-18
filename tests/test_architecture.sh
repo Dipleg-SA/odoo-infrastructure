@@ -23,7 +23,7 @@ contiene "documenta el receptor como stack" "addons-webhook" "$MODELO"
 contiene "documenta el tag Community" "19.0-ce-" "$EDICION"
 contiene "documenta el tag Enterprise" "19.0-ee-" "$EDICION"
 contiene "documenta la frontera de transición" "frontera operativa" "$EDICION"
-contiene "documenta el rollback condicionado" "rollback" "$EDICION"
+contiene "documenta recuperación mediante reconstrucción" "reconstru" "$EDICION"
 no_contiene "README no usa entrypoints legacy" "envs/production.yaml" "$(cat README.md)"
 no_contiene "README no usa catálogo legacy" "addons/addons.txt" "$(cat README.md)"
 igual "no conserva el árbol legacy de addons" "0" "$([ ! -e addons ]; echo $?)"
@@ -62,6 +62,30 @@ no_contiene "staging declara DNS ausente" "dnsmasq-up" "$(cat docs/entorno/levan
 no_contiene "staging declara Monitoring ausente como target" "prometheus-up" "$(cat docs/entorno/levantar-staging.md)"
 contiene "producción levanta Backup" "make backup-up" "$(cat docs/entorno/levantar-produccion.md)"
 contiene "producción levanta Monitoring" "make prometheus-up" "$(cat docs/entorno/levantar-produccion.md)"
+
+titulo "Documentación — selector único y recuperación explícita"
+
+for documento in \
+  docs/modulos/construir-y-aplicar-imagen.md \
+  docs/modulos/validar-promocion.md \
+  docs/modulos/gestionar-modulo.md \
+  docs/modulos/gestionar-fork.md \
+  docs/modulos/gestionar-ramas-staging.md \
+  docs/modulos/gestionar-enterprise.md \
+  docs/modulos/especificacion-gestion-addons.md \
+  docs/operacion/operar-backups.md \
+  docs/operacion/operar-odoo.md \
+  docs/operacion/operar-webhook-addons.md \
+  docs/backup-restore/migrar-deployment-externo.md; do
+  no_contiene "$documento no conserva apply-image" "apply-image" "$(cat "$documento")"
+  no_contiene "$documento no conserva image-state" "image-state" "$(cat "$documento")"
+  no_contiene "$documento no conserva images.json operativo" "images.json" "$(cat "$documento")"
+done
+
+contiene "construcción documenta el selector" "ODOO_IMAGE" "$(cat docs/modulos/construir-y-aplicar-imagen.md)"
+contiene "promoción documenta el build productivo" "promotion-verify" "$(cat docs/modulos/validar-promocion.md)"
+contiene "backup documenta la reconstrucción" "reconstruye" "$(cat docs/operacion/operar-backups.md)"
+contiene "webhook documenta el candidato" "candidato" "$(cat docs/operacion/operar-webhook-addons.md)"
 
 titulo "Spec-Flow — estado, estructura y backlog"
 

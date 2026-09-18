@@ -12,12 +12,7 @@ Operar el servicio sin cambiar la imagen declarada ni tocar otros entornos.
 
 1. Elegir el entorno explícito.
 2. Ejecutar la operación de Odoo y revisar sus logs.
-3. Confirmar la referencia Actual con `odoo-verify`.
-
-## A mano
-
-Confirmá el entorno y la operación antes de ejecutarla. Los cambios de imagen y las
-operaciones de módulos tienen procedimientos separados.
+3. Confirmar `ODOO_IMAGE` con `odoo-verify`.
 
 ## Comandos
 
@@ -29,7 +24,9 @@ ENTORNO=produccion make odoo-logs
 ENTORNO=produccion make odoo-ps
 ```
 
-Aplicar o revertir una imagen se hace con `apply-image` o `rollback-image`; no se usa `docker compose build` ni se monta código de addons desde el host.
+La imagen se cambia editando la configuración de edición, sincronizando candidatos y
+ejecutando `make build`. No se monta código de addons desde el host. Las operaciones de
+módulos siguen [gestionar-modulo](../modulos/gestionar-modulo.md).
 
 ## Verificación
 
@@ -37,4 +34,5 @@ Aplicar o revertir una imagen se hace con `apply-image` o `rollback-image`; no s
 ENTORNO=produccion make odoo-verify
 ```
 
-La verificación informa Actual, digest y procedencia, comprueba que Compose usa esa referencia y rechaza `/mnt/extra-addons`. Las operaciones de módulos siguen [gestionar-modulo](../modulos/gestionar-modulo.md).
+La verificación comprueba que la imagen local existe, que Compose usa `ODOO_IMAGE`, que
+su procedencia coincide con edición y tag y que no monta `/mnt/extra-addons`.

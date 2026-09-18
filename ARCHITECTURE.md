@@ -245,13 +245,13 @@ privada de Enterprise; aunque quede un checkout residual en el runtime, la image
 Community no lo copia ni lo monta. `enterprise` usa tags `19.0-ee-...` y exige el
 checkout privado limpio, con tag anotado e inmutable, fuera de la historia de este repo.
 
-La edición y el tag forman parte de la procedencia de la imagen y de las ranuras
-`Nueva`, `Actual` y `Anterior`. Cambiar de edición es una frontera operativa: requiere
-un chequeo ORM de solo lectura, validación manual en desarrollo y staging y un backup
-asociado antes de aplicar en producción. El cambio no instala, actualiza ni desinstala
-módulos. La fotografía anterior queda como frontera de recuperación, no como rollback
-ordinario hacia otra edición; para volver se restaura el backup y se repite la transición
-validada.
+La edición y el tag forman parte de la procedencia del build y de la única referencia
+`ODOO_IMAGE` seleccionada en el entorno. Cambiar de edición es una frontera operativa:
+requiere un chequeo ORM de solo lectura, validación manual en desarrollo y staging y un
+backup asociado antes de construir y levantar producción. El cambio no instala, actualiza
+ni desinstala módulos. Si hace falta recuperar el servicio, se restaura el backup y se
+reconstruye explícitamente la imagen con la edición declarada; no existe una promoción o
+rollback entre imágenes guardadas.
 
 ---
 
@@ -333,7 +333,8 @@ construye imágenes, no reinicia Odoo y no modifica la base.
 El build toma una fotografía bajo lock, exporta los commits seleccionados y los copia a
 la imagen Odoo en `/opt/odoo/enterprise/` y `/opt/odoo/custom/`. Por eso el Odoo activo
 no monta código de addons desde el host: cambiar un candidato no cambia la imagen
-`Actual`. `Nueva`, `Actual`, `Anterior`, digest y procedencia se registran por entorno.
+seleccionada. Cuando el build termina correctamente, actualiza `ODOO_IMAGE` con el tag
+inmutable de esa fotografía y conserva su procedencia en `runtime/addons/builds/`.
 
 Cada repositorio de addons declara cómo instalar sus dependencias Python mediante sus
 propios `requirements.txt`, tanto en la raíz como dentro de módulos. `pydeps` los descubre
@@ -347,13 +348,14 @@ final recibe esos wheels, pero no los compiladores.
 Enterprise se administra fuera del catálogo de dominios, desde el checkout privado
 `runtime/addons/enterprise/`, y se selecciona mediante un tag anotado e inmutable.
 Community no exige ese checkout. Ambos caminos usan el mismo contrato `ODOO_EDITION` y
-`TAG`; la transición entre ediciones conserva la imagen anterior y exige preflight,
-backup y validación manual cuando corresponde.
+`TAG`; la transición entre ediciones exige preflight, backup y validación manual cuando
+corresponde. La recuperación se hace con datos restaurados y un build explícito.
 
 Las operaciones de módulos pasan por la API ORM de Odoo mediante los targets
 `addons-install`, `addons-update` y `addons-uninstall`. Se ejecutan manualmente contra
-la imagen `Actual`, y una operación funcional bloquea el rollback de imagen hasta
-restaurar el backup asociado. La instalación o actualización no se dispara por webhook.
+la única imagen seleccionada por `ODOO_IMAGE`; una operación funcional exige conservar
+el backup asociado y volver a validar el entorno si algo falla. La instalación o
+actualización no se dispara por webhook.
 
 **Un repo por módulo, tres referencias por entorno.** Producción consume `19.0`, staging
 consume `19.0-stag` y desarrollo declara una `feat/*`. Al sincronizar desarrollo, una

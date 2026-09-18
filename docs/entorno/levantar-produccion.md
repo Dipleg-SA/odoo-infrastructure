@@ -94,7 +94,7 @@ ENTORNO=produccion make alloy-verify
 
 Para Community→Enterprise, ejecutá el preflight de solo lectura contra la base vigente, cambiá `ODOO_EDITION`/`TAG`, construí la imagen y verificá el runtime. No se instalan módulos automáticamente.
 
-Ante una pérdida, restaurá base y filestore desde el snapshot y reconstruí explícitamente la imagen a partir de los candidatos y la edición declarada. La recuperación no depende de `images.json`, rollback de imagen ni selección de una imagen anterior.
+Ante una pérdida, restaurá base y filestore desde el snapshot y reconstruí explícitamente la imagen a partir de los candidatos y la edición declarada. La recuperación no depende de estados históricos ni de una selección alternativa.
 
 ## Verificación final
 

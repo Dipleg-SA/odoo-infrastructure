@@ -6,18 +6,14 @@ Para inspeccionar el contenedor de backup o ejecutar un backup y su verificació
 
 ## Objetivo
 
-Conservar base, filestore y procedencia de Actual/Anterior en el mismo snapshot de producción.
+Conservar base, filestore, addons y metadata de procedencia en el mismo snapshot de
+producción para poder reconstruir el runtime.
 
 ## Flujo rápido
 
 1. Levantar la capa de backup si está detenida.
 2. Ejecutar la operación requerida y revisar sus logs.
 3. Confirmar el snapshot con `backup-verify`.
-
-## A mano
-
-No requiere pasos manuales adicionales; las operaciones se ejecutan con `ENTORNO`
-explícito y los restores siguen sus procedimientos específicos.
 
 ## Comandos
 
@@ -29,7 +25,9 @@ ENTORNO=produccion make backup-verify
 ENTORNO=produccion make backup-logs
 ```
 
-El backup registra `runtime/produccion/state/meta/images.json` junto con la procedencia de `runtime/addons/catalogo.txt`. `apply-image` ejecuta el backup previo cuando corresponde.
+El backup registra el `ODOO_IMAGE` usado como dato diagnóstico junto con la procedencia
+de `runtime/addons/catalogo.txt`, base y filestore. La imagen no se restaura como estado:
+si hace falta, se reconstruye explícitamente a partir de los candidatos y la edición.
 
 Para restaurar en staging:
 
@@ -37,8 +35,12 @@ Para restaurar en staging:
 ENTORNO=staging make restore SNAPSHOT=latest
 ```
 
-Para una restauración productiva, detené Odoo, conservá el snapshot asociado a la promoción y ejecutá el procedimiento de restore aprobado. El script recupera la procedencia e identifica la imagen Actual restaurada.
+Para una restauración productiva, detené Odoo, conservá el snapshot asociado y ejecutá
+el procedimiento de restore aprobado. Después construí, levantá y verificá la imagen
+seleccionada.
 
 ## Verificación
 
-`ENTORNO=produccion make backup-verify` debe confirmar snapshots, base y filestore, registro de addons y procedencia de imágenes. Staging solo lee el repositorio y no ejecuta `backup-run`.
+`ENTORNO=produccion make backup-verify` debe confirmar snapshots, base, filestore,
+registro de addons y metadata de procedencia. Staging solo lee el repositorio y no
+ejecuta `backup-run`.

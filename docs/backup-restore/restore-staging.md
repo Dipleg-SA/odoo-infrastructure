@@ -31,7 +31,9 @@ ENTORNO=staging make postgres-verify
 ENTORNO=staging make restore SNAPSHOT=latest
 ```
 
-El restore recupera base, filestore y metadata del backup. Si el snapshot trae `images.json` legacy, se conserva como dato histórico y no cambia `ODOO_IMAGE`.
+El restore recupera base, filestore y metadata del backup. La metadata histórica no cambia
+`ODOO_IMAGE`; si hace falta una imagen distinta, se reconstruye explícitamente después del
+restore.
 
 ### 3. Odoo
 
