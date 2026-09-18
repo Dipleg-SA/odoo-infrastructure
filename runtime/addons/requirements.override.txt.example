@@ -1,2 +1,6 @@
 # Overrides Python del deployment
 # Los requisitos normales viven en cada repositorio de addons; este archivo queda vacío salvo excepción documentada.
+
+# Compatibilidad con la imagen base de Odoo
+# pyOpenSSL 23.2.0 requiere cryptography anterior a 42 para cargar el registry.
+cryptography<42
