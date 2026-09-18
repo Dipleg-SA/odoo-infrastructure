@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Verificación de promoción de addons
-# Compara candidatos productivos con la imagen de staging validada sin modificar ningún estado.
+# Compara el build seleccionado de staging con candidatos productivos sin estado de imágenes.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -15,25 +15,34 @@ if [[ "$ENTORNO" != produccion ]]; then
 fi
 
 # Rutas de procedencia
-# La fotografía de staging y los candidatos de producción comparten los clones bare.
+# La metadata del build seleccionado conserva los commits que staging ejecutó.
 ROOT="$PWD"
-STAGING_STATE="$ROOT/runtime/staging/state/images.json"
+STAGING_ENV="$ROOT/runtime/staging/compose.env"
+STAGING_BUILDS="$ROOT/runtime/addons/builds/staging"
 PRODUCTION_CANDIDATES="$ROOT/runtime/addons/custom/produccion"
 BARE_DIR="$ROOT/runtime/addons/.repos"
 ENTERPRISE_ROOT="$ROOT/runtime/addons/enterprise"
 
+staging_image=$(sed -n 's/^ODOO_IMAGE=//p' "$STAGING_ENV" 2>/dev/null | tail -1)
+staging_edition=$(sed -n 's/^ODOO_EDITION=//p' "$STAGING_ENV" 2>/dev/null | tail -1)
+staging_tag=$(sed -n 's/^TAG=//p' "$STAGING_ENV" 2>/dev/null | tail -1)
+
 # Comparación de la promoción
-# Python valida la fotografía y compara árboles Git, no solo SHAs que pueden reescribirse.
-python3 - "$STAGING_STATE" "$PRODUCTION_CANDIDATES" "$BARE_DIR" "$ODOO_EDITION" "$TAG" "$ENTERPRISE_ROOT" <<'PY'
+# Python valida la metadata seleccionada y compara árboles Git, no solo referencias.
+python3 - "$STAGING_BUILDS" "$staging_image" "$staging_edition" "$staging_tag" \
+  "$PRODUCTION_CANDIDATES" "$BARE_DIR" "$ODOO_EDITION" "$TAG" "$ENTERPRISE_ROOT" <<'PY'
 import json
 import pathlib
 import re
 import subprocess
 import sys
 
-state_path, candidates_root, bare_dir, edition, edition_tag, enterprise_root = map(pathlib.Path, sys.argv[1:])
-edition = str(edition)
-edition_tag = str(edition_tag)
+(builds_root, selected_image, staging_edition, staging_tag, candidates_root,
+ bare_dir, production_edition, production_tag, enterprise_root) = sys.argv[1:]
+builds_root = pathlib.Path(builds_root)
+candidates_root = pathlib.Path(candidates_root)
+bare_dir = pathlib.Path(bare_dir)
+enterprise_root = pathlib.Path(enterprise_root)
 commit_pattern = re.compile(r"^[0-9a-f]{40}$")
 
 def fail(message):
@@ -54,32 +63,35 @@ def tree(repository, commit, label):
         fail(f"{label} devolvió un árbol inválido")
     return value
 
-if not state_path.is_file():
-    fail("falta runtime/staging/state/images.json")
-try:
-    state = json.loads(state_path.read_text(encoding="utf-8"))
-except (OSError, json.JSONDecodeError) as error:
-    fail(f"no se pudo leer la imagen de staging: {error}")
+if not selected_image:
+    fail("staging no tiene ODOO_IMAGE seleccionada")
+metadata = None
+for path in sorted(builds_root.glob("*/image.json")):
+    try:
+        candidate = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        continue
+    if candidate.get("tag") == selected_image:
+        metadata = candidate
+        break
+if not isinstance(metadata, dict):
+    fail("no se encontró metadata para la ODOO_IMAGE seleccionada de staging")
 
-actual = state.get("Actual")
-validation = state.get("validation")
-if not isinstance(actual, dict):
-    fail("staging no tiene una imagen Actual")
-if not isinstance(validation, dict) or validation.get("result") != "ok":
-    fail("la imagen Actual de staging no está validada")
+if metadata.get("edition") != staging_edition or metadata.get("edition_tag") != staging_tag:
+    fail("la metadata de staging no coincide con su configuración de edición")
+if staging_edition != production_edition or staging_tag != production_tag:
+    fail("la edición o el tag productivo no coinciden con staging seleccionado")
 
-addons = actual.get("addons")
+addons = metadata.get("addons")
 if not isinstance(addons, dict):
-    fail("la imagen Actual de staging no tiene procedencia de addons")
-if actual.get("edition") != edition or actual.get("edition_tag") != edition_tag:
-    fail("la edición o el tag productivo no coinciden con staging validado")
+    fail("el build seleccionado de staging no tiene procedencia de addons")
 
-if edition == "community":
-    if actual.get("enterprise_tag") not in (None, "") or actual.get("enterprise_commit") not in (None, ""):
+if production_edition == "community":
+    if metadata.get("enterprise_tag") not in (None, "") or metadata.get("enterprise_commit") not in (None, ""):
         fail("staging Community conserva procedencia Enterprise")
-elif edition == "enterprise":
-    enterprise_commit = actual.get("enterprise_commit")
-    if actual.get("enterprise_tag") != edition_tag or not isinstance(enterprise_commit, str) or not commit_pattern.fullmatch(enterprise_commit):
+elif production_edition == "enterprise":
+    enterprise_commit = metadata.get("enterprise_commit")
+    if metadata.get("enterprise_tag") != production_tag or not isinstance(enterprise_commit, str) or not commit_pattern.fullmatch(enterprise_commit):
         fail("la procedencia Enterprise de staging es incompatible")
     try:
         production_enterprise = subprocess.check_output(
@@ -90,7 +102,7 @@ elif edition == "enterprise":
     except subprocess.CalledProcessError:
         fail("producción no tiene un checkout Enterprise resoluble")
     if production_enterprise != enterprise_commit:
-        fail("el commit Enterprise de producción no coincide con staging validado")
+        fail("el commit Enterprise de producción no coincide con staging seleccionado")
 else:
     fail("la edición productiva no es válida")
 
@@ -122,7 +134,6 @@ for domain in sorted(addons):
         fail(f"staging tiene un commit inválido para {domain}")
     repository = bare_dir / f"{domain}.git"
     if tree(repository, staging_commit, f"staging/{domain}") != tree(repository, production[domain], f"producción/{domain}"):
-        fail(f"el árbol de {domain} difiere entre staging validado y producción")
+        fail(f"el árbol de {domain} difiere entre staging seleccionado y producción")
 
-print("promotion-verify: staging validado coincide con los candidatos de producción")
-PY
+print("promotion-verify: staging seleccionado coincide con los candidatos de producción")

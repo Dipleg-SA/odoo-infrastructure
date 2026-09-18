@@ -16,7 +16,9 @@ Recibir únicamente pushes válidos y dejar disponible el candidato para el pró
 
 ## A mano
 
-El endpoint público es `POST /webhooks/addons`. El receptor necesita solo el secreto de firma, el catálogo, clones bare, candidatos y su estado. No recibe socket Docker, secretos de Odoo, Enterprise ni referencias de imagen.
+El endpoint público es `POST /webhooks/addons`. El receptor necesita solo el secreto de
+firma, el catálogo, clones bare, candidatos y su estado. No recibe socket Docker, secretos
+de Odoo, Enterprise ni acceso a la imagen.
 
 ## Comandos
 
@@ -26,8 +28,13 @@ ENTORNO=staging make repo-status
 ENTORNO=produccion make repo-status
 ```
 
-Las ramas válidas en el servidor son `19.0-stag` y `19.0`. Una rama `feat/*` o `19.0-dev`, un repositorio ausente del catálogo o el repositorio Enterprise se ignoran. Para llevar una feature a staging, integrala o publicala de forma controlada en `19.0-stag`; no hace falta un PR intermedio contra staging. La entrega repetida es idempotente y el lock serializa webhook y build.
+Las ramas válidas en el servidor son `19.0-stag` y `19.0`. Una rama `feat/*` o
+`19.0-dev`, un repositorio ausente del catálogo o el repositorio Enterprise se ignoran.
+La entrega repetida es idempotente y el lock serializa webhook y build.
 
 ## Verificación
 
-Confirmá el código HTTP y el estado del candidato. Un webhook válido nunca cambia `images.json`, contenedores, bases ni filestore; el cambio solo aparece en el build siguiente. Build, aplicación de imagen, validación funcional, módulos y la promoción posterior siguen siendo acciones manuales.
+Confirmá el código HTTP y el estado del candidato. Un webhook válido no cambia
+`ODOO_IMAGE`, contenedores, bases ni filestore; el cambio solo aparece en el build
+siguiente. Build, validación funcional, módulos y promoción de código siguen siendo
+acciones manuales.

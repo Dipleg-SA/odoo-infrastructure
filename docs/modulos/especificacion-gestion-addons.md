@@ -2,11 +2,15 @@
 
 ## Estado
 
-Implementada. Este documento conserva la estructura vigente y sirve como fuente del flujo operativo.
+Implementada. Este documento describe el contrato vigente para candidatos, builds y
+operación manual de módulos.
 
 ## Objetivo
 
-Compartir un checkout por línea mayor de Odoo entre desarrollo, staging y producción, manteniendo separados secretos, configuración, estado, volúmenes e identidad Compose. El webhook solo recibe código candidato; Odoo ejecuta imágenes inmutables seleccionadas manualmente.
+Compartir un checkout por línea mayor de Odoo entre desarrollo, staging y producción,
+manteniendo separados secretos, configuración, estado, volúmenes e identidad Compose.
+El webhook solo recibe código candidato; Odoo ejecuta la única imagen indicada por
+`ODOO_IMAGE`.
 
 ## Estructura objetivo
 
@@ -18,54 +22,63 @@ runtime/<entorno>/
 ├── config/                     # privado
 ├── secrets/                    # privado
 └── state/
-    ├── images.json             # Nueva, Actual, Anterior y validación
-    └── meta/                   # procedencia asociada a backups
+    └── meta/                   # metadata asociada a backups
 runtime/addons/
 ├── catalogo.txt                # privado, solo dominios
 ├── .repos/<dominio>.git/       # clones bare compartidos
 ├── enterprise/                 # checkout privado, fuera del catálogo
 ├── custom/<entorno>/<dominio>/ # candidatos publicados por webhook
-└── builds/<entorno>/<id>/      # fotografía del build
+└── builds/<entorno>/<id>/      # fotografía y procedencia del build
 ```
-
-El checkout de Enterprise pertenece a una única línea mayor y se selecciona por tag anotado e inmutable. No recibe webhooks ni se mezcla con el catálogo de dominios. Las operaciones puntuales del receptor se exponen también como targets `addons-webhook-*` de Make, igual que los demás stacks.
 
 ## Contratos implementados
 
 - Toda operación usa `ENTORNO=desarrollo|staging|produccion`; sin esa variable falla antes de Compose.
-- Cada `compose.env` declara `ADDONS_REF`: desarrollo usa `feat/*` y la inicializa desde `19.0` cuando falta; staging consume `19.0-stag` y producción `19.0` sin crear ni sobrescribir ramas. `scripts/addons.sh` publica el SHA completo en `.candidate-commit`.
+- Cada `compose.env` declara `ADDONS_REF`: desarrollo usa `feat/*`, staging consume `19.0-stag` y producción `19.0`.
 - El webhook valida firma, catálogo y rama; actualiza solo el candidato y usa el lock del entorno.
-- `scripts/build-odoo-image.sh` toma el mismo lock, exporta SHAs desde clones bare, copia solo la edición seleccionada y los dominios a la fotografía, compila sus `requirements.txt` con overrides locales, fija referencias Git y registra Nueva después de obtener digest.
+- `scripts/build-odoo-image.sh` toma el mismo lock, exporta SHAs desde clones bare, copia la edición seleccionada y los dominios, compila dependencias y fija referencias Git.
+- El build actualiza `ODOO_IMAGE` únicamente después de obtener el digest y guarda `image.json` bajo `runtime/addons/builds/<entorno>/`.
 - `stacks/odoo/compose.yaml` consume `ODOO_IMAGE` y no monta addons del host. El entrypoint usa Enterprise, dominios propios y Community, en ese orden.
-- `scripts/image-state.sh` conserva `Nueva`, `Actual`, `Anterior`, validación y procedencia. `apply` promueve; `rollback` reactiva Anterior si no hubo operaciones de módulos.
-- `scripts/odoo-module-operation.sh` exige Actual y registra que el rollback solo de imagen quedó bloqueado después de una operación exitosa.
-- El backup de producción guarda base, filestore, addons e imágenes Actual/Anterior en el mismo snapshot, incluyendo edición, tag y procedencia. Restore recupera esa información sin descargar código Enterprise por su cuenta.
+- `scripts/odoo-module-operation.sh` ejecuta las operaciones ORM manuales contra la imagen seleccionada.
+- El backup de producción guarda base, filestore, addons y metadata suficiente para reconstruir la imagen; no conserva una selección de imágenes alternativa.
 
 ## Flujo de promoción
 
 ```text
 feat/* local → 19.0-stag → PR aprobado → 19.0
-webhook → Candidato → build/apply manual → Actual validada → promotion-verify
+webhook → candidato → build manual → ODOO_IMAGE seleccionado → promotion-verify
 ```
 
-La promoción se ejecuta por entorno y de forma serializada. Staging puede contener varias features; su validación y el PR incluyen todo el delta con producción. Si se descartan cambios, staging se realinea explícitamente con `19.0`, conservando un respaldo Git; no es un rebase. Producción crea el backup previo mediante `apply-image`. Si `ODOO_EDITION` cambia, el preflight consulta la base y la promoción conserva la edición anterior como frontera de recuperación.
+La promoción de código se serializa por entorno. Staging puede contener varias features;
+su validación y el PR incluyen todo el delta con producción. Si se descartan cambios,
+staging se realinea explícitamente con `19.0`, conservando un respaldo Git. Producción
+ejecuta el backup requerido antes del build y la validación final.
 
-## Edición en candidatos y fotografías
+## Edición y procedencia
 
-`ODOO_EDITION` y `TAG` seleccionan la variante antes de sincronizar, construir o promover. El candidato de dominio sigue la rama del entorno; la fotografía agrega `edition`, `edition_tag`, digest, commits y momento de build. Enterprise agrega su tag, commit e inventario de módulos; Community registra esos campos vacíos y no incorpora el checkout privado.
+`ODOO_EDITION` y `TAG` seleccionan la variante antes de construir. La metadata del build
+registra edición, tag, digest, línea Odoo, imagen base, commit de infraestructura,
+commits de dominios y momento UTC. Enterprise agrega su tag, commit e inventario de
+módulos; Community no incorpora el checkout privado.
 
-Una transición entre ediciones no convierte módulos ni registros. El backup asociado conserva la base, el filestore y la fotografía activa para poder restaurar el estado anterior antes de cualquier operación funcional.
+Una transición entre ediciones no convierte módulos ni registros. El preflight ORM y la
+validación manual deben terminar antes de construir producción. La recuperación siempre
+combina restore de datos con un build explícito de la edición declarada.
 
 ## Enterprise y Community
 
-El operador crea un tag como `19.0-ee-YYYY-MM-DD` sobre el commit autorizado y lo selecciona con `ENTORNO=<entorno> scripts/addons.sh enterprise-sync <url> <tag>`. El mismo tag y commit Enterprise deben acompañar la promoción por los tres entornos.
+Enterprise se selecciona con un tag anotado e inmutable mediante
+`scripts/addons.sh enterprise-sync`; Community usa `TAG=19.0-ce-YYYY-MM-DD` y no exige
+checkout Enterprise. El mismo tag y commit Enterprise deben acompañar los tres entornos.
 
-Community usa `TAG=19.0-ce-YYYY-MM-DD`, no exige checkout Enterprise y puede avanzar con los mismos candidatos de dominios. El retiro de Enterprise exige validar que la base no conserve módulos Enterprise instalados.
+## Recuperación
 
-## Estados y reversión
-
-`images.json` registra para cada imagen edición, tag de edición, referencia interna, digest, línea Odoo, imagen base, commit de infraestructura, tag y commit Enterprise cuando corresponda, commits de dominios y momento UTC. El restore reaplica `Actual` y `Anterior` desde esa procedencia. Sin operaciones de módulos, `rollback-image` reactiva Anterior; después de operar módulos, se debe restaurar el backup asociado y recuperar sus metadatos.
+No hay estados `Nueva`, `Actual` o `Anterior`, ni comandos de promoción o rollback de
+imágenes. Ante una falla, detené el runtime si corresponde, restaurá base y filestore,
+corregí la configuración o los candidatos, construí de nuevo y verificá `ODOO_IMAGE`.
 
 ## Fuera de alcance
 
-La instalación, actualización, desinstalación y validación funcional de módulos siguen siendo acciones manuales. El webhook no construye imágenes, no reinicia Odoo y no accede al socket Docker, bases, filestore, secretos ni Enterprise.
+La instalación, actualización, desinstalación y validación funcional de módulos siguen
+siendo acciones manuales. El webhook no construye imágenes, no reinicia Odoo y no accede
+al socket Docker, bases, filestore, secretos ni Enterprise.

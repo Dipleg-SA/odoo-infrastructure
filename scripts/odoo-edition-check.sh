@@ -58,21 +58,31 @@ printf 'edición destino: %s\n' "$DESTINO"
 printf 'módulos instalados: %s\n' "${modulos:-ninguno}"
 
 if [ "$DESTINO" = community ]; then
-  # Inventario Enterprise histórico
-  # Para retirar Enterprise se exige un inventario explícito de la imagen activa.
-  actual=$(scripts/image-state.sh get Actual 2>/dev/null || printf 'null')
-  if ! python3 - "$actual" "$modulos" "$RUNTIME_STATE_DIR/images.json" <<'PY'
+  # Procedencia de la imagen seleccionada
+  # Para retirar Enterprise se consulta el inventario del build que usa ODOO_IMAGE.
+  BUILD_ROOT="$(cd "$RUNTIME_DIR/../addons/builds/$ENTORNO" 2>/dev/null && pwd -P || true)"
+  if ! python3 - "$ODOO_IMAGE" "$modulos" "$BUILD_ROOT" <<'PY'
 import json, sys
+from pathlib import Path
 
-actual = json.loads(sys.argv[1])
-installed = set(filter(None, sys.argv[2].split(',')))
-raw_state = json.load(open(sys.argv[3], encoding='utf-8'))
-if actual is None or actual.get('edition') != 'enterprise':
+selected_tag, installed_raw, build_root = sys.argv[1:]
+installed = set(filter(None, installed_raw.split(',')))
+metadata = None
+if build_root:
+    for path in sorted(Path(build_root).glob('*/image.json')):
+        try:
+            candidate = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if candidate.get('tag') == selected_tag:
+            metadata = candidate
+            break
+if metadata is None or metadata.get('edition') != 'enterprise':
     raise SystemExit(0)
-raw_actual = raw_state.get('Actual')
-if not isinstance(raw_actual, dict) or not isinstance(raw_actual.get('enterprise_modules'), list):
+enterprise = metadata.get('enterprise_modules')
+if not isinstance(enterprise, list):
     raise SystemExit(1)
-enterprise = set(raw_actual['enterprise_modules'])
+enterprise = set(enterprise)
 if installed & enterprise:
     print('módulos Enterprise instalados: ' + ', '.join(sorted(installed & enterprise)), file=sys.stderr)
     raise SystemExit(1)

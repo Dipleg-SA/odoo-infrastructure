@@ -2,53 +2,69 @@
 
 ## Cuándo se usa
 
-Para sembrar o volver a sembrar staging con el último snapshot válido de producción.
+Para sembrar o volver a sembrar staging con un snapshot válido de producción.
 
 ## Objetivo
 
-Restaurar base, filestore y procedencia de imágenes en staging sin modificar producción.
+Restaurar base y filestore en staging sin modificar producción ni seleccionar una imagen histórica.
 
-## Flujo rápido
+## Preparación
 
-1. Confirmar credenciales de solo lectura y detener Odoo.
-2. Restaurar el snapshot y sincronizar código y dependencias.
-3. Construir, levantar y verificar staging.
+Confirmá `ENTORNO=staging`, las credenciales Restic de solo lectura y que Odoo esté detenido. El restore reemplaza los datos actuales de staging.
 
-## A mano
+## Flujo por stacks
 
-Confirmá `ENTORNO=staging`, la credencial Restic de solo lectura y que Odoo esté detenido. El restore reemplaza los datos actuales de staging.
-
-## Comandos
+### 1. Edge
 
 ```bash
-ENTORNO=staging make backup-verify
-ENTORNO=staging make odoo-down
+ENTORNO=staging make nginx-up
+ENTORNO=staging make nginx-verify
+ENTORNO=staging make cloudflared-up
+ENTORNO=staging make cloudflared-verify
+```
+
+### 2. PostgreSQL y restore
+
+```bash
 ENTORNO=staging make postgres-up
+ENTORNO=staging make postgres-verify
 ENTORNO=staging make restore SNAPSHOT=latest
+```
+
+El restore recupera base, filestore y metadata del backup. La metadata histórica no cambia
+`ODOO_IMAGE`; si hace falta una imagen distinta, se reconstruye explícitamente después del
+restore.
+
+### 3. Odoo
+
+Sincronizá candidatos, dependencias y la imagen antes de levantar Odoo:
+
+```bash
 ENTORNO=staging make repo-sync
 ENTORNO=staging make addons-deps
 ENTORNO=staging make build
-ENTORNO=staging make up
+ENTORNO=staging make odoo-up
+ENTORNO=staging make odoo-verify
 ```
 
-El restore recupera `Actual` y `Anterior` desde `runtime/staging/state/images.json`; la imagen candidata de staging se aplica después de construirla y validarla.
-
-## Verificación
+### 4. Backup
 
 ```bash
-ENTORNO=staging make verify
-ENTORNO=staging make addons-modules
+ENTORNO=staging make backup-verify
 ```
 
-No ejecutes `backup-run` en staging. Si la validación incluyó operaciones de módulos, descartá y restaurá nuevamente antes de continuar.
+Staging solo ofrece backup bajo el perfil `restore`; no ejecutes `backup-run` ni instales timers productivos.
+
+### 5. Monitoring
+
+No aplica: staging no incluye la capa de observabilidad.
 
 ## Validar una variante Community
 
-Si el snapshot corresponde a Enterprise, mantené temporalmente `ODOO_EDITION=enterprise` y su `TAG` mientras restaurás la procedencia. Sobre la copia aislada, retiră manualmente los módulos Enterprise y verificá que la base quede sin ellos:
+Si el snapshot corresponde a Enterprise, restaurá primero con `ODOO_EDITION=enterprise`, retir&aacute; manualmente los módulos Enterprise y ejecutá:
 
 ```bash
 ENTORNO=staging scripts/odoo-edition-check.sh --destino community
-ENTORNO=staging make verify
 ```
 
-Después cambiá únicamente `ODOO_EDITION=community` y `TAG=19.0-ce-YYYY-MM-DD` en `runtime/staging/compose.env`, construí la imagen Community y repetí la validación. El preflight bloquea la imagen si encuentra módulos Enterprise instalados o si falta el inventario Enterprise histórico; no convierte módulos ni modifica producción.
+Después cambiá `ODOO_EDITION=community` y `TAG=19.0-ce-YYYY-MM-DD`, construí la imagen Community y repetí la validación. El preflight bloquea una base incompatible; no convierte módulos ni modifica producción.

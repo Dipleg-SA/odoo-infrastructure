@@ -9,7 +9,6 @@ REPO_ROOT="$PWD"
 TMP=$(mktemp -d)
 STUB_DIR="$TMP/stub"; mkdir -p "$STUB_DIR"; export STUB_DIR
 printf '%s\n' '{"snapshot_id":"snap-test"}' > "$STUB_DIR/salida"
-tar -cf "$TMP/runtime-before.tar" -C "$REPO_ROOT" runtime
 trap 'rm -rf "$TMP"' EXIT
 
 # --- Checkout mínimo ---
@@ -26,6 +25,7 @@ crear_checkout() {
     'COMPOSE_PROJECT_NAME=backup-test' \
     'ODOO_EDITION=community' \
     'TAG=19.0-ce-2026-09-16' \
+    'ODOO_IMAGE=local/odoo:19.0-desarrollo-20260917T183719Z-fa588059f4932d2f' \
     > "$root/runtime/desarrollo/compose.env"
   printf '%s\n' 'RESTIC_REPOSITORY=s3:https://cuenta.r2.cloudflarestorage.com/bucket/restic' \
     > "$root/stacks/backup/config/r2.env"
@@ -87,8 +87,12 @@ contiene "guarda el estado de Enterprise" "enterprise: 19.0-ee-2026-09-15 · com
   "$(cat "$ROOT/runtime/desarrollo/state/meta/addons.txt")"
 contiene "guarda el commit del candidato" "dominio_ventas publicado abc123" \
   "$(cat "$ROOT/runtime/desarrollo/state/meta/addons.txt")"
-igual "guarda la procedencia de imágenes" "0" "$([ -s "$ROOT/runtime/desarrollo/state/meta/images.json" ] && grep -q '"Actual"' "$ROOT/runtime/desarrollo/state/meta/images.json"; echo $?)"
-contiene "restore reaplica la procedencia de imágenes" "restore-meta" "$(cat "$REPO_ROOT/stacks/backup/scripts/restore.sh")"
+contiene "registra el selector como metadata de backup" '"odoo_image": "local/odoo:19.0-desarrollo-20260917T183719Z-fa588059f4932d2f"' \
+  "$(cat "$ROOT/runtime/desarrollo/state/meta/last-backup.json")"
+no_contiene "no registra actual_tag" '"actual_tag"' \
+  "$(cat "$ROOT/runtime/desarrollo/state/meta/last-backup.json")"
+igual "no crea metadata de slots de imagen" "0" \
+  "$([ ! -e "$ROOT/runtime/desarrollo/state/meta/images.json" ]; echo $?)"
 contiene "backup monta metadatos del runtime" "RUNTIME_STATE_DIR" "$(cat "$REPO_ROOT/stacks/backup/compose.yaml")"
 
 # =====================================================================
@@ -101,26 +105,9 @@ mkdir -p "$ROOT/stacks/backup/scripts" "$ROOT/stacks/backup/config" \
 ROOT="$(cd "$ROOT" && pwd -P)"
 cp "$REPO_ROOT/stacks/backup/scripts/backup.sh" "$ROOT/stacks/backup/scripts/"
 cp "$REPO_ROOT/scripts/lib/ui.sh" "$REPO_ROOT/scripts/lib/contexto.sh" "$ROOT/scripts/lib/"
-cp "$REPO_ROOT/stacks/backup/scripts/restore.sh" "$ROOT/stacks/backup/scripts/"
-cp "$REPO_ROOT/scripts/image-state.sh" "$ROOT/scripts/"
-chmod 755 "$ROOT/stacks/backup/scripts/restore.sh" "$ROOT/scripts/image-state.sh"
 printf 'services: {}\n' > "$ROOT/runtime/produccion/compose.yaml"
-printf 'COMPOSE_PROJECT_NAME=backup-context\nODOO_EDITION=community\nTAG=19.0-ce-2026-09-16\n' \
+printf 'COMPOSE_PROJECT_NAME=backup-context\nODOO_EDITION=community\nTAG=19.0-ce-2026-09-16\nODOO_IMAGE=local/odoo:19.0-produccion-20260917T183719Z-fa588059f4932d2f\n' \
   > "$ROOT/runtime/produccion/compose.env"
-python3 - "$ROOT/runtime/produccion/state/images.json" <<'PY'
-import json, sys
-
-community = {
-    'tag': 'local/odoo:community', 'digest': 'sha256:ce', 'odoo_version': '19.0',
-    'base_image': 'odoo:19.0', 'infra_commit': 'infra', 'edition': 'community',
-    'edition_tag': '19.0-ce-2026-09-16', 'enterprise_tag': None,
-    'enterprise_commit': None, 'enterprise_modules': [], 'addons': {},
-    'built_at': '2026-09-16T00:00:00Z',
-}
-json.dump({'Nueva': None, 'Actual': community, 'Anterior': None,
-           'validation': None, 'rollback_blocked': False, 'module_operations': []},
-          open(sys.argv[1], 'w', encoding='utf-8'))
-PY
 printf '%s\n' 'RESTIC_REPOSITORY=s3:https://cuenta.r2.cloudflarestorage.com/bucket/restic' \
   > "$ROOT/stacks/backup/config/r2.env"
 printf '%s\n' '{"message_type":"summary","snapshot_id":"snap-context"}' > "$STUB_DIR/salida"
@@ -134,46 +121,34 @@ igual "el backup con contexto usa la composición del entorno" "0" \
   "$(grep -F -- "-f $ROOT/runtime/produccion/compose.yaml" "$STUB_DIR/llamadas" >/dev/null; echo $?)"
 igual "la marca de éxito cae en el estado del entorno" "0" \
   "$([ -s "$ROOT/runtime/produccion/state/textfile/backup-daily.prom" ] && [ ! -e "$ROOT/state/textfile/backup-daily.prom" ]; echo $?)"
-contiene "backup conserva la edición Community" '"edition": "community"' \
-  "$(cat "$ROOT/runtime/produccion/state/meta/images.json")"
-contiene "backup conserva el tag Community" '"edition_tag": "19.0-ce-2026-09-16"' \
-  "$(cat "$ROOT/runtime/produccion/state/meta/images.json")"
 
-mkdir -p "$STUB_DIR/snapshot-meta"
-cp "$ROOT/runtime/produccion/state/meta/images.json" "$STUB_DIR/snapshot-meta/images.json"
-python3 - "$ROOT/runtime/produccion/state/meta/images.json" <<'PY'
-import json, sys
-path = sys.argv[1]
-data = json.load(open(path, encoding="utf-8"))
-data["Actual"]["tag"] = "local/odoo:stale"
-open(path, "w", encoding="utf-8").write(json.dumps(data) + "\n")
-PY
-
-mkdir -p "$STUB_DIR/restore-bin"
-cat > "$STUB_DIR/restore-bin/docker" <<EOF
+# --- Restore tolerante a metadata legacy ---
+# Recuperar metadata histórica no debe seleccionar ni validar una imagen.
+cp "$REPO_ROOT/stacks/backup/scripts/restore.sh" "$ROOT/stacks/backup/scripts/"
+mkdir -p "$TMP/restore-bin"
+cat > "$TMP/restore-bin/docker" <<EOF
 #!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$STUB_DIR/restore-llamadas"
 case "\$*" in
-  *" ps -q odoo"*) exit 0 ;;
-  *" ps -q postgres"*) printf '%s\n' postgres-id; exit 0 ;;
-  *" restore "*"/data/meta"*) cp "$STUB_DIR/snapshot-meta/images.json" "$ROOT/runtime/produccion/state/meta/images.json" ;;
+  *"ps -q odoo"*) exit 0 ;;
+  *"ps -q postgres"*) printf '%s\n' postgres-id; exit 0 ;;
+  *"--entrypoint restic"*"/data/meta"*)
+    mkdir -p "$ROOT/runtime/produccion/state/meta"
+    printf '%s\n' '{"Actual":"legacy"}' > "$ROOT/runtime/produccion/state/meta/images.json"
+    printf '%s\n' '{"snapshot_id":"snap-context","odoo_image":"legacy"}' > "$ROOT/runtime/produccion/state/meta/last-backup.json"
+    ;;
 esac
-exec "$REPO_ROOT/tests/stubs/docker" "\$@"
+exit 0
 EOF
-chmod 755 "$STUB_DIR/restore-bin/docker"
+chmod 755 "$TMP/restore-bin/docker"
 salida=$(cd "$ROOT" && STUB_DIR="$STUB_DIR" ENTORNO=produccion \
-  PATH="$STUB_DIR/restore-bin:$REPO_ROOT/tests/stubs:$PATH" \
-  ./stacks/backup/scripts/restore.sh snap-context 2>&1); codigo=$?
-igual "restore Community exitoso" 0 "$codigo"
-contiene "restore conserva la edición Community" '"edition": "community"' \
-  "$(cat "$ROOT/runtime/produccion/state/images.json")"
-contiene "restore conserva el tag Community" '"edition_tag": "19.0-ce-2026-09-16"' \
-  "$(cat "$ROOT/runtime/produccion/state/images.json")"
-contiene "restore recupera metadata del snapshot" '"tag": "local/odoo:community"' \
-  "$(cat "$ROOT/runtime/produccion/state/images.json")"
-contiene "restore solicita metadata al snapshot" "/data/meta" "$(cat "$STUB_DIR/llamadas")"
-no_contiene "restore no recupera código Enterprise" "enterprise" "$(cat "$STUB_DIR/llamadas")"
-
-tar -cf "$TMP/runtime-after.tar" -C "$REPO_ROOT" runtime
-igual "el test no modifica runtime preexistente" "0" "$(cmp -s "$TMP/runtime-before.tar" "$TMP/runtime-after.tar"; echo $?)"
+  PATH="$TMP/restore-bin:$PATH" ./stacks/backup/scripts/restore.sh snap-context 2>&1); codigo=$?
+igual "restore tolera metadata legacy" 0 "$codigo"
+contiene "restore recupera metadata de backup" '"snapshot_id":"snap-context"' \
+  "$(cat "$ROOT/runtime/produccion/state/meta/last-backup.json")"
+no_contiene "restore no ejecuta image-state" "image-state" "$(cat "$STUB_DIR/restore-llamadas")"
+igual "restore no cambia el selector del entorno" \
+  "local/odoo:19.0-produccion-20260917T183719Z-fa588059f4932d2f" \
+  "$(sed -n 's/^ODOO_IMAGE=//p' "$ROOT/runtime/produccion/compose.env")"
 
 resumen

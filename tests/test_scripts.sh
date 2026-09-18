@@ -32,6 +32,8 @@ crear_root() {
   cp "$REPO_ROOT/scripts/lib/ui.sh" "$REPO_ROOT/scripts/lib/compose.sh" \
     "$REPO_ROOT/scripts/lib/contexto.sh" "$root/scripts/lib/"
   for s in "$@"; do cp "$REPO_ROOT/scripts/$s" "$root/scripts/"; done
+  cp "$REPO_ROOT/Makefile" "$root/"
+  cp -R "$REPO_ROOT/.make" "$root/"
   for entorno in desarrollo staging produccion; do
     mkdir -p "$root/runtime/$entorno"
     printf 'services: {}\n' > "$root/runtime/$entorno/compose.yaml"
@@ -413,13 +415,42 @@ reset_stub
 sale_con "sin composición legible aborta" 1 \
   bash -c "cd '$ROOT' && SYSTEMD_DIR='$ROOT/systemd' ./scripts/timers.sh install"
 
-# --- Operación de imagen ---
-# Los verbos de promoción quedan disponibles bajo el entorno explícito.
-contiene "Makefile expone apply-image" "apply-image:" "$(cat "$REPO_ROOT/Makefile")"
-contiene "Makefile expone rollback-image" "rollback-image:" "$(cat "$REPO_ROOT/Makefile")"
-contiene "Makefile expone guarda de edición" "require-edition-transition:" "$(cat "$REPO_ROOT/Makefile")"
-contiene "Makefile exige backup previo cuando corresponde" "backup-run" "$(cat "$REPO_ROOT/Makefile")"
-contiene "la operación de módulos exige Actual" "no hay imagen Actual" "$(cat "$REPO_ROOT/scripts/odoo-module-operation.sh")"
+# --- Selector de imagen Odoo ---
+# up y odoo-up deben detenerse antes de Compose si la referencia no es operativa.
+ROOT_IMAGE=$(crear_root image-guard)
+reset_stub
+for target in up odoo-up; do
+  sale_con "$target rechaza un selector inicial" 2 env ENTORNO=desarrollo \
+    STUB_DIR="$STUB_DIR" PATH="$REPO_ROOT/tests/stubs:$PATH" \
+    make -C "$ROOT_IMAGE" "$target"
+done
+igual "selector inválido no invoca Docker" "" "$(llamadas)"
+contiene "Makefile expone la guarda de imagen" "require-odoo-image:" "$(cat "$REPO_ROOT/Makefile")"
+no_contiene "Makefile no expone apply-image" "apply-image:" "$(cat "$REPO_ROOT/Makefile")"
+no_contiene "Makefile no expone rollback-image" "rollback-image:" "$(cat "$REPO_ROOT/Makefile")"
+no_contiene "la operación de módulos no exige Actual" "no hay imagen Actual" "$(cat "$REPO_ROOT/scripts/odoo-module-operation.sh")"
+
+# La guarda debe cargar compose.env dentro de su propia receta: require-entorno
+# corre en otro proceso y no puede dejar ODOO_IMAGE exportada para el siguiente.
+ROOT_VALID=$(crear_root image-valid)
+printf '%s\n' 'ODOO_IMAGE=local/odoo:19.0-desarrollo-20260918T112428Z-fa588059f4932d2f' >> "$ROOT_VALID/runtime/desarrollo/compose.env"
+mkdir -p "$ROOT_VALID/fakebin"
+cat > "$ROOT_VALID/fakebin/docker" <<'EOF'
+#!/usr/bin/env bash
+# Stub de Docker para comprobar la inspección de una imagen válida.
+# No se ejecuta Compose: solo confirma que la guarda cargó ODOO_IMAGE.
+printf '%s\n' "$*" >> "$STUB_DIR/llamadas"
+case "$*" in
+  *'image inspect local/odoo:'*) exit 0 ;;
+  *) exit 99 ;;
+esac
+EOF
+chmod +x "$ROOT_VALID/fakebin/docker"
+reset_stub
+sale_con "la guarda acepta el selector cargado desde compose.env" 0 env ENTORNO=desarrollo \
+  STUB_DIR="$STUB_DIR" PATH="$ROOT_VALID/fakebin:$PATH" \
+  make -C "$ROOT_VALID" require-odoo-image
+contiene "la guarda inspecciona la imagen seleccionada" "image inspect local/odoo:19.0-desarrollo-20260918T112428Z-fa588059f4932d2f" "$(llamadas)"
 
 # =====================================================================
 titulo "integrity-check, failure-notify y workspace — contratos de auxiliares"

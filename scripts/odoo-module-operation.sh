@@ -38,10 +38,10 @@ if [ "$ACCION" = uninstall ] && [ "$MODULOS" = all ]; then
   exit 2
 fi
 
-# Imagen Actual obligatoria
-# Las operaciones ORM solo pueden ejecutarse contra una fotografía declarada.
-if ! scripts/image-state.sh require-actual >/dev/null 2>&1; then
-  ui_bad "no hay imagen Actual" "aplicar una imagen antes de operar módulos"
+# Imagen Odoo seleccionada
+# Las operaciones ORM usan el mismo selector local que consume Compose.
+if ! make require-odoo-image >/dev/null 2>&1; then
+  ui_bad "imagen Odoo no disponible" "ejecutá ENTORNO=$ENTORNO make build antes de operar módulos"
   exit 2
 fi
 
@@ -237,7 +237,4 @@ fi
 
 estado_operacion=0
 python_operacion apply || estado_operacion=$?
-if [ "$estado_operacion" -eq 0 ]; then
-  scripts/image-state.sh invalidate-rollback "$ACCION:$MODULOS" >/dev/null
-fi
 exit "$estado_operacion"

@@ -16,15 +16,11 @@ STUB_DIR=$(mktemp -d); export STUB_DIR
 : > "$STUB_DIR/salida"
 : > "$STUB_DIR/systemctl"
 RUNTIME_ENV_CREADO=0
-STATE_FILE="runtime/desarrollo/state/images.json"
-STATE_EXISTIA=0
-if [ -f "$STATE_FILE" ]; then cp "$STATE_FILE" "$STUB_DIR/state-images"; STATE_EXISTIA=1; fi
 if [ ! -f runtime/desarrollo/compose.env ]; then
   cp runtime/desarrollo/compose.env.example runtime/desarrollo/compose.env
   RUNTIME_ENV_CREADO=1
 fi
 limpiar() {
-  if [ "$STATE_EXISTIA" -eq 1 ]; then cp "$STUB_DIR/state-images" "$STATE_FILE"; else rm -f "$STATE_FILE"; fi
   rm -rf "$STUB_DIR"
   [ "$RUNTIME_ENV_CREADO" -eq 0 ] || rm -f runtime/desarrollo/compose.env
 }
@@ -455,52 +451,59 @@ igual "un unhealthy solo no pasa por sano" "1 1" \
 # total en 0 es lo que hace que v_alloy falle en vez de dar verde sobre nada.
 igual "una respuesta sin componentes no se disimula" "0 0" "$(alloy_salud '{"otra":"cosa"}')"
 
-# Procedencia de la imagen Actual
-# verify debe detectar edición distinta y tag de release inconsistente.
+# Selector único de Odoo
+# verify debe revisar la referencia efectiva, su imagen local y su procedencia.
 . stacks/odoo/verify.sh
-SERVICIOS="nginx"
-printf '%s\n' 'services:' '  odoo:' '    image: local/odoo:19.0-desarrollo-actual' > "$STUB_DIR/config"
-PAYLOAD_ACTUAL='{"tag":"local/odoo:19.0-desarrollo-actual","digest":"sha256:actual","odoo_version":"19.0","base_image":"odoo:19.0-20260810","infra_commit":"infra","edition":"community","edition_tag":"19.0-ce-2026-09-16","enterprise_tag":null,"enterprise_commit":null,"enterprise_modules":[],"addons":{},"built_at":"20260916T120000Z"}'
-escribir_actual() {
-  python3 - "$STATE_FILE" "$1" <<'PY'
-import json, sys
-path, payload = sys.argv[1:]
-data = {"Nueva": None, "Actual": json.loads(payload), "Anterior": None, "validation": None, "rollback_blocked": False, "module_operations": []}
-open(path, "w", encoding="utf-8").write(json.dumps(data) + "\n")
-PY
+SERVICIOS="odoo"
+printf '%s\n' 'odoo-id' > "$STUB_DIR/ps-q"
+printf '%s\n' '200' > "$STUB_DIR/salida"
+VERIFY_ENV="runtime/desarrollo/compose.env"
+VERIFY_ENV_WAS=0
+VERIFY_ENV_BACKUP="$STUB_DIR/compose.env.backup"
+if [ -f "$VERIFY_ENV" ]; then cp "$VERIFY_ENV" "$VERIFY_ENV_BACKUP"; VERIFY_ENV_WAS=1; fi
+VERIFY_BUILDS="runtime/addons/builds/desarrollo/verify-test-$$"
+mkdir -p "$VERIFY_BUILDS"
+VERIFY_IMAGE="local/odoo:19.0-desarrollo-20990101T010101Z-a1b2c3d4e5f60789"
+printf '%s\n' 'COMPOSE_PROJECT_NAME=verify-test' 'ODOO_EDITION=community' \
+  'TAG=19.0-ce-2026-09-16' "ODOO_IMAGE=$VERIFY_IMAGE" > "$VERIFY_ENV"
+cat > "$VERIFY_BUILDS/image.json" <<EOF
+{"tag":"$VERIFY_IMAGE","digest":"sha256:verify","edition":"community","edition_tag":"19.0-ce-2026-09-16","odoo_version":"19.0","base_image":"odoo:19.0-20260810","infra_commit":"infra","addons":{},"built_at":"20260917T183719Z"}
+EOF
+verificar_odoo() {
+  unset CONTEXTO_ENTORNO RUNTIME_DIR RUNTIME_ROOT RUNTIME_COMPOSE_FILE RUNTIME_ENV_FILE
+  unset RUNTIME_CONFIG_DIR RUNTIME_SECRETS_DIR RUNTIME_STATE_DIR ODOO_IMAGE
+  contexto_iniciar >/dev/null 2>&1 || return $?
+  v_odoo
 }
-escribir_actual "$PAYLOAD_ACTUAL"
-SALIDA=$(v_odoo 2>&1)
-contiene "verify acepta edición y tag coherentes" "ok      edición y tag de imagen Actual coherentes" "$SALIDA"
-contiene "verify acepta ranuras coherentes" "ok      ranuras de imágenes coherentes con el runtime" "$SALIDA"
-PAYLOAD_EE="${PAYLOAD_ACTUAL/community/enterprise}"
-PAYLOAD_EE="${PAYLOAD_EE/19.0-ce-2026-09-16/19.0-ee-2026-09-14}"
-PAYLOAD_EE="${PAYLOAD_EE/\"enterprise_tag\":null/\"enterprise_tag\":\"19.0-ee-2026-09-14\"}"
-PAYLOAD_EE="${PAYLOAD_EE/\"enterprise_commit\":null/\"enterprise_commit\":\"ee\"}"
-PAYLOAD_EE="${PAYLOAD_EE/\"enterprise_modules\":\[\]/\"enterprise_modules\":[\"ventas\"]}"
-escribir_actual "$PAYLOAD_EE"
-contiene "verify detecta edición distinta" "edición y tag de imagen Actual coherentes" "$(v_odoo 2>&1)"
-escribir_actual "${PAYLOAD_ACTUAL/19.0-ce-2026-09-16/19.0-ee-2026-09-14}"
-contiene "verify detecta tag inconsistente" "edición y tag de imagen Actual coherentes" "$(v_odoo 2>&1)"
+printf '%s\n' 'services:' '  odoo:' "    image: $VERIFY_IMAGE" > "$STUB_DIR/config"
+rm -f "$STUB_DIR/exit-salida"
+SALIDA=$(verificar_odoo 2>&1 || true)
+contiene "verify acepta selector explícito" "ok      ODOO_IMAGE tiene tag explícito" "$SALIDA"
+contiene "verify acepta imagen local" "ok      ODOO_IMAGE existe localmente" "$SALIDA"
+contiene "verify acepta Compose alineado" "ok      Compose usa ODOO_IMAGE" "$SALIDA"
+contiene "verify acepta procedencia completa" "ok      procedencia técnica de ODOO_IMAGE completa" "$SALIDA"
 
-escribir_actual "$PAYLOAD_ACTUAL"
-python3 - "$STATE_FILE" "$PAYLOAD_EE" <<'PY'
-import json, sys
-path, anterior = sys.argv[1:]
-data = json.load(open(path, encoding="utf-8"))
-data["Anterior"] = json.loads(anterior)
-open(path, "w", encoding="utf-8").write(json.dumps(data) + "\n")
-PY
-contiene "verify conserva la frontera de rollback" "ok      ranuras de imágenes coherentes con el runtime" "$(v_odoo 2>&1)"
+printf '%s\n' 'COMPOSE_PROJECT_NAME=verify-test' 'ODOO_EDITION=community' \
+  'TAG=19.0-ce-2026-09-16' 'ODOO_IMAGE=local/odoo:19.0-desarrollo-inicial' > "$VERIFY_ENV"
+SALIDA=$(verificar_odoo 2>&1 || true)
+contiene "verify rechaza selector inicial" "FALLA   ODOO_IMAGE tiene tag explícito" "$SALIDA"
 
-escribir_actual "$PAYLOAD_ACTUAL"
-python3 - "$STATE_FILE" "$PAYLOAD_EE" <<'PY'
-import json, sys
-path, nueva = sys.argv[1:]
-data = json.load(open(path, encoding="utf-8"))
-data["Nueva"] = json.loads(nueva)
-open(path, "w", encoding="utf-8").write(json.dumps(data) + "\n")
-PY
-contiene "verify rechaza Nueva incompatible" "ranuras de imágenes coherentes con el runtime" "$(v_odoo 2>&1)"
+printf '%s\n' "ODOO_IMAGE=$VERIFY_IMAGE" >> "$VERIFY_ENV"
+printf '%s\n' '1' > "$STUB_DIR/exit-salida"
+SALIDA=$(verificar_odoo 2>&1 || true)
+contiene "verify detecta imagen local ausente" "FALLA   ODOO_IMAGE existe localmente" "$SALIDA"
+rm -f "$STUB_DIR/exit-salida"
+
+printf '%s\n' 'services:' '  odoo:' '    image: local/odoo:19.0-desarrollo-otra' > "$STUB_DIR/config"
+SALIDA=$(verificar_odoo 2>&1 || true)
+contiene "verify detecta discrepancia con Compose" "FALLA   Compose usa ODOO_IMAGE" "$SALIDA"
+
+printf '%s\n' 'services:' '  odoo:' "    image: $VERIFY_IMAGE" > "$STUB_DIR/config"
+printf '%s\n' '{"tag":"'$VERIFY_IMAGE'","edition":"community"}' > "$VERIFY_BUILDS/image.json"
+SALIDA=$(verificar_odoo 2>&1 || true)
+contiene "verify detecta metadata incompleta" "FALLA   procedencia técnica de ODOO_IMAGE completa" "$SALIDA"
+
+if [ "$VERIFY_ENV_WAS" -eq 1 ]; then cp "$VERIFY_ENV_BACKUP" "$VERIFY_ENV"; else rm -f "$VERIFY_ENV"; fi
+rm -rf "$VERIFY_BUILDS"
 
 resumen

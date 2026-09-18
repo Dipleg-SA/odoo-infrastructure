@@ -2,49 +2,58 @@
 
 ## Cuándo se usa
 
-Para instalar, actualizar o desinstalar módulos de forma manual sobre la imagen Actual de un entorno.
+Para instalar, actualizar o desinstalar módulos de forma manual sobre el `ODOO_IMAGE`
+seleccionado de un entorno.
 
 ## Objetivo
 
-Operar módulos con una fotografía identificable, registrar el impacto sobre la reversión y validar el flujo antes de promover.
+Operar módulos mediante la API ORM, conservar el backup asociado y validar el resultado
+antes de promover cambios de código.
 
 ## Flujo rápido
 
-1. Confirmar catálogo, candidato, entorno e imagen Actual.
+1. Confirmar catálogo, candidatos, entorno y `ODOO_IMAGE`.
 2. Ejecutar la operación explícita sobre el módulo.
-3. Verificar, validar el entorno y conservar el backup asociado.
+3. Verificar Odoo y conservar el backup si la operación afecta datos.
 
 ## A mano
 
-El repositorio debe estar en el catálogo y el candidato sincronizado. Las operaciones requieren `ENTORNO` y `MODULES`; nunca se disparan desde el webhook.
+El repositorio debe estar en el catálogo y el candidato sincronizado. Las operaciones
+requieren `ENTORNO` y `MODULES`; nunca se disparan desde el webhook.
 
 ## Comandos
 
 ```bash
 ENTORNO=desarrollo make repo-sync
 ENTORNO=desarrollo make addons-deps
+ENTORNO=desarrollo make build
+ENTORNO=desarrollo make odoo-up
 ENTORNO=desarrollo make addons-install MODULES=mi_modulo
 # o addons-update / addons-uninstall con MODULES explícitos
 ENTORNO=desarrollo make verify
 ```
 
-Promové el commit por pull request, construí y aplicá una imagen en staging, y repetí la operación manual allí:
+Después de promover el código por pull request, construí y validá staging antes de
+repetir la operación manual allí:
 
 ```bash
 ENTORNO=staging make repo-sync
 ENTORNO=staging make build
-ENTORNO=staging make apply-image
+ENTORNO=staging make odoo-up
 ENTORNO=staging make addons-update MODULES=mi_modulo
 ENTORNO=staging make verify
 ```
 
-Producción exige backup previo y una aprobación funcional del entorno anterior:
+Producción exige backup previo y aprobación funcional:
 
 ```bash
 ENTORNO=produccion make backup-run
 ENTORNO=produccion make addons-update MODULES=mi_modulo
+ENTORNO=produccion make verify
 ```
 
 ## Verificación
 
-Cada operación detiene Odoo, usa la API ORM y lo vuelve a levantar. Una operación exitosa registra `rollback_blocked`; si la validación falla, restaurá el backup asociado antes de recuperar la imagen.
+Cada operación detiene Odoo, usa la API ORM y lo vuelve a levantar. Si la validación
+falla, restaurá el backup asociado y reconstruí la imagen solo después de corregir los
+candidatos o la configuración.

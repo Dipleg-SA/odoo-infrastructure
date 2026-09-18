@@ -2,53 +2,92 @@
 
 ## Cuándo se usa
 
-Para sembrar y validar staging con datos de producción antes de promover una imagen.
+Para sembrar y validar staging con datos de producción antes de continuar el código hacia producción.
 
 ## Objetivo
 
-Un runtime aislado que recibe exclusivamente `19.0-stag`, con SMTP desactivado y credencial Restic de solo lectura.
+Un runtime aislado que recibe exclusivamente `19.0-stag`, con SMTP desactivado y credenciales Restic de solo lectura.
 
-## Flujo rápido
-
-1. Preparar entorno, secretos y configuración.
-2. Restaurar el snapshot elegido, sincronizar `19.0-stag` y construir la imagen.
-3. Aplicar la imagen de staging, validar el conjunto completo y ejecutar `verify`.
-
-## A mano
-
-Copiá las tres plantillas antes de iniciar el runtime. `runtime/staging/compose.env` declara `ADDONS_REF=19.0-stag`; esa rama debe existir en todos los dominios del catálogo y staging nunca la crea ni la sobrescribe. Los repositorios aportan sus `requirements.txt`; el override local queda solo para excepciones.
-
-## Comandos
+## Preparación
 
 ```bash
 cp runtime/staging/compose.env.example runtime/staging/compose.env
 cp runtime/addons/catalogo.txt.example runtime/addons/catalogo.txt
 cp runtime/addons/requirements.override.txt.example runtime/addons/requirements.override.txt
+
 ENTORNO=staging make secrets-init config-init
 sudo ENTORNO=staging make secrets-perms
+ENTORNO=staging make secrets-check
 ENTORNO=staging make host-verify
-ENTORNO=staging make postgres-up
-ENTORNO=staging make restore
 ENTORNO=staging make repo-sync
 ENTORNO=staging make addons-deps
 ENTORNO=staging make build
-ENTORNO=staging make up
-ENTORNO=staging make verify
 ```
 
-`restore` reemplaza la base y el filestore de staging y recupera la procedencia del snapshot. `19.0-stag` puede contener varias features: la prueba y su resultado aplican al conjunto completo frente a `19.0`, no solo a la última feature incorporada. Si se opera un módulo durante la validación, staging se descarta y se vuelve a sembrar antes de otro intento.
+`make build` deja `ODOO_IMAGE` apuntando a la imagen de staging construida. La validación funcional es manual y no requiere una ranura de imagen.
 
-Para validar Community→Enterprise, cambiá el par plano a `ODOO_EDITION=enterprise` y `TAG=19.0-ee-YYYY-MM-DD`, restaurá una copia de producción y ejecutá el preflight antes de levantar la imagen. La validación de staging no modifica producción ni instala módulos automáticamente; esa aplicación queda para el paso controlado posterior.
+## Flujo por stacks
 
-Al terminar las pruebas funcionales, aplicá la imagen construida y registrá la evidencia sobre su `Actual`:
+### 1. Edge
 
 ```bash
-ENTORNO=staging make apply-image
-ENTORNO=staging make validate-image NOTE="validación funcional del conjunto 19.0-stag"
+ENTORNO=staging make nginx-up
+ENTORNO=staging make nginx-verify
+ENTORNO=staging make cloudflared-up
+ENTORNO=staging make cloudflared-verify
 ```
 
-La nota debe identificar la revisión o conjunto probado y el resultado. Si la validación falla, no abras ni apruebes el PR `19.0-stag → 19.0`; corregí el conjunto o realineá staging de manera explícita antes de comenzar otra prueba.
+Dnsmasq no está incluido en staging.
 
-## Verificación
+### 2. PostgreSQL
 
-`ENTORNO=staging make verify` debe confirmar la imagen Actual, `ODOO_DISABLE_SMTP=1`, el certificado propio y la ausencia de timers de backup. `ENTORNO=staging scripts/image-state.sh show` debe mostrar `validation.result: ok` asociada a esa Actual. `ENTORNO=staging make backup-run` debe fallar.
+```bash
+ENTORNO=staging make postgres-up
+ENTORNO=staging make postgres-verify
+```
+
+Para sembrar staging, restaurá después de comprobar PostgreSQL y antes de levantar Odoo:
+
+```bash
+ENTORNO=staging make restore SNAPSHOT=latest
+```
+
+### 3. Odoo
+
+```bash
+ENTORNO=staging make odoo-up
+ENTORNO=staging make odoo-verify
+```
+
+No continúes si `postgres-verify` u `odoo-verify` falla. Staging nunca instala ni actualiza módulos automáticamente.
+
+### 4. Backup
+
+El servicio permanente de backup no aplica a staging; el servicio existe bajo el perfil `restore` para la siembra. Verificá el repositorio sin dejar un timer productivo:
+
+```bash
+ENTORNO=staging make backup-verify
+```
+
+No ejecutes `backup-run` ni instales timers de backup en staging.
+
+### 5. Monitoring
+
+No aplica: staging no incluye la capa de observabilidad.
+
+## Cambios de edición
+
+Para validar Community→Enterprise, cambiá el par `ODOO_EDITION`/`TAG`, restaurá una copia aislada y ejecutá `scripts/odoo-edition-check.sh --destino community|enterprise` antes de levantar Odoo. El preflight bloquea una combinación incompatible con los módulos instalados.
+
+## Verificación final
+
+```bash
+ENTORNO=staging make verify
+ENTORNO=staging make addons-modules
+```
+
+La evidencia funcional identifica la revisión o el conjunto completo de `19.0-stag`. Si la prueba incluyó operaciones de módulos, volvé a sembrar staging antes de otro intento.
+
+## Verificación aislada sin Cloudflare
+
+Para ensayar staging en el servidor sin interferir con el stack activo, copiá el checkout a una ruta de verificación y seguí [`verificar-runtime-aislado.md`](verificar-runtime-aislado.md). La copia usa identidad, puertos, volúmenes y hostname propios; restaura un snapshot exacto y no ejecuta `backup-run` ni timers. En esta modalidad Cloudflare queda fuera de alcance y la verificación se hace por Nginx/HTTPS local.
