@@ -17,7 +17,7 @@ export ENTORNO=desarrollo
 # son compartidos, y los candidatos/builds de los otros entornos no se pueden borrar.
 NUKE=$(make -n ENTORNO=desarrollo nuke 2>&1); NUKE_CODIGO=$?
 igual "make -n nuke termina correctamente" "0" "$NUKE_CODIGO"
-contiene "nuke limita candidatos al entorno seleccionado" 'runtime/addons/custom/${ENTORNO}' "$NUKE"
+contiene "nuke limita addons al entorno seleccionado" 'runtime/${ENTORNO}/addons' "$NUKE"
 contiene "nuke limita builds al entorno seleccionado" 'runtime/addons/builds/${ENTORNO}' "$NUKE"
 no_contiene "nuke conserva los clones bare compartidos" "runtime/addons/.repos" "$NUKE"
 no_contiene "nuke conserva el estado del control plane" "runtime/control/state" "$NUKE"
@@ -512,12 +512,91 @@ sale_con "failure-notify conserva el error de red" 28 env CURL_CALLS="$ROOT_NOTI
   PATH="$ROOT_NOTIFY/fakebin:$PATH" ENTORNO=produccion CURL_FAIL=28 \
   bash "$ROOT_NOTIFY/scripts/failure-notify.sh" backup.timer
 
+# addons-runtime-init prepara los mounts antes de Compose y conserva el contrato de permisos.
+# La fixture reemplaza solo el GID fijo por el grupo del test para ejercer el camino exitoso sin root.
+ROOT_ADDONS_INIT="$TMP/addons-runtime-init"
+GID_PRUEBA=$(id -g)
+mkdir -p "$ROOT_ADDONS_INIT/scripts/lib"
+cp scripts/lib/ui.sh "$ROOT_ADDONS_INIT/scripts/lib/"
+sed "s/65532/$GID_PRUEBA/g" scripts/addons-runtime.sh > "$ROOT_ADDONS_INIT/scripts/addons-runtime.sh"
+chmod +x "$ROOT_ADDONS_INIT/scripts/addons-runtime.sh"
+SALIDA=$(cd "$ROOT_ADDONS_INIT" && ./scripts/addons-runtime.sh init 2>&1)
+contiene "addons-runtime-init prepara desarrollo" "runtime/desarrollo/addons/custom listo" "$SALIDA"
+contiene "addons-runtime-init prepara staging" "runtime/staging/addons/custom listo" "$SALIDA"
+contiene "addons-runtime-init prepara producción" "runtime/produccion/addons/custom listo" "$SALIDA"
+igual "addons-runtime-init aplica owner, grupo y 2775" "0" \
+  "$(python3 - "$ROOT_ADDONS_INIT" "$GID_PRUEBA" <<'PY'
+import os, stat, sys
+root, gid = sys.argv[1], int(sys.argv[2])
+expected_mode = 0o775 if sys.platform == 'darwin' else 0o2775
+valid = all(
+    (lambda value: value.st_uid == os.getuid() and value.st_gid == gid and stat.S_IMODE(value.st_mode) == expected_mode)(
+        os.stat(os.path.join(root, 'runtime', environment, 'addons', 'custom'))
+    )
+    for environment in ('desarrollo', 'staging', 'produccion')
+)
+print(0 if valid else 1)
+PY
+)"
+sale_con "addons-runtime-init es idempotente" 0 bash -c "cd '$ROOT_ADDONS_INIT' && ./scripts/addons-runtime.sh init"
+chmod 0755 "$ROOT_ADDONS_INIT/runtime/staging/addons/custom"
+SALIDA=$(cd "$ROOT_ADDONS_INIT" && ./scripts/addons-runtime.sh init 2>&1 || true)
+contiene "addons-runtime-init diagnostica permisos incompatibles" \
+  "sudo install -d -o $(id -u) -g $GID_PRUEBA -m 2775" "$SALIDA"
+
+# El target del webhook no puede llegar a Docker si falla el bootstrap de mounts.
+# Un entrypoint deliberadamente fallido permite observar el corte sin privilegios.
+ROOT_WEBHOOK_INIT=$(crear_root webhook-init)
+cp scripts/addons-runtime.sh "$ROOT_WEBHOOK_INIT/scripts/addons-runtime.sh"
+cat > "$ROOT_WEBHOOK_INIT/scripts/addons-runtime.sh" <<'EOF'
+#!/usr/bin/env bash
+exit 7
+EOF
+chmod +x "$ROOT_WEBHOOK_INIT/scripts/addons-runtime.sh"
+reset_stub
+sale_con "addons-webhook-up corta si falla addons-runtime-init" 2 env ENTORNO=produccion \
+  STUB_DIR="$STUB_DIR" PATH="$REPO_ROOT/tests/stubs:$PATH" \
+  make -C "$ROOT_WEBHOOK_INIT" addons-webhook-up
+igual "el bootstrap fallido ocurre antes de Docker" "" "$(llamadas)"
+
+# El lifecycle de Odoo recrea bajo lock y nunca traduce restart a docker compose restart.
+# Un preflight fallido debe cortar antes de cualquier llamada al stub de Docker.
+ROOT_LIFECYCLE=$(crear_root lifecycle)
+cp scripts/odoo-lifecycle.sh "$ROOT_LIFECYCLE/scripts/"
+cp scripts/lib/candidate-lock.sh "$ROOT_LIFECYCLE/scripts/lib/"
+cat > "$ROOT_LIFECYCLE/scripts/addons-runtime.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$PREFLIGHT_CALLS"
+exit "${PREFLIGHT_FAIL:-0}"
+EOF
+chmod +x "$ROOT_LIFECYCLE/scripts/odoo-lifecycle.sh" "$ROOT_LIFECYCLE/scripts/addons-runtime.sh"
+reset_stub
+sale_con "odoo-lifecycle recrea correctamente" 0 env ENTORNO=desarrollo \
+  PREFLIGHT_CALLS="$ROOT_LIFECYCLE/preflight-calls" STUB_DIR="$STUB_DIR" \
+  PATH="$REPO_ROOT/tests/stubs:$PATH" "$ROOT_LIFECYCLE/scripts/odoo-lifecycle.sh" restart
+contiene "odoo-lifecycle exige preflight" "preflight" "$(cat "$ROOT_LIFECYCLE/preflight-calls")"
+contiene "odoo-lifecycle usa force-recreate" "up -d --force-recreate odoo" "$(llamadas)"
+no_contiene "odoo-lifecycle no usa compose restart" " restart " "$(llamadas)"
+no_contiene "odoo-lifecycle no construye imágenes" " build " "$(llamadas)"
+igual "odoo-lifecycle usa el lock compartido" "0" \
+  "$([ -f "$ROOT_LIFECYCLE/runtime/control/state/locks/environments/desarrollo.lock" ]; echo $?)"
+LLAMADAS_ANTES=$(llamadas)
+sale_con "odoo-lifecycle corta ante preflight incompatible" 1 env ENTORNO=desarrollo \
+  PREFLIGHT_FAIL=1 PREFLIGHT_CALLS="$ROOT_LIFECYCLE/preflight-calls" STUB_DIR="$STUB_DIR" \
+  PATH="$REPO_ROOT/tests/stubs:$PATH" "$ROOT_LIFECYCLE/scripts/odoo-lifecycle.sh" up
+igual "preflight incompatible no llega a Compose" "$LLAMADAS_ANTES" "$(llamadas)"
+
+TARGET_ODOO_RESTART=$(make -n ENTORNO=desarrollo odoo-restart 2>&1 || true)
+contiene "odoo-restart delega en el lifecycle" "scripts/odoo-lifecycle.sh restart" "$TARGET_ODOO_RESTART"
+TARGET_NGINX_RESTART=$(make -n ENTORNO=desarrollo nginx-restart 2>&1 || true)
+contiene "otros stacks conservan compose restart" "restart nginx" "$TARGET_NGINX_RESTART"
+
 # El workspace expone solo candidatos del entorno y no modifica la configuración del usuario.
 ROOT_WS=$(crear_root workspace vscode-workspace.sh)
-mkdir -p "$ROOT_WS/runtime/addons/custom/staging"
+mkdir -p "$ROOT_WS/runtime/staging/addons/custom"
 SALIDA=$(cd "$ROOT_WS" && ENTORNO=staging ./scripts/vscode-workspace.sh 2>&1)
 contiene "workspace genera el archivo" "workspace-staging.code-workspace" "$SALIDA"
-contiene "workspace usa los candidatos del entorno" "runtime/addons/custom/staging" \
+contiene "workspace usa los candidatos del entorno" "runtime/staging/addons/custom" \
   "$(cat "$ROOT_WS/workspace-staging.code-workspace")"
 no_contiene "workspace no vuelve a addons raíz" '"path": "'$ROOT_WS'/addons"' \
   "$(cat "$ROOT_WS/workspace-staging.code-workspace")"
@@ -531,13 +610,13 @@ TARGET_WORKSPACE=$(make -n ENTORNO=staging workspace 2>&1)
 contiene "workspace usa el selector de entorno" "scripts/lib/contexto.sh validar" "$TARGET_WORKSPACE"
 contiene "workspace ejecuta su generador" "scripts/vscode-workspace.sh" "$TARGET_WORKSPACE"
 sale_con "workspace sin candidatos explica cómo sincronizar" 1 \
-  bash -c "cd '$ROOT_WS' && rm -rf runtime/addons/custom/staging && ENTORNO=staging ./scripts/vscode-workspace.sh"
+  bash -c "cd '$ROOT_WS' && rm -rf runtime/staging/addons/custom && ENTORNO=staging ./scripts/vscode-workspace.sh"
 
-mkdir -p "$ROOT_WS/runtime/addons/custom/produccion" "$ROOT_WS/runtime/addons/enterprise"
+mkdir -p "$ROOT_WS/runtime/produccion/addons/custom" "$ROOT_WS/runtime/produccion/addons/enterprise"
 sed -i.bak 's/ODOO_EDITION=community/ODOO_EDITION=enterprise/; s/19.0-ce/19.0-ee/' \
   "$ROOT_WS/runtime/produccion/compose.env"
 SALIDA=$(cd "$ROOT_WS" && ENTORNO=produccion ./scripts/vscode-workspace.sh 2>&1)
-contiene "workspace Enterprise incluye su checkout" 'runtime/addons/enterprise' \
+contiene "workspace Enterprise incluye su checkout" 'runtime/produccion/addons/enterprise' \
   "$(cat "$ROOT_WS/workspace-produccion.code-workspace")"
 
 resumen

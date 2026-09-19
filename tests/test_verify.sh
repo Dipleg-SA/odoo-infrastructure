@@ -453,6 +453,18 @@ igual "una respuesta sin componentes no se disimula" "0 0" "$(alloy_salud '{"otr
 
 # Selector único de Odoo
 # verify debe revisar la referencia efectiva, su imagen local y su procedencia.
+mkdir -p "$STUB_DIR/bin"
+cat > "$STUB_DIR/bin/docker" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  *"cat /tmp/odoo-addons-startup.json"*) cat "\$STUB_DIR/salida-startup"; exit ;;
+  *"find /usr/lib/python3/dist-packages/odoo/addons"*) cat "\$STUB_DIR/salida-disponibles"; exit ;;
+  *"SELECT name FROM ir_module_module WHERE state = 'installed'"*) cat "\$STUB_DIR/salida-instalados"; exit ;;
+esac
+exec "$PWD/tests/stubs/docker" "\$@"
+EOF
+chmod 755 "$STUB_DIR/bin/docker"
+PATH="$STUB_DIR/bin:$PATH"
 . stacks/odoo/verify.sh
 SERVICIOS="odoo"
 printf '%s\n' 'odoo-id' > "$STUB_DIR/ps-q"
@@ -461,30 +473,86 @@ VERIFY_ENV="runtime/desarrollo/compose.env"
 VERIFY_ENV_WAS=0
 VERIFY_ENV_BACKUP="$STUB_DIR/compose.env.backup"
 if [ -f "$VERIFY_ENV" ]; then cp "$VERIFY_ENV" "$VERIFY_ENV_BACKUP"; VERIFY_ENV_WAS=1; fi
-VERIFY_BUILDS="runtime/addons/builds/desarrollo/verify-test-$$"
-mkdir -p "$VERIFY_BUILDS"
+VERIFY_RUNTIME="$STUB_DIR/runtime/desarrollo"
+VERIFY_BUILDS="$STUB_DIR/runtime/addons/builds/desarrollo/verify-test"
+mkdir -p "$VERIFY_RUNTIME/addons" "$VERIFY_BUILDS"
 VERIFY_IMAGE="local/odoo:19.0-desarrollo-20990101T010101Z-a1b2c3d4e5f60789"
 printf '%s\n' 'COMPOSE_PROJECT_NAME=verify-test' 'ODOO_EDITION=community' \
-  'TAG=19.0-ce-2026-09-16' "ODOO_IMAGE=$VERIFY_IMAGE" > "$VERIFY_ENV"
+  'TAG=19.0-ce-2026-09-16' 'RUNTIME_ENVIRONMENT=desarrollo' "ODOO_IMAGE=$VERIFY_IMAGE" > "$VERIFY_ENV"
+printf '%s\n' inputs-ok > "$VERIFY_RUNTIME/addons/requirements.inputs.sha256"
+printf '%s\n' lock-ok > "$VERIFY_RUNTIME/addons/requirements.lock.sha256"
 cat > "$VERIFY_BUILDS/image.json" <<EOF
-{"tag":"$VERIFY_IMAGE","digest":"sha256:verify","edition":"community","edition_tag":"19.0-ce-2026-09-16","odoo_version":"19.0","base_image":"odoo:19.0-20260810","infra_commit":"infra","addons":{},"built_at":"20260917T183719Z"}
+{"tag":"$VERIFY_IMAGE","digest":"sha256:verify","edition":"community","edition_tag":"19.0-ce-2026-09-16","odoo_version":"19.0","odoo_base":"odoo:19.0-20260810","infra_commit":"infra","requirements_inputs_sha256":"inputs-ok","requirements_lock_sha256":"lock-ok","built_at":"20260917T183719Z"}
 EOF
+cat > "$STUB_DIR/addons-runtime" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  validate) [ ! -f "$STUB_DIR/runtime-invalid" ] ;;
+  inventory) cat "$STUB_DIR/current-inventory" ;;
+  *) exit 2 ;;
+esac
+EOF
+chmod 755 "$STUB_DIR/addons-runtime"
+export ODOO_ADDONS_RUNTIME_SCRIPT="$STUB_DIR/addons-runtime"
+printf '%s\n' '{"addons":{"ventas":{"commit":"1111111111111111111111111111111111111111","tree":"2222222222222222222222222222222222222222"}},"edition":"community","enterprise":null,"entorno":"desarrollo"}' > "$STUB_DIR/current-inventory"
+cp "$STUB_DIR/current-inventory" "$STUB_DIR/salida-startup"
+printf '%s\n' base ventas > "$STUB_DIR/salida-disponibles"
+printf '%s\n' base ventas > "$STUB_DIR/salida-instalados"
 verificar_odoo() {
   unset CONTEXTO_ENTORNO RUNTIME_DIR RUNTIME_ROOT RUNTIME_COMPOSE_FILE RUNTIME_ENV_FILE
   unset RUNTIME_CONFIG_DIR RUNTIME_SECRETS_DIR RUNTIME_STATE_DIR ODOO_IMAGE
   contexto_iniciar >/dev/null 2>&1 || return $?
+  RUNTIME_DIR="$VERIFY_RUNTIME"
   v_odoo
 }
-printf '%s\n' 'services:' '  odoo:' "    image: $VERIFY_IMAGE" > "$STUB_DIR/config"
+printf '%s\n' 'services:' '  odoo:' "    image: $VERIFY_IMAGE" \
+  '    volumes:' \
+  '      - type: bind' "        source: $VERIFY_RUNTIME/addons/custom" '        target: /opt/odoo/custom' '        read_only: true' '        bind:' '          create_host_path: false' \
+  '      - type: bind' "        source: $VERIFY_RUNTIME/addons/enterprise" '        target: /opt/odoo/enterprise' '        read_only: true' '        bind:' '          create_host_path: false' \
+  > "$STUB_DIR/config"
 rm -f "$STUB_DIR/exit-salida"
 SALIDA=$(verificar_odoo 2>&1 || true)
 contiene "verify acepta selector explícito" "ok      ODOO_IMAGE tiene tag explícito" "$SALIDA"
 contiene "verify acepta imagen local" "ok      ODOO_IMAGE existe localmente" "$SALIDA"
 contiene "verify acepta Compose alineado" "ok      Compose usa ODOO_IMAGE" "$SALIDA"
 contiene "verify acepta procedencia completa" "ok      procedencia técnica de ODOO_IMAGE completa" "$SALIDA"
+contiene "verify acepta mounts acotados" "ok      mounts de addons acotados y de solo lectura" "$SALIDA"
+contiene "verify acepta candidatos íntegros" "ok      candidatos montados íntegros" "$SALIDA"
+contiene "verify acepta imagen compatible" "ok      imagen compatible con base y dependencias" "$SALIDA"
+contiene "verify acepta selección cargada" "ok      selección cargada coincide con candidatos" "$SALIDA"
+contiene "verify acepta código de módulos instalados" "ok      módulos instalados conservan su código" "$SALIDA"
+
+printf '%s\n' '{"addons":{"ventas":{"commit":"3333333333333333333333333333333333333333","tree":"4444444444444444444444444444444444444444"}},"edition":"community","enterprise":null,"entorno":"desarrollo"}' > "$STUB_DIR/current-inventory"
+SALIDA=$(verificar_odoo 2>&1 || true)
+contiene "verify detecta candidato posterior al arranque" "FALLA   selección cargada coincide con candidatos" "$SALIDA"
+contiene "verify pide recrear ante drift" "make odoo-restart" "$SALIDA"
+cp "$STUB_DIR/salida-startup" "$STUB_DIR/current-inventory"
+
+touch "$STUB_DIR/runtime-invalid"
+SALIDA=$(verificar_odoo 2>&1 || true)
+contiene "verify detecta árbol alterado" "FALLA   candidatos montados íntegros" "$SALIDA"
+rm "$STUB_DIR/runtime-invalid"
+
+python3 - "$VERIFY_BUILDS/image.json" <<'PY'
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1]); data = json.loads(path.read_text()); data["odoo_base"] = "odoo:19.0-incompatible"; path.write_text(json.dumps(data))
+PY
+SALIDA=$(verificar_odoo 2>&1 || true)
+contiene "verify detecta base incompatible" "difieren base" "$SALIDA"
+python3 - "$VERIFY_BUILDS/image.json" <<'PY'
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1]); data = json.loads(path.read_text()); data["odoo_base"] = "odoo:19.0-20260810"; data["requirements_inputs_sha256"] = "inputs-viejos"; path.write_text(json.dumps(data))
+PY
+SALIDA=$(verificar_odoo 2>&1 || true)
+contiene "verify detecta dependencia incompatible" "difieren inputs" "$SALIDA"
+
+printf '%s\n' base > "$STUB_DIR/salida-disponibles"
+SALIDA=$(verificar_odoo 2>&1 || true)
+contiene "verify informa addon instalado ausente" "faltan: ventas" "$SALIDA"
+no_contiene "verify no automatiza la desinstalación" "-u ventas" "$SALIDA"
 
 printf '%s\n' 'COMPOSE_PROJECT_NAME=verify-test' 'ODOO_EDITION=community' \
-  'TAG=19.0-ce-2026-09-16' 'ODOO_IMAGE=local/odoo:19.0-desarrollo-inicial' > "$VERIFY_ENV"
+  'TAG=19.0-ce-2026-09-16' 'RUNTIME_ENVIRONMENT=desarrollo' 'ODOO_IMAGE=local/odoo:19.0-desarrollo-inicial' > "$VERIFY_ENV"
 SALIDA=$(verificar_odoo 2>&1 || true)
 contiene "verify rechaza selector inicial" "FALLA   ODOO_IMAGE tiene tag explícito" "$SALIDA"
 
@@ -494,11 +562,13 @@ SALIDA=$(verificar_odoo 2>&1 || true)
 contiene "verify detecta imagen local ausente" "FALLA   ODOO_IMAGE existe localmente" "$SALIDA"
 rm -f "$STUB_DIR/exit-salida"
 
-printf '%s\n' 'services:' '  odoo:' '    image: local/odoo:19.0-desarrollo-otra' > "$STUB_DIR/config"
+sed "s#$VERIFY_IMAGE#local/odoo:19.0-desarrollo-otra#" "$STUB_DIR/config" > "$STUB_DIR/config.otra"
+mv "$STUB_DIR/config.otra" "$STUB_DIR/config"
 SALIDA=$(verificar_odoo 2>&1 || true)
 contiene "verify detecta discrepancia con Compose" "FALLA   Compose usa ODOO_IMAGE" "$SALIDA"
 
-printf '%s\n' 'services:' '  odoo:' "    image: $VERIFY_IMAGE" > "$STUB_DIR/config"
+sed 's#local/odoo:19.0-desarrollo-otra#'"$VERIFY_IMAGE"'#' "$STUB_DIR/config" > "$STUB_DIR/config.correcta"
+mv "$STUB_DIR/config.correcta" "$STUB_DIR/config"
 printf '%s\n' '{"tag":"'$VERIFY_IMAGE'","edition":"community"}' > "$VERIFY_BUILDS/image.json"
 SALIDA=$(verificar_odoo 2>&1 || true)
 contiene "verify detecta metadata incompleta" "FALLA   procedencia técnica de ODOO_IMAGE completa" "$SALIDA"

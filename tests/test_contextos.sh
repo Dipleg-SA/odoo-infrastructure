@@ -29,6 +29,8 @@ for entorno in desarrollo staging produccion; do
   esac
   igual "$entorno declara ADDONS_REF" "$referencia" \
     "$(sed -n 's/^ADDONS_REF=//p' "$REPO_ROOT/runtime/$entorno/compose.env.example")"
+  igual "$entorno declara su ruta de addons" "../../runtime/$entorno/addons" \
+    "$(sed -n 's/^RUNTIME_ADDONS_DIR=//p' "$REPO_ROOT/runtime/$entorno/compose.env.example")"
 done
 
 # Checkout de prueba
@@ -49,6 +51,7 @@ COMPOSE_PROJECT_NAME=prueba-$entorno
 MARCADOR_ENTORNO=$entorno
 COMPOSE_PROFILES=lan
 RUNTIME_CONFIG_DIR=esta-ruta-debe-ser-derivada
+RUNTIME_ADDONS_DIR=../../runtime/$entorno/addons
 ODOO_EDITION=community
 TAG=19.0-ce-2026-09-16
 ADDONS_REF=$referencia
@@ -101,6 +104,7 @@ for entorno in desarrollo staging produccion; do
     produccion) referencia=19.0 ;;
   esac
   igual "$entorno carga su referencia de addons" "$referencia" "$ADDONS_REF"
+  igual "$entorno carga su ruta de addons" "../../runtime/$entorno/addons" "$RUNTIME_ADDONS_DIR"
   igual "$entorno deriva su ruta privada" "$ROOT/runtime/$entorno/config" "$RUNTIME_CONFIG_DIR"
   igual "$entorno deriva la línea de Odoo" "19.0" "$(contexto_odoo_version)"
   printf 'nginx\n' > "$STUB_DIR/servicios"
@@ -119,6 +123,7 @@ for entorno in desarrollo staging produccion; do
   esac
   for otro in $otros; do
     no_contiene "$entorno no carga $otro" "$ROOT/runtime/$otro/compose.env" "$llamada"
+    no_contiene "$entorno no usa addons de $otro" "../../runtime/$otro/addons" "$RUNTIME_ADDONS_DIR"
   done
   docker() { printf '%s' "${COMPOSE_PROFILES:-}" > "$STUB_DIR/perfiles"; }
   sale_con "$entorno agrega perfiles preservando los existentes" 0 contexto_compose_perfiles restore config --services

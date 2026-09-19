@@ -59,7 +59,7 @@ class Config:
         return cls(
             catalog_path=Path(os.environ.get("ADDONS_CATALOG", root / "runtime/addons/catalogo.txt")),
             bare_dir=Path(os.environ.get("ADDONS_BARE_DIR", root / "runtime/addons/.repos")),
-            candidate_root=Path(os.environ.get("ADDONS_CANDIDATE_ROOT", root / "runtime/addons/custom")),
+            candidate_root=Path(os.environ.get("ADDONS_CANDIDATE_ROOT", root / "runtime")),
             state_dir=Path(os.environ.get("ADDONS_STATE_DIR", root / "runtime/control/state")),
             secret_file=Path(os.environ.get("ADDONS_SECRET_FILE", root / "runtime/control/secrets/addons_webhook_secret")),
             project_name=os.environ.get("ADDONS_PROJECT_NAME", "default"),
@@ -100,7 +100,7 @@ def file_lock(path: Path):
 
 
 def environment_lock(config: Config, environment: str) -> Path:
-    return config.state_dir / "locks" / config.project_name / f"{environment}.lock"
+    return config.state_dir / "locks" / "environments" / f"{environment}.lock"
 
 
 def repository_lock(config: Config, domain: str) -> Path:
@@ -373,6 +373,14 @@ def clean_path(path: Path) -> None:
         shutil.rmtree(path)
 
 
+# Destino del entorno
+# Rechaza cualquier valor fuera de la allowlist antes de construir la ruta escribible.
+def candidate_environment_root(config: Config, environment: str) -> Path:
+    if environment not in {"desarrollo", "staging", "produccion"}:
+        raise WebhookError(500, "el entorno de destino no es válido")
+    return config.candidate_root / environment
+
+
 # Reemplazo atómico de directorio
 # Linux intercambia ambas entradas; otros sistemas conservan rollback bajo el lock.
 def exchange_paths(first: Path, second: Path) -> bool:
@@ -406,7 +414,7 @@ def recover_candidate(candidate: Path, domain: str) -> None:
 
 
 def publish_candidate(bare: Path, domain: str, environment: str, commit: str, config: Config) -> None:
-    candidate_parent = config.candidate_root / environment
+    candidate_parent = candidate_environment_root(config, environment)
     ensure_directory(config.candidate_root)
     ensure_directory(candidate_parent)
     candidate = candidate_parent / domain
@@ -426,6 +434,10 @@ def publish_candidate(bare: Path, domain: str, environment: str, commit: str, co
             archive_file.seek(0)
             safe_extract(archive_file, temporary)
         (temporary / ".candidate-commit").write_text(f"{commit}\n", encoding="ascii")
+        tree = run_git(["-C", str(bare), "rev-parse", "--verify", f"{commit}^{{tree}}"], config=config)
+        if not COMMIT_PATTERN.fullmatch(tree):
+            raise GitOperationError("Git devolvió un identificador de árbol inválido")
+        (temporary / ".candidate-tree").write_text(f"{tree}\n", encoding="ascii")
 
         if candidate.exists() and exchange_paths(temporary, candidate):
             clean_path(temporary)

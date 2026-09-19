@@ -12,8 +12,8 @@ entrypoint de prueba le pone `profiles: [restore]` al stack `backup`, así que
 ## Objetivo
 
 Un backup completo de las dos mitades del estado —el dump de la base y el filestore—
-**en el mismo snapshot de restic**, con el registro de qué código de `runtime/addons/`
-corresponde a ese momento.
+**en el mismo snapshot de restic**, con la selección de commits que el contenedor Odoo
+cargó al arrancar.
 
 Que las dos mitades vayan juntas no es una comodidad: la base referencia archivos que
 solo existen en el filestore, y respaldarlos por separado convierte la consistencia en
@@ -21,13 +21,15 @@ un procedimiento que hay que recordar en vez de una propiedad del backup.
 
 ## Flujo rápido
 
-1. Ejecutar `backup-run` en producción.
+1. Verificar Odoo y ejecutar `backup-run` en producción.
 2. Ejecutar `backup-integrity` si se necesita revisar el repositorio sin escribir.
 3. Confirmar el snapshot completo con `backup-verify`.
 
 ## A mano
 
-Ninguno. La corrida diaria no pide nada.
+Odoo debe estar operativo y exponer `/tmp/odoo-addons-startup.json`. El backup falla
+antes de restic si no puede asociar una selección ejecutada válida; no la reemplaza con
+el candidato actual.
 
 ## Comandos
 
@@ -59,5 +61,6 @@ Cubre el servicio `healthy`, que `r2.env` no tenga el placeholder sin reemplazar
 el endpoint termine en `.r2.cloudflarestorage.com`, que el repositorio sea alcanzable
 y tenga snapshots de **este** stack, que el último traiga **las dos mitades**
 (`/data/dump` y `/data/odoo` — un snapshot con el filestore y sin la base restaura una
-base que no existe), el registro de addons, y los dos timers activos con el nombre de
-este checkout.
+base que no existe), `addons-startup.json` dentro del snapshot y los dos timers activos
+con el nombre de este checkout. Metadata anterior a la versión 2 es diagnóstico
+histórico, no una selección aplicable.

@@ -18,6 +18,9 @@ crear_addon() {
   mkdir -p "$dir" && git -C "$dir" init -q -b 19.0
   mkdir -p "$dir/$nombre"
   printf "{'name': '%s'}\n" "$nombre" > "$dir/$nombre/__manifest__.py"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/$nombre/ejecutable.sh"
+  chmod +x "$dir/$nombre/ejecutable.sh"
+  ln -s __manifest__.py "$dir/$nombre/manifiesto.link"
   git -C "$dir" add -A && git -C "$dir" commit -qm "base"
   git -C "$dir" checkout -qb feat/prueba
   printf 'feature\n' >> "$dir/$nombre/__manifest__.py"
@@ -70,7 +73,7 @@ codigo() {
   [ "$retorno" -eq 0 ] || printf '%s\n' "$salida" >&2
   printf '%s' "$retorno"
 }
-commit_candidato() { cat "$1/runtime/addons/custom/$2/$3/.candidate-commit" 2>/dev/null; }
+commit_candidato() { cat "$1/runtime/$2/addons/custom/$3/.candidate-commit" 2>/dev/null; }
 referencia_entorno() {
   local root="$1" entorno="$2" referencia="$3"
   sed -i.bak "s#^ADDONS_REF=.*#ADDONS_REF=$referencia#" "$root/runtime/$entorno/compose.env"
@@ -89,13 +92,28 @@ STAGING_COMMIT=$(git -C "$ADDON" rev-parse 19.0-stag)
 igual "staging publica el commit de 19.0-stag" "$STAGING_COMMIT" \
   "$(commit_candidato "$ROOT" staging dominio_ventas)"
 contiene "staging exporta el código del candidato" "staging" \
-  "$(cat "$ROOT/runtime/addons/custom/staging/dominio_ventas/dominio_ventas/__manifest__.py")"
+  "$(cat "$ROOT/runtime/staging/addons/custom/dominio_ventas/dominio_ventas/__manifest__.py")"
 igual "el candidato no es un worktree Git" "0" \
-  "$([ ! -e "$ROOT/runtime/addons/custom/staging/dominio_ventas/.git" ]; echo $?)"
+  "$([ ! -e "$ROOT/runtime/staging/addons/custom/dominio_ventas/.git" ]; echo $?)"
 igual "el bare compartido vive en runtime/addons" "0" \
   "$([ -d "$ROOT/runtime/addons/.repos/dominio_ventas.git" ]; echo $?)"
+igual "el candidato registra el árbol Git exportado" \
+  "$(git -C "$ADDON" rev-parse "$STAGING_COMMIT^{tree}")" \
+  "$(cat "$ROOT/runtime/staging/addons/custom/dominio_ventas/.candidate-tree")"
 contiene "status registra el commit publicado" "$STAGING_COMMIT" \
   "$(ejecutar "$ROOT" staging status)"
+
+# Integridad del árbol Git
+# Contenido, bit ejecutable y destino de symlink deben alterar la validación.
+printf 'edición local\n' >> "$ROOT/runtime/staging/addons/custom/dominio_ventas/dominio_ventas/__manifest__.py"
+igual "status rechaza contenido modificado" "1" "$(codigo "$ROOT" staging status)"
+igual "sync restaura el contenido publicado" "0" "$(codigo "$ROOT" staging sync)"
+chmod -x "$ROOT/runtime/staging/addons/custom/dominio_ventas/dominio_ventas/ejecutable.sh"
+igual "status rechaza un bit ejecutable modificado" "1" "$(codigo "$ROOT" staging status)"
+igual "sync restaura el modo publicado" "0" "$(codigo "$ROOT" staging sync)"
+ln -snf ejecutable.sh "$ROOT/runtime/staging/addons/custom/dominio_ventas/dominio_ventas/manifiesto.link"
+igual "status rechaza un enlace simbólico modificado" "1" "$(codigo "$ROOT" staging status)"
+igual "sync restaura el enlace publicado" "0" "$(codigo "$ROOT" staging sync)"
 
 igual "sync de desarrollo inicializa la feature" "0" "$(codigo "$ROOT" desarrollo sync)"
 DEV_COMMIT=$(git -C "$ADDON" rev-parse feat/desarrollo)
@@ -111,7 +129,7 @@ igual "la referencia inválida conserva el candidato" "$DEV_COMMIT" \
   "$(commit_candidato "$ROOT" desarrollo dominio_ventas)"
 referencia_entorno "$ROOT" desarrollo feat/desarrollo
 igual "desarrollo no comparte la ruta de staging" "1" \
-  "$([ "$ROOT/runtime/addons/custom/desarrollo/dominio_ventas" -ef "$ROOT/runtime/addons/custom/staging/dominio_ventas" ]; echo $?)"
+  "$([ "$ROOT/runtime/desarrollo/addons/custom/dominio_ventas" -ef "$ROOT/runtime/staging/addons/custom/dominio_ventas" ]; echo $?)"
 referencia_entorno "$ROOT" staging feat/prueba
 igual "staging rechaza una referencia distinta" "2" "$(codigo "$ROOT" staging sync)"
 referencia_entorno "$ROOT" staging 19.0-stag
@@ -159,13 +177,13 @@ igual "la realineación conserva el candidato productivo" "$PREVIO_PROD" \
 
 # Reemplazo íntegro del candidato
 # El código local no se mezcla con la revisión publicada y desaparece al sincronizar.
-printf 'edición local\n' >> "$ROOT/runtime/addons/custom/staging/dominio_ventas/dominio_ventas/__manifest__.py"
-touch "$ROOT/runtime/addons/custom/staging/dominio_ventas/sobrante.py"
+printf 'edición local\n' >> "$ROOT/runtime/staging/addons/custom/dominio_ventas/dominio_ventas/__manifest__.py"
+touch "$ROOT/runtime/staging/addons/custom/dominio_ventas/sobrante.py"
 igual "sync reemplaza el candidato completo" "0" "$(codigo "$ROOT" staging sync)"
 no_contiene "descarta cambios locales" "edición local" \
-  "$(cat "$ROOT/runtime/addons/custom/staging/dominio_ventas/dominio_ventas/__manifest__.py")"
+  "$(cat "$ROOT/runtime/staging/addons/custom/dominio_ventas/dominio_ventas/__manifest__.py")"
 igual "borra archivos que no pertenecen al commit" "1" \
-  "$([ -e "$ROOT/runtime/addons/custom/staging/dominio_ventas/sobrante.py" ]; echo $?)"
+  "$([ -e "$ROOT/runtime/staging/addons/custom/dominio_ventas/sobrante.py" ]; echo $?)"
 
 # Catálogo y fallos de rama
 # La validación ocurre antes de clonar, y un fallo remoto conserva el candidato anterior.
@@ -189,24 +207,24 @@ ROOT_ENTERPRISE=$(crear_checkout caso-enterprise)
 igual "Enterprise se sincroniza fuera del catálogo" "0" \
   "$(codigo "$ROOT_ENTERPRISE" produccion enterprise-sync "$ADDON" 19.0-ee-2026-09-15)"
 igual "Enterprise queda detached en el commit del tag" "$(git -C "$ADDON" rev-parse 19.0)" \
-  "$(git -C "$ROOT_ENTERPRISE/runtime/addons/enterprise" rev-parse HEAD)"
+  "$(git -C "$ROOT_ENTERPRISE/runtime/produccion/addons/enterprise" rev-parse HEAD)"
 contiene "Enterprise status muestra el tag seleccionado" "19.0-ee-2026-09-15" \
   "$(ejecutar "$ROOT_ENTERPRISE" produccion enterprise-status)"
 igual "Enterprise pasa la validación de tag inmutable" "0" \
   "$(codigo "$ROOT_ENTERPRISE" produccion enterprise-validate 19.0-ee-2026-09-15)"
 igual "Enterprise no crea un candidato de dominio" "0" \
-  "$([ ! -e "$ROOT_ENTERPRISE/runtime/addons/custom/produccion/enterprise" ]; echo $?)"
+  "$([ ! -e "$ROOT_ENTERPRISE/runtime/produccion/addons/custom/enterprise" ]; echo $?)"
 printf '%s\n' 'ODOO_EDITION=enterprise' 'TAG=19.0-ee-2026-09-15' \
   >> "$ROOT_ENTERPRISE/runtime/produccion/compose.env"
 export ENTERPRISE_REPOSITORY="$ADDON"
 igual "Enterprise resuelve el tag desde TAG" "0" \
   "$(codigo "$ROOT_ENTERPRISE" produccion enterprise-sync)"
 unset ENTERPRISE_REPOSITORY
-ENTERPRISE_ANTERIOR=$(git -C "$ROOT_ENTERPRISE/runtime/addons/enterprise" rev-parse HEAD)
+ENTERPRISE_ANTERIOR=$(git -C "$ROOT_ENTERPRISE/runtime/produccion/addons/enterprise" rev-parse HEAD)
 igual "un tag Enterprise inexistente falla" "1" \
   "$(codigo "$ROOT_ENTERPRISE" produccion enterprise-sync "$ADDON" 19.0-ee-2026-09-16)"
 igual "el tag inexistente no cambia el checkout" "$ENTERPRISE_ANTERIOR" \
-  "$(git -C "$ROOT_ENTERPRISE/runtime/addons/enterprise" rev-parse HEAD)"
+  "$(git -C "$ROOT_ENTERPRISE/runtime/produccion/addons/enterprise" rev-parse HEAD)"
 git -C "$ADDON" tag 19.0-ee-2026-09-17 19.0
 ROOT_ENTERPRISE_LW=$(crear_checkout caso-enterprise-lightweight)
 igual "un tag Enterprise liviano no se acepta como inmutable" "1" \
@@ -215,7 +233,7 @@ printf '%s\n' 'https://github.com/organizacion/enterprise.git' > "$ROOT_ENTERPRI
 igual "Enterprise no se admite dentro del catálogo" "1" \
   "$(codigo "$ROOT_ENTERPRISE" produccion sync)"
 igual "el checkout Enterprise sucio no se pisa" "1" \
-  "$(touch "$ROOT_ENTERPRISE/runtime/addons/enterprise/edicion.local"; codigo "$ROOT_ENTERPRISE" produccion enterprise-sync "$ADDON" 19.0-ee-2026-09-15)"
+  "$(touch "$ROOT_ENTERPRISE/runtime/produccion/addons/enterprise/edicion.local"; codigo "$ROOT_ENTERPRISE" produccion enterprise-sync "$ADDON" 19.0-ee-2026-09-15)"
 
 rm -f "$ROOT/runtime/addons/catalogo.txt"
 igual "sin catálogo real falla y no usa la plantilla" "1" "$(codigo "$ROOT" staging sync)"
@@ -233,9 +251,9 @@ igual "la feature inicializada reemplaza el candidato" "$(git -C "$ADDON" rev-pa
 # Un dominio retirado queda visible para limpieza manual, pero no se borra solo.
 : > "$ROOT/runtime/addons/catalogo.txt"
 igual "un catálogo vacío es válido" "0" "$(codigo "$ROOT" staging sync)"
-contiene "status señala el candidato huérfano" "huérfano: custom/staging/dominio_ventas" \
+contiene "status señala el candidato huérfano" "huérfano: runtime/staging/addons/custom/dominio_ventas" \
   "$(ejecutar "$ROOT" staging status)"
 igual "el candidato huérfano se conserva" "0" \
-  "$([ -d "$ROOT/runtime/addons/custom/staging/dominio_ventas" ]; echo $?)"
+  "$([ -d "$ROOT/runtime/staging/addons/custom/dominio_ventas" ]; echo $?)"
 
 resumen

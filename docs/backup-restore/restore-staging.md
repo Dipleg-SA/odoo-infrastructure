@@ -31,15 +31,17 @@ ENTORNO=staging make postgres-verify
 ENTORNO=staging make restore SNAPSHOT=latest
 ```
 
-El restore recupera base, filestore y metadata del backup. La metadata histórica no cambia
-`ODOO_IMAGE`; si hace falta una imagen distinta, se reconstruye explícitamente después del
-restore.
+El restore recupera base, filestore y metadata del backup, incluida la selección que
+producción ejecutaba. Esa procedencia guía la reconstrucción, pero no cambia
+`ODOO_IMAGE` ni publica candidatos por sí sola.
 
 ### 3. Odoo
 
-Sincronizá candidatos, dependencias y la imagen antes de levantar Odoo:
+Inicializá los mounts propios de staging, sincronizá los commits registrados y prepará
+dependencias antes de levantar Odoo:
 
 ```bash
+ENTORNO=staging make addons-runtime-init
 ENTORNO=staging make repo-sync
 ENTORNO=staging make addons-deps
 ENTORNO=staging make build
@@ -61,7 +63,9 @@ No aplica: staging no incluye la capa de observabilidad.
 
 ## Validar una variante Community
 
-Si el snapshot corresponde a Enterprise, restaurá primero con `ODOO_EDITION=enterprise`, retir&aacute; manualmente los módulos Enterprise y ejecutá:
+Si el snapshot corresponde a Enterprise, prepará
+`runtime/staging/addons/enterprise` con el tag registrado, restaurá primero con
+`ODOO_EDITION=enterprise`, retirá manualmente los módulos Enterprise y ejecutá:
 
 ```bash
 ENTORNO=staging scripts/odoo-edition-check.sh --destino community

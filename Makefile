@@ -12,6 +12,7 @@ include .make/main.mk
 
 .PHONY: help up down logs ps nuke reset build require-odoo-image promotion-verify \
         secrets-init secrets-perms secrets-check config-init workspace \
+        addons-runtime-init \
         odoo-report-config \
         host-init host-verify up-timers down-timers notify-test monitoring-role \
         cert-issue cert-renew \
@@ -67,6 +68,14 @@ secrets-check: ## Verifica permisos de secrets
 # stacks/*/config/: un cp idempotente desde el .example de cada uno.
 config-init: ## Bootstrapea los config reales desde su .example
 	scripts/config-init.sh
+
+# --- [HOST] Directorios de addons ---
+# Prepara los binds escribibles del webhook antes de que Compose pueda tocarlos.
+
+addons-runtime-init: ## Inicializa los árboles custom de los tres entornos
+	scripts/addons-runtime.sh init
+
+addons-webhook-up: addons-runtime-init
 
 odoo-report-config: ## Configura las URLs pública e interna de los reportes Odoo
 	scripts/odoo-report-config.sh
@@ -169,7 +178,7 @@ host-verify: ## Verifica los prerrequisitos del SO (systemd, rotación de logs, 
 # --- Ciclo de vida del stack completo ---
 
 up: ## Levanta el stack completo
-	@. scripts/ui/components.sh; ui_section "up: levantando el stack completo"; ui_run "up" $(CONTEXTO_COMPOSE) up -d
+	@. scripts/ui/components.sh; ui_section "up: levantando el stack completo"; scripts/odoo-lifecycle.sh stack-up
 	@$(MAKE) odoo-report-config
 
 down: ## Baja el stack completo
@@ -190,7 +199,7 @@ nuke: ## Borra containers/imágenes/volúmenes del stack y estado generado del e
 	    "volúmenes, imágenes propias y estado generado de runtime/ — configs y secretos quedan"; \
 	  ui_confirm nuke || exit 1; \
 	  ui_run "nuke" env ENTORNO="$$ENTORNO" bash -c '$(CONTEXTO_COMPOSE) down -v --rmi local --remove-orphans && \
-	    rm -rf runtime/addons/custom/$${ENTORNO} runtime/addons/builds/$${ENTORNO} \
+	    rm -rf runtime/$${ENTORNO}/addons runtime/addons/builds/$${ENTORNO} \
 	      runtime/$${ENTORNO}/state/*'
 
 # Mismo indicador que require-backups, leído al revés: backup sin profiles: solo
@@ -224,7 +233,7 @@ integrity-check: ## Comprueba adjuntos de Odoo contra el filestore
 
 # --- Imágenes propias ---
 # Todo stack construye la suya, aunque el Dockerfile sea un FROM pineado y nada más.
-# El build de odoo no clona nada: los addons entran por la fotografía inmutable.
+# El build de Odoo resuelve dependencias desde una fotografía, pero no copia addons.
 
 # --- Construcción de imágenes propias ---
 # Odoo se fotografía y las imágenes auxiliares se construyen desde sus stacks.
@@ -249,6 +258,7 @@ require-odoo-image: require-entorno
 
 up: require-odoo-image
 odoo-up: require-odoo-image
+odoo-restart: require-odoo-image
 
 promotion-verify: ## Verifica que producción equivale a staging validado antes del build
 	scripts/promotion-verify.sh
@@ -258,8 +268,9 @@ promotion-verify: ## Verifica que producción equivale a staging validado antes 
 # El build repite ambos contra su propia fotografía antes de invocar Docker.
 
 addons-deps: ## Valida requisitos de addons y compila el lock del entorno
-	scripts/pydeps.sh check
-	scripts/pydeps.sh compile
+	@. scripts/lib/contexto.sh; contexto_iniciar; . scripts/lib/candidate-lock.sh; \
+	  candidate_lock_run "$$ENTORNO" -- env CANDIDATE_LOCK_HELD=1 bash -c \
+	  'scripts/addons-runtime.sh validate && scripts/pydeps.sh check && scripts/pydeps.sh compile'
 
 # ============================================================
 # STACKS — sexteto genérico + lo puntual de cada uno, agrupado

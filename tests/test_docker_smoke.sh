@@ -39,21 +39,57 @@ docker compose --env-file "$TMP/compose.env" -f "$TMP/compose.yaml" config \
 ! grep -q 'images\.json' tests/test_docker_smoke.sh
 
 # Contexto real de Odoo
-# Enterprise, custom y el lock llegan como entradas separadas del contexto temporal.
+# El contexto temporal contiene solo dependencias y entrypoint, nunca código de addons.
 mkdir -p "$TMP/odoo/enterprise" "$TMP/odoo/custom"
 mkdir -p "$TMP/odoo/requirements.sources"
 cp stacks/odoo/image/Dockerfile stacks/odoo/image/entrypoint.sh "$TMP/odoo/"
 : > "$TMP/odoo/requirements.lock.txt"
 docker build --pull --tag "$ODOO_IMAGE" "$TMP/odoo"
 docker run --rm --entrypoint /bin/sh "$ODOO_IMAGE" -c \
-  'test -x /usr/local/bin/odoo-entrypoint.sh && test -d /opt/odoo/enterprise && test -d /opt/odoo/custom && test ! -e /tmp/requirements.txt && test ! -e /tmp/wheels && ! command -v swig >/dev/null 2>&1 && ! command -v gcc >/dev/null 2>&1'
+  'test -x /usr/local/bin/odoo-entrypoint.sh && test ! -e /opt/odoo/enterprise && test ! -e /opt/odoo/custom && test ! -e /tmp/requirements.txt && test ! -e /tmp/wheels && ! command -v swig >/dev/null 2>&1 && ! command -v gcc >/dev/null 2>&1'
+
+# Addons montados
+# El contenedor descubre custom, rechaza escrituras y Community excluye Enterprise.
+mkdir -p "$TMP/runtime-addons/custom/ventas" "$TMP/runtime-addons/enterprise/ventas_enterprise" \
+  "$TMP/odoo-secrets"
+touch "$TMP/runtime-addons/custom/ventas/__manifest__.py" \
+  "$TMP/runtime-addons/enterprise/ventas_enterprise/__manifest__.py"
+printf '%040d\n' 1 > "$TMP/runtime-addons/custom/ventas/.candidate-commit"
+printf '%040d\n' 2 > "$TMP/runtime-addons/custom/ventas/.candidate-tree"
+printf 'admin\n' > "$TMP/odoo-secrets/odoo_admin_password"
+printf 'postgres\n' > "$TMP/odoo-secrets/postgres_password"
+: > "$TMP/odoo-secrets/zeptomail_smtp_password"
+chmod 644 "$TMP/odoo-secrets"/*
+cat > "$TMP/odoo-stub" <<'EOF'
+#!/usr/bin/env bash
+grep -q '/opt/odoo/custom/ventas' /tmp/odoo-runtime.conf
+! grep -q '/opt/odoo/enterprise' /tmp/odoo-runtime.conf
+EOF
+chmod 755 "$TMP/odoo-stub"
+docker run --rm \
+  -e ENTORNO=desarrollo \
+  -e TAG=19.0-ce-2099-01-01 \
+  -e ODOO_EDITION=community \
+  -e ODOO_COMMUNITY_ADDONS=/usr/lib/python3/dist-packages/odoo/addons \
+  -v "$TMP/runtime-addons/custom:/opt/odoo/custom:ro" \
+  -v "$TMP/runtime-addons/enterprise:/opt/odoo/enterprise:ro" \
+  -v "$TMP/odoo-secrets:/run/secrets:ro" \
+  -v "$TMP/odoo-stub:/usr/local/bin/odoo:ro" \
+  "$ODOO_IMAGE" --stop-after-init
+docker run --rm --entrypoint /bin/sh \
+  -v "$TMP/runtime-addons/custom:/opt/odoo/custom:ro" \
+  -v "$TMP/runtime-addons/enterprise:/opt/odoo/enterprise:ro" \
+  "$ODOO_IMAGE" -c \
+  'test -f /opt/odoo/custom/ventas/__manifest__.py && test -f /opt/odoo/enterprise/ventas_enterprise/__manifest__.py && ! touch /opt/odoo/custom/escritura && ! touch /opt/odoo/enterprise/escritura'
 
 # Nginx
 # El hostname y el certificado se materializan en un árbol descartable antes de validar nginx -t.
 mkdir -p "$TMP/nginx/conf.d" "$TMP/nginx/letsencrypt/live/odoo.example.test"
-cp stacks/nginx/config/00-http.conf stacks/nginx/config/odoo.locations \
+cp stacks/nginx/config/00-http.conf.example "$TMP/nginx/conf.d/00-http.conf"
+cp stacks/nginx/config/odoo.locations.example "$TMP/nginx/conf.d/odoo.locations"
+cp \
   stacks/nginx/config/addons-webhook.locations "$TMP/nginx/conf.d/"
-sed 's/TU_DOMINIO/odoo.example.test/g' stacks/nginx/config/server-tls.conf \
+sed 's/TU_DOMINIO/odoo.example.test/g' stacks/nginx/config/server-tls.conf.example \
   > "$TMP/nginx/conf.d/server-tls.conf"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
   -keyout "$TMP/nginx/letsencrypt/live/odoo.example.test/privkey.pem" \

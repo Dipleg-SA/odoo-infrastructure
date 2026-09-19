@@ -30,6 +30,27 @@ igual "no conserva el árbol legacy de addons" "0" "$([ ! -e addons ]; echo $?)"
 DOCUMENTACION=$(seccion README.md '## Documentación' '## Cómo está pensado')
 contiene "README explica registro en release" "release correspondiente" "$DOCUMENTACION"
 
+titulo "Arquitectura — cuatro contratos de addons"
+
+ADDONS_MODEL=$(seccion ARCHITECTURE.md \
+  '### Gestión de addons: imagen, dependencias, candidatos y selección ejecutada' \
+  '## Borde y red')
+contiene "la imagen conserva Odoo y dependencias" "La imagen Odoo contiene" "$ADDONS_MODEL"
+contiene "los candidatos se montan por entorno" 'runtime/<entorno>/addons/{custom,enterprise}' "$ADDONS_MODEL"
+contiene "la recreación es explícita" 'up -d --force-recreate' "$ADDONS_MODEL"
+contiene "la selección cargada queda registrada" '/tmp/odoo-addons-startup.json' "$ADDONS_MODEL"
+contiene "la base participa de la identidad" 'odoo_base' "$ADDONS_MODEL"
+no_contiene "no vuelve a describir addons copiados en la imagen" \
+  'los copia a la imagen Odoo' "$ADDONS_MODEL"
+no_contiene "no vuelve a describir una imagen como código ejecutado" \
+  'no monta código de addons desde el host' "$ADDONS_MODEL"
+igual "no prescribe docker compose restart para aplicar candidatos" "0" \
+  "$(grep -Eiv 'no se usa|nunca' ARCHITECTURE.md | grep -c 'docker compose restart' || true)"
+contiene "PRINCIPLES separa imagen y código" "Separá la imagen del código montado" \
+  "$(cat PRINCIPLES.md)"
+contiene "PRINCIPLES exige procedencia de arranque" "qué commits y árboles cargó Odoo" \
+  "$(cat PRINCIPLES.md)"
+
 titulo "Runbooks — orden de levantamiento por stacks"
 
 orden_runbook() {

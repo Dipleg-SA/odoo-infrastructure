@@ -2,19 +2,19 @@
 
 ## Cuándo se usa
 
-Cuando los candidatos y la configuración de un entorno están listos para generar una
-imagen inmutable.
+Cuando cambia la base Odoo, la edición o la huella de dependencias. Un cambio exclusivo
+de código de addons no usa este procedimiento.
 
 ## Objetivo
 
-Construir una fotografía trazable y dejarla seleccionada en `ODOO_IMAGE` después de que
-el build termine correctamente.
+Construir una imagen trazable con Odoo y dependencias, sin copiar custom ni Enterprise,
+y dejarla seleccionada en `ODOO_IMAGE` después de que el build termine correctamente.
 
 ## Flujo rápido
 
-1. Sincronizar candidatos y dependencias.
-2. Construir la imagen Odoo y las auxiliares.
-3. Levantar Odoo y verificar la referencia seleccionada.
+1. Sincronizar candidatos y compilar las huellas de dependencias.
+2. Construir solo si cambió `odoo_base`, edición, entradas o lock.
+3. Recrear Odoo y verificar imagen más selección montada.
 
 ## A mano
 
@@ -34,7 +34,13 @@ ENTORNO=desarrollo make odoo-verify
 
 `make build` construye Odoo y las imágenes auxiliares. Solo después de obtener el digest
 actualiza `ODOO_IMAGE` en `runtime/<entorno>/compose.env` y guarda la procedencia bajo
-`runtime/addons/builds/<entorno>/`. No hay promoción, rollback ni imagen alternativa.
+`runtime/addons/builds/<entorno>/`. `image.json` registra `odoo_base`,
+`requirements_inputs_sha256` y `requirements_lock_sha256`; no presenta commits de
+addons como contenido de la imagen.
+
+Si `ENTORNO=<entorno> scripts/addons-runtime.sh preflight` pasa después de sincronizar,
+no ejecutes `make build`: `make odoo-restart` recrea el contenedor con los binds nuevos.
+Si falla por base, edición o huellas, construí y volvé a ejecutar el preflight.
 
 Para staging y producción repetí el mismo flujo con los candidatos correspondientes,
 después de validar el entorno anterior. Un cambio de edición requiere el preflight ORM,
@@ -47,6 +53,6 @@ ENTORNO=<entorno> make odoo-verify
 ENTORNO=<entorno> make verify
 ```
 
-La verificación debe confirmar que Compose usa el `ODOO_IMAGE` seleccionado, que la
-imagen existe localmente, que su procedencia coincide con edición y tag, y que no monta
-`/mnt/extra-addons`.
+La verificación debe confirmar que Compose usa el `ODOO_IMAGE` seleccionado, que
+`odoo_base` y las huellas coinciden, que los dos binds pertenecen al entorno y son de
+solo lectura, y que `/tmp/odoo-addons-startup.json` coincide con los candidatos.

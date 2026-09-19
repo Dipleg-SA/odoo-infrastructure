@@ -8,23 +8,22 @@ anotado e inmutable de la misma línea de Odoo.
 
 ## Objetivo
 
-Validar el checkout privado en `runtime/addons/enterprise/` y construir una imagen
-Enterprise reproducible. El repositorio público no guarda el código, sus credenciales ni
-sus artefactos.
+Validar el checkout privado en `runtime/<entorno>/addons/enterprise/` y montarlo solo en
+ese Odoo. El repositorio público y la imagen no guardan el código ni sus credenciales.
 
 ## Flujo rápido
 
 1. Preparar el checkout privado y seleccionar un tag `19.0-ee-YYYY-MM-DD`.
 2. Validar el tag y resolver dependencias.
-3. Construir, levantar y verificar la imagen en desarrollo y staging.
-4. Repetir el mismo tag en producción después del backup y la aprobación de staging.
+3. Construir la imagen por el cambio de edición, recrear y verificar desarrollo y staging.
+4. Seleccionar en producción el tag validado después del backup y la aprobación de staging.
 
 ```bash
 ENTORNO=desarrollo scripts/addons.sh enterprise-sync <url-privada> <tag>
 ENTORNO=desarrollo scripts/addons.sh enterprise-validate <tag>
 ENTORNO=desarrollo make addons-deps
 ENTORNO=desarrollo make build
-ENTORNO=desarrollo make odoo-up
+ENTORNO=desarrollo make odoo-restart
 ENTORNO=desarrollo make verify
 ```
 
@@ -33,7 +32,8 @@ ENTORNO=desarrollo make verify
 | Seleccionar el checkout privado | `ENTORNO=<entorno> scripts/addons.sh enterprise-sync <url> <tag>` |
 | Validar tag, commit y limpieza | `ENTORNO=<entorno> scripts/addons.sh enterprise-validate <tag>` |
 | Resolver dependencias declaradas | `ENTORNO=<entorno> make addons-deps` |
-| Construir la imagen | `ENTORNO=<entorno> make build` |
+| Construir por cambio de edición o dependencias | `ENTORNO=<entorno> make build` |
+| Cargar el checkout montado | `ENTORNO=<entorno> make odoo-restart` |
 | Verificar el runtime | `ENTORNO=<entorno> make verify` |
 
 ## Contrato de edición
@@ -57,8 +57,9 @@ ENTORNO=produccion make verify
 ```
 
 La verificación confirma que el commit coincide con el tag, que el checkout está limpio,
-que la imagen seleccionada corresponde a Enterprise y que su metadata conserva la
-procedencia. El código Enterprise no se versiona ni se publica mediante webhook.
+que la imagen corresponde a Enterprise y que la selección de arranque registra ese
+commit. Desarrollo, staging y producción tienen checkouts separados; pueden conservar
+commits distintos durante la validación. El código Enterprise no se publica por webhook.
 
 ## Retirar Enterprise y pasar a Community
 

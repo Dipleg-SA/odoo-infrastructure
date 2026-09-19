@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Verificación de promoción de código
-# Compara la metadata del build seleccionado de staging con candidatos productivos.
+# Compara candidatos productivos con la selección que staging cargó al arrancar.
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
@@ -11,10 +11,12 @@ trap 'rm -rf "$TMP"' EXIT
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.test
 export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.test
 
+# Checkout mínimo
+# El stub de Docker representa exclusivamente el estado y el inventario de staging.
 ROOT="$TMP/infra"
-mkdir -p "$ROOT/scripts/lib" "$ROOT/runtime/produccion" "$ROOT/runtime/staging" \
-  "$ROOT/runtime/addons/builds/staging/seleccionada" "$ROOT/runtime/addons/custom/produccion" \
-  "$ROOT/runtime/addons/.repos"
+BIN="$TMP/bin"
+mkdir -p "$ROOT/scripts/lib" "$ROOT/runtime/produccion/addons/custom/ventas" \
+  "$ROOT/runtime/staging" "$BIN"
 cp scripts/promotion-verify.sh "$ROOT/scripts/"
 cp scripts/lib/contexto.sh "$ROOT/scripts/lib/"
 cp Makefile "$ROOT/"
@@ -22,66 +24,68 @@ cp -R .make "$ROOT/"
 printf 'services: {}\n' > "$ROOT/runtime/produccion/compose.yaml"
 printf 'services: {}\n' > "$ROOT/runtime/staging/compose.yaml"
 printf 'ODOO_EDITION=community\nTAG=19.0-ce-2026-09-16\n' > "$ROOT/runtime/produccion/compose.env"
-printf 'ODOO_EDITION=community\nTAG=19.0-ce-2026-09-16\nODOO_IMAGE=local/odoo:19.0-staging-20260917T183719Z-fa588059f4932d2f\n' \
-  > "$ROOT/runtime/staging/compose.env"
+printf 'ODOO_EDITION=community\nTAG=19.0-ce-2026-09-16\n' > "$ROOT/runtime/staging/compose.env"
+cat > "$BIN/docker" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$PROMOTION_STUB/llamadas"
+case "$*" in
+  *"ps -q odoo"*) [ ! -f "$PROMOTION_STUB/staging-down" ] && printf '%s\n' staging-id ;;
+  *"cat /tmp/odoo-addons-startup.json"*) cat "$PROMOTION_STUB/startup.json" ;;
+  *) exit 0 ;;
+esac
+EOF
+chmod 755 "$BIN/docker"
+export PROMOTION_STUB="$TMP/stub"
+mkdir -p "$PROMOTION_STUB"
 
-# Repositorio bare de dominio
-# Dos commits permiten distinguir equivalencia de árbol y divergencia real.
-REPO="$ROOT/runtime/addons/.repos/ventas.git"
-mkdir -p "$REPO"
-git -C "$REPO" init -q -b 19.0
-printf "{'name': 'ventas'}\n" > "$REPO/__manifest__.py"
-git -C "$REPO" add __manifest__.py
-git -C "$REPO" commit -qm base
-BASE=$(git -C "$REPO" rev-parse HEAD)
-printf 'cambio\n' >> "$REPO/__manifest__.py"
-git -C "$REPO" commit -qam cambio
-DIVERGENTE=$(git -C "$REPO" rev-parse HEAD)
+# Árboles custom
+# El commit puede avanzar sin validación, pero la promoción compara la huella ejecutada.
+COMMIT_STAGING=$(printf '1%.0s' {1..40})
+COMMIT_NUEVO=$(printf '2%.0s' {1..40})
+TREE_STAGING=$(printf 'a%.0s' {1..40})
+TREE_NUEVO=$(printf 'b%.0s' {1..40})
+printf '%s\n' "$COMMIT_STAGING" > "$ROOT/runtime/produccion/addons/custom/ventas/.candidate-commit"
+printf '%s\n' "$TREE_STAGING" > "$ROOT/runtime/produccion/addons/custom/ventas/.candidate-tree"
 
-escribir_metadata() {
-  python3 - "$ROOT/runtime/addons/builds/staging/seleccionada/image.json" "$1" "$2" "$3" "$BASE" <<'PY'
+escribir_startup() {
+  python3 - "$PROMOTION_STUB/startup.json" "$1" "$2" "$3" "$4" <<'PY'
 import json, pathlib, sys
-path, edition, tag, enterprise_commit, addon_commit = sys.argv[1:]
-payload = {
-    "tag": "local/odoo:19.0-staging-20260917T183719Z-fa588059f4932d2f",
-    "edition": edition,
-    "edition_tag": tag,
-    "enterprise_tag": tag if edition == "enterprise" else None,
-    "enterprise_commit": enterprise_commit if edition == "enterprise" else None,
-    "addons": {"ventas": addon_commit},
-}
+path, edition, tag, commit, tree = sys.argv[1:]
+enterprise = None
+if edition == "enterprise":
+    enterprise = {"tag": tag, "commit": commit}
+    addons = {"ventas": {"commit": "1" * 40, "tree": tree}}
+else:
+    addons = {"ventas": {"commit": commit, "tree": tree}}
+payload = {"entorno": "staging", "edition": edition, "addons": addons, "enterprise": enterprise}
 pathlib.Path(path).write_text(json.dumps(payload) + "\n", encoding="utf-8")
 PY
 }
 
-ejecutar() { (cd "$ROOT" && ENTORNO=produccion scripts/promotion-verify.sh 2>&1); }
-ejecutar_make() { (cd "$ROOT" && ENTORNO=produccion make promotion-verify 2>&1); }
+ejecutar() { (cd "$ROOT" && ENTORNO=produccion PATH="$BIN:$PATH" scripts/promotion-verify.sh 2>&1); }
+ejecutar_make() { (cd "$ROOT" && ENTORNO=produccion PATH="$BIN:$PATH" make promotion-verify 2>&1); }
 codigo() { local salida retorno; salida=$(ejecutar); retorno=$?; [ "$retorno" -eq 0 ] || printf '%s\n' "$salida" >&2; printf '%s' "$retorno"; }
 
-escribir_metadata community 19.0-ce-2026-09-16 ""
-mkdir -p "$ROOT/runtime/addons/custom/produccion/ventas"
-printf '%s\n' "$BASE" > "$ROOT/runtime/addons/custom/produccion/ventas/.candidate-commit"
-igual "acepta árboles productivos equivalentes" "0" "$(codigo)"
+titulo "promotion-verify — selección ejecutada"
+escribir_startup community 19.0-ce-2026-09-16 "$COMMIT_STAGING" "$TREE_STAGING"
+igual "acepta el árbol que staging ejecutó" "0" "$(codigo)"
 igual "el target Make verifica producción" "0" "$(ejecutar_make >/dev/null 2>&1; echo $?)"
 
-printf '%s\n' "$DIVERGENTE" > "$ROOT/runtime/addons/custom/produccion/ventas/.candidate-commit"
-igual "falla si el árbol del dominio diverge" "1" "$(codigo)"
-printf '%s\n' "$BASE" > "$ROOT/runtime/addons/custom/produccion/ventas/.candidate-commit"
+printf '%s\n' "$COMMIT_NUEVO" > "$ROOT/runtime/produccion/addons/custom/ventas/.candidate-commit"
+printf '%s\n' "$TREE_NUEVO" > "$ROOT/runtime/produccion/addons/custom/ventas/.candidate-tree"
+igual "rechaza un candidato más nuevo no probado" "1" "$(codigo)"
+printf '%s\n' "$COMMIT_STAGING" > "$ROOT/runtime/produccion/addons/custom/ventas/.candidate-commit"
+printf '%s\n' "$TREE_STAGING" > "$ROOT/runtime/produccion/addons/custom/ventas/.candidate-tree"
 
-rm -f "$ROOT/runtime/addons/builds/staging/seleccionada/image.json"
-igual "falla si falta metadata del build de staging" "1" "$(codigo)"
-mkdir -p "$ROOT/runtime/addons/builds/staging/seleccionada"
-escribir_metadata community 19.0-ce-2026-09-16 ""
+touch "$PROMOTION_STUB/staging-down"
+salida=$(ejecutar); codigo_salida=$?
+igual "rechaza staging detenido" "1" "$codigo_salida"
+contiene "explica que staging debe estar operativo" "staging no está operativo" "$salida"
+rm "$PROMOTION_STUB/staging-down"
 
-sed -i.bak 's/TAG=19.0-ce-2026-09-16/TAG=19.0-ce-2026-09-17/' "$ROOT/runtime/produccion/compose.env"
-rm -f "$ROOT/runtime/produccion/compose.env.bak"
-igual "falla si la edición productiva difiere" "1" "$(codigo)"
-sed -i.bak 's/TAG=19.0-ce-2026-09-17/TAG=19.0-ce-2026-09-16/' "$ROOT/runtime/produccion/compose.env"
-rm -f "$ROOT/runtime/produccion/compose.env.bak"
-
-# Procedencia Enterprise
-# El build privado y el checkout productivo deben conservar el mismo commit.
-ENTERPRISE="$ROOT/runtime/addons/enterprise"
+# Enterprise por entorno
+# Producción se compara con el commit cargado, nunca con un checkout compartido.
+ENTERPRISE="$ROOT/runtime/produccion/addons/enterprise"
 mkdir -p "$ENTERPRISE"
 git -C "$ENTERPRISE" init -q -b 19.0
 printf 'enterprise\n' > "$ENTERPRISE/README"
@@ -91,10 +95,10 @@ ENTERPRISE_COMMIT=$(git -C "$ENTERPRISE" rev-parse HEAD)
 sed -i.bak -e 's/ODOO_EDITION=community/ODOO_EDITION=enterprise/' -e 's/TAG=19.0-ce-2026-09-16/TAG=19.0-ee-2026-09-16/' "$ROOT/runtime/produccion/compose.env"
 sed -i.bak -e 's/ODOO_EDITION=community/ODOO_EDITION=enterprise/' -e 's/TAG=19.0-ce-2026-09-16/TAG=19.0-ee-2026-09-16/' "$ROOT/runtime/staging/compose.env"
 rm -f "$ROOT/runtime/produccion/compose.env.bak" "$ROOT/runtime/staging/compose.env.bak"
-escribir_metadata enterprise 19.0-ee-2026-09-16 "$ENTERPRISE_COMMIT"
-igual "acepta la procedencia Enterprise equivalente" "0" "$(codigo)"
+escribir_startup enterprise 19.0-ee-2026-09-16 "$ENTERPRISE_COMMIT" "$TREE_STAGING"
+igual "acepta Enterprise independiente equivalente" "0" "$(codigo)"
 printf 'distinto\n' >> "$ENTERPRISE/README"
 git -C "$ENTERPRISE" commit -qam "enterprise distinto"
-igual "falla si Enterprise no coincide con staging" "1" "$(codigo)"
+igual "rechaza Enterprise productivo distinto del ejecutado" "1" "$(codigo)"
 
 resumen

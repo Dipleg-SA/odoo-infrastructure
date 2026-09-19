@@ -9,14 +9,12 @@ COPY requirements.sources/ /tmp/requirements.sources/
 USER root
 RUN mkdir -p /tmp/wheels && if [ -s /tmp/requirements.txt ]; then apt-get update && apt-get install -y --no-install-recommends build-essential python3-dev swig libssl-dev && pip wheel --wheel-dir /tmp/wheels -r /tmp/requirements.txt && rm -rf /var/lib/apt/lists/*; fi
 
-# Imagen Odoo con fotografía interna
-# Enterprise y dominios propios se copian a capas inmutables; Enterprise queda vacío en Community.
+# Imagen Odoo y dependencias
+# El código de addons llega exclusivamente mediante binds de solo lectura del runtime.
 
 FROM odoo:19.0-20260810
 
 COPY --from=python-deps /tmp/wheels/ /tmp/wheels/
-COPY enterprise/ /opt/odoo/enterprise/
-COPY custom/ /opt/odoo/custom/
 
 USER root
 RUN if find /tmp/wheels -maxdepth 1 -name '*.whl' -print -quit | grep -q .; then pip install --no-cache-dir --break-system-packages --ignore-installed --no-index --find-links=/tmp/wheels /tmp/wheels/*.whl; fi && rm -rf /tmp/wheels

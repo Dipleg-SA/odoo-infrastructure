@@ -1,127 +1,158 @@
 #!/usr/bin/env bash
-# Contrato de fotografía Odoo
-# Construye con clones locales falsos y confirma el selector único al final.
+# Contrato de construcción Odoo
+# Verifica que la imagen contiene runtime y dependencias, pero nunca código de addons.
 set -uo pipefail
+
 cd "$(dirname "$0")/.."
 . tests/lib.sh
+
 TMP=$(mktemp -d)
 REPO_ROOT="$PWD"
 ROOT="$TMP/repo"
-mkdir -p "$ROOT/runtime/desarrollo" "$ROOT/runtime/addons" "$ROOT/stacks"
-cp -R "$REPO_ROOT/scripts" "$ROOT/"
-cp -R "$REPO_ROOT/stacks/odoo" "$ROOT/stacks/odoo"
-cp "$REPO_ROOT/runtime/desarrollo/compose.env.example" "$ROOT/runtime/desarrollo/compose.env"
-printf 'services: {}\n' > "$ROOT/runtime/desarrollo/compose.yaml"
-printf 'requests==2.32.5\n' > "$ROOT/runtime/addons/requirements.override.txt"
-RUNTIME_TEMPLATE_BEFORE="$(shasum -a 256 "$REPO_ROOT/runtime/desarrollo/compose.env.example")"
 trap 'rm -rf "$TMP"' EXIT
+export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.invalid
+export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid
+
+# Checkout de infraestructura
+# Conserva scripts y stack reales dentro de un repositorio temporal aislado.
+mkdir -p "$ROOT/runtime/desarrollo" "$ROOT/runtime/addons" "$ROOT/stacks"
+cp -R scripts "$ROOT/"
+cp -R stacks/odoo "$ROOT/stacks/odoo"
+cp runtime/desarrollo/compose.env.example "$ROOT/runtime/desarrollo/compose.env"
+printf 'services: {}\n' > "$ROOT/runtime/desarrollo/compose.yaml"
+: > "$ROOT/runtime/addons/requirements.override.txt"
+: > "$ROOT/runtime/addons/catalogo.txt"
 cd "$ROOT"
 git init -q
 git config user.email test@example.invalid
 git config user.name test
 git add scripts stacks runtime
 git commit -qm base
-mkdir -p runtime/addons/.repos runtime/addons/custom/desarrollo
 
-git -c init.defaultBranch=main init -q "$TMP/ee"
-git -C "$TMP/ee" config user.email test@example.invalid; git -C "$TMP/ee" config user.name test
-mkdir -p "$TMP/ee/ventas"; printf "{'name': 'ventas'}\n" > "$TMP/ee/ventas/__manifest__.py"; git -C "$TMP/ee" add .; git -C "$TMP/ee" commit -qm inicial; git -C "$TMP/ee" tag -a 19.0-ee-2026-09-14 -m inmutable; git -C "$TMP/ee" tag 19.0-ee-2026-09-17
-git clone -q "$TMP/ee" runtime/addons/enterprise
-git -c init.defaultBranch=main init -q "$TMP/domain"
-git -C "$TMP/domain" config user.email test@example.invalid; git -C "$TMP/domain" config user.name test
-printf "{'name': 'ventas', 'external_dependencies': {'python': ['authlib']}}\n" > "$TMP/domain/__manifest__.py"
-printf 'authlib>=1.6.12,<1.7.0\n' > "$TMP/domain/requirements.txt"
-git -C "$TMP/domain" add .; git -C "$TMP/domain" commit -qm inicial
-COMMIT=$(git -C "$TMP/domain" rev-parse HEAD); git clone --bare -q "$TMP/domain" runtime/addons/.repos/ventas.git
-mkdir -p runtime/addons/custom/desarrollo/ventas; printf '%s\n' "$COMMIT" > runtime/addons/custom/desarrollo/ventas/.candidate-commit
+# Repositorio custom
+# La feature de desarrollo permite publicar varias revisiones y comparar huellas.
+git -c init.defaultBranch=19.0 init -q "$TMP/ventas"
+git -C "$TMP/ventas" config user.email test@example.invalid
+git -C "$TMP/ventas" config user.name test
+mkdir -p "$TMP/ventas/ventas"
+printf "{'name': 'ventas', 'external_dependencies': {'python': ['authlib']}}\n" \
+  > "$TMP/ventas/ventas/__manifest__.py"
+printf 'authlib>=1.6.12,<1.7.0\n' > "$TMP/ventas/requirements.txt"
+git -C "$TMP/ventas" add .
+git -C "$TMP/ventas" commit -qm base
+git -C "$TMP/ventas" checkout -qb feat/desarrollo
+printf '%s\n' "$TMP/ventas" > runtime/addons/catalogo.txt
+
+# Repositorio Enterprise
+# Un tag anotado representa la selección privada del entorno.
+git -c init.defaultBranch=main init -q "$TMP/enterprise"
+git -C "$TMP/enterprise" config user.email test@example.invalid
+git -C "$TMP/enterprise" config user.name test
+mkdir -p "$TMP/enterprise/ventas_enterprise"
+printf "{'name': 'ventas enterprise'}\n" > "$TMP/enterprise/ventas_enterprise/__manifest__.py"
+git -C "$TMP/enterprise" add .
+git -C "$TMP/enterprise" commit -qm inicial
+git -C "$TMP/enterprise" tag -a 19.0-ee-2026-09-14 -m inmutable
+
+# Docker controlado
+# Registra el contexto y permite comprobar que un fallo no cambia el selector.
 mkdir -p "$TMP/bin"
 cat > "$TMP/bin/docker" <<'DOCKER'
 #!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_CALLS"
 if [ "${BUILD_FAIL:-0}" = 1 ] && [ "$1" = build ]; then exit 1; fi
 if [ "$1" = image ] && [ "$2" = inspect ]; then printf 'sha256:build-digest\n'; fi
 DOCKER
 chmod +x "$TMP/bin/docker"
-export ENTORNO=desarrollo ADDONS_REF=feat/prueba ENTERPRISE_TAG=19.0-ee-2026-09-13 PATH="$TMP/bin:$PATH"
+export PATH="$TMP/bin:$PATH" DOCKER_CALLS="$TMP/docker-calls"
+export ENTORNO=desarrollo ADDONS_REF=feat/desarrollo
+
+# Selección inicial
+# Los candidatos y Enterprise se preparan fuera del build como haría el operador.
+igual "sync custom inicial termina bien" 0 "$(scripts/addons.sh sync >/dev/null 2>&1; echo $?)"
+igual "sync Enterprise inicial termina bien" 0 \
+  "$(scripts/addons.sh enterprise-sync "$TMP/enterprise" 19.0-ee-2026-09-14 >/dev/null 2>&1; echo $?)"
 printf '%s\n' 'ODOO_EDITION=enterprise' 'TAG=19.0-ee-2026-09-14' >> runtime/desarrollo/compose.env
+
+metadata_seleccionada() {
+  local imagen
+  imagen=$(sed -n 's/^ODOO_IMAGE=//p' runtime/desarrollo/compose.env | tail -1)
+  find runtime/addons/builds/desarrollo -name image.json -type f -print | while IFS= read -r metadata; do
+    grep -qF "\"tag\": \"$imagen\"" "$metadata" && printf '%s\n' "$metadata" && break
+  done
+}
+
 salida=$(scripts/build-odoo-image.sh 2>&1); codigo=$?
-igual "build exitoso" 0 "$codigo"
-contiene "publica el selector con tag inmutable" 'Imagen Odoo seleccionada: local/odoo:19.0-desarrollo-' "$salida"
-IMAGEN_DESARROLLO="$(sed -n 's/^ODOO_IMAGE=//p' runtime/desarrollo/compose.env)"
-contiene "selector de desarrollo usa su entorno" 'local/odoo:19.0-desarrollo-' "$IMAGEN_DESARROLLO"
-METADATA_EE="$(find runtime/addons/builds/desarrollo -name image.json -type f -print | head -1)"
-CONTENIDO_EE="$(cat "$METADATA_EE")"
-contiene "conserva digest" 'sha256:build-digest' "$CONTENIDO_EE"
-contiene "registra edición Enterprise" '"edition": "enterprise"' "$CONTENIDO_EE"
-contiene "registra tag Enterprise configurado" '"edition_tag": "19.0-ee-2026-09-14"' "$CONTENIDO_EE"
-contiene "registra commit Enterprise" '"enterprise_commit": "' "$CONTENIDO_EE"
-contiene "registra módulo Enterprise" '"enterprise_modules": ["ventas"]' "$CONTENIDO_EE"
-contiene "exporta Enterprise" 'enterprise/ventas/__manifest__.py' "$(find runtime/addons/builds/desarrollo -path '*/enterprise/ventas/__manifest__.py' -print)"
-contiene "exporta dominio" 'custom/ventas/__manifest__.py' "$(find runtime/addons/builds/desarrollo -path '*/custom/ventas/__manifest__.py' -print)"
-LOCK_EE="$(find runtime/addons/builds/desarrollo -name requirements.lock.txt -type f -print | head -1)"
-contiene "compila requisitos del dominio" 'authlib>=1.6.12,<1.7.0' "$(cat "$LOCK_EE")"
-contiene "aplica overrides del deployment" 'requests==2.32.5' "$(cat "$LOCK_EE")"
+igual "build Enterprise exitoso" 0 "$codigo"
+contiene "publica el selector del entorno" 'Imagen Odoo seleccionada: local/odoo:19.0-desarrollo-' "$salida"
+METADATA=$(metadata_seleccionada)
+CONTENIDO=$(cat "$METADATA")
+contiene "metadata conserva digest" 'sha256:build-digest' "$CONTENIDO"
+contiene "metadata registra edición" '"edition": "enterprise"' "$CONTENIDO"
+contiene "metadata registra odoo_base" '"odoo_base": "odoo:19.0-20260810"' "$CONTENIDO"
+contiene "metadata registra huella de entradas" '"requirements_inputs_sha256": "' "$CONTENIDO"
+contiene "metadata registra huella del lock" '"requirements_lock_sha256": "' "$CONTENIDO"
+no_contiene "metadata no presenta commits custom como contenido" '"addons"' "$CONTENIDO"
+no_contiene "metadata no presenta Enterprise como contenido" '"enterprise_commit"' "$CONTENIDO"
 
-# Contrato de instalación Python
-# Las dependencias nativas se compilan aparte y la imagen final solo recibe wheels.
-DOCKERFILE="$(cat stacks/odoo/image/Dockerfile)"
+BUILD_DIR=$(dirname "$METADATA")
+contiene "la fotografía resuelve requisitos custom" 'authlib>=1.6.12,<1.7.0' \
+  "$(cat "$BUILD_DIR/requirements.lock.txt")"
+igual "publica la misma huella de entradas en el runtime" \
+  "$(cat "$BUILD_DIR/requirements.inputs.sha256")" \
+  "$(cat runtime/desarrollo/addons/requirements.inputs.sha256)"
+igual "publica la misma huella del lock en el runtime" \
+  "$(cat "$BUILD_DIR/requirements.lock.sha256")" \
+  "$(cat runtime/desarrollo/addons/requirements.lock.sha256)"
+
+# Dockerfile sin addons
+# La etapa final recibe wheels y entrypoint, pero ninguna carpeta de código.
+DOCKERFILE=$(cat stacks/odoo/image/Dockerfile)
 contiene "usa una etapa para compilar wheels" 'AS python-deps' "$DOCKERFILE"
-contiene "instala wheels sin desinstalar paquetes Debian" '--ignore-installed' "$DOCKERFILE"
 contiene "copia wheels a la imagen final" 'COPY --from=python-deps /tmp/wheels/' "$DOCKERFILE"
+no_contiene "no copia custom a la imagen" 'COPY custom/' "$DOCKERFILE"
+no_contiene "no copia Enterprise a la imagen" 'COPY enterprise/' "$DOCKERFILE"
 
-# Fallos de selección Enterprise
-# Ningún tag o checkout inválido puede reemplazar el selector seleccionado.
-printf '%s\n' 'TAG=' >> runtime/desarrollo/compose.env
-sale_con "tag Enterprise ausente falla antes del build" 2 scripts/build-odoo-image.sh
-printf '%s\n' 'TAG=19.0-ee-2026-09-14' >> runtime/desarrollo/compose.env
-rm -rf runtime/addons/enterprise
-sale_con "checkout Enterprise ausente falla" 1 scripts/build-odoo-image.sh
-git clone -q "$TMP/ee" runtime/addons/enterprise
-printf '%s\n' 'TAG=19.0-ee-2026-09-16' >> runtime/desarrollo/compose.env
-sale_con "tag Enterprise inexistente falla" 1 scripts/build-odoo-image.sh
-printf '%s\n' 'TAG=19.0-ee-2026-09-17' >> runtime/desarrollo/compose.env
-sale_con "tag Enterprise liviano falla" 1 scripts/build-odoo-image.sh
-printf '%s\n' 'TAG=19.0-ee-2026-09-14' >> runtime/desarrollo/compose.env
-touch runtime/addons/enterprise/edicion.local
-sale_con "checkout Enterprise sucio falla" 1 scripts/build-odoo-image.sh
-rm -f runtime/addons/enterprise/edicion.local
-igual "los fallos conservan la imagen seleccionada" "$IMAGEN_DESARROLLO" "$(sed -n 's/^ODOO_IMAGE=//p' runtime/desarrollo/compose.env)"
+# Cambio exclusivo de código
+# Un commit nuevo con las mismas declaraciones conserva ambas huellas de imagen.
+INPUTS_INICIAL=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["requirements_inputs_sha256"])' "$METADATA")
+LOCK_INICIAL=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["requirements_lock_sha256"])' "$METADATA")
+printf "{'name': 'ventas v2', 'external_dependencies': {'python': ['authlib']}}\n" \
+  > "$TMP/ventas/ventas/__manifest__.py"
+git -C "$TMP/ventas" commit -qam 'solo código'
+scripts/addons.sh sync >/dev/null
+scripts/build-odoo-image.sh >/dev/null
+METADATA_CODIGO=$(metadata_seleccionada)
+igual "código solo conserva la huella de entradas" "$INPUTS_INICIAL" \
+  "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["requirements_inputs_sha256"])' "$METADATA_CODIGO")"
+igual "código solo conserva la huella del lock" "$LOCK_INICIAL" \
+  "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["requirements_lock_sha256"])' "$METADATA_CODIGO")"
 
+# Cambio de dependencias
+# Una modificación de requirements produce una identidad de dependencias distinta.
+printf 'authlib>=1.6.13,<1.7.0\n' > "$TMP/ventas/requirements.txt"
+git -C "$TMP/ventas" commit -qam 'dependencia nueva'
+scripts/addons.sh sync >/dev/null
+scripts/build-odoo-image.sh >/dev/null
+METADATA_DEPS=$(metadata_seleccionada)
+INPUTS_DEPS=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["requirements_inputs_sha256"])' "$METADATA_DEPS")
+igual "requirements cambia la identidad de entradas" 0 "$([ "$INPUTS_INICIAL" != "$INPUTS_DEPS" ]; echo $?)"
+
+# Cambio de base
+# La referencia FROM queda registrada y altera la identidad aunque los addons no cambien.
+printf '%s\n' 'ODOO_EDITION=community' 'TAG=19.0-ce-2026-09-16' >> runtime/desarrollo/compose.env
+sed -i.bak 's/odoo:19.0-20260810/odoo:20.0-20260810/g' stacks/odoo/image/Dockerfile
+rm -f stacks/odoo/image/Dockerfile.bak
+scripts/build-odoo-image.sh >/dev/null
+METADATA_BASE=$(metadata_seleccionada)
+contiene "la metadata refleja la base nueva" '"odoo_base": "odoo:20.0-20260810"' "$(cat "$METADATA_BASE")"
+
+# Fallo de Docker
+# El selector anterior permanece si la construcción no termina correctamente.
+IMAGEN_ANTERIOR=$(sed -n 's/^ODOO_IMAGE=//p' runtime/desarrollo/compose.env | tail -1)
 export BUILD_FAIL=1
 sale_con "build fallido no reemplaza el selector" 1 scripts/build-odoo-image.sh
-igual "build fallido conserva el selector" "$IMAGEN_DESARROLLO" "$(sed -n 's/^ODOO_IMAGE=//p' runtime/desarrollo/compose.env)"
-
-# Community con residual Enterprise
-# El checkout privado permanece para demostrar que no se copia ni se registra.
-export BUILD_FAIL=0
-printf '%s\n' 'ODOO_EDITION=community' 'TAG=19.0-ce-2026-09-16' >> runtime/desarrollo/compose.env
-salida=$(scripts/build-odoo-image.sh 2>&1); codigo=$?
-igual "build Community exitoso con residual Enterprise" 0 "$codigo"
-contiene "publica el selector Community" 'Imagen Odoo seleccionada: local/odoo:19.0-desarrollo-' "$salida"
-METADATA_CE="$(find runtime/addons/builds/desarrollo -name image.json -type f -print | while IFS= read -r metadata; do grep -q '"edition": "community"' "$metadata" && printf '%s\n' "$metadata" && break; done)"
-CONTENIDO="$(cat "$METADATA_CE")"
-contiene "registra edición Community" '"edition": "community"' "$CONTENIDO"
-contiene "registra tag Community" '"edition_tag": "19.0-ce-2026-09-16"' "$CONTENIDO"
-contiene "omite tag Enterprise" '"enterprise_tag": null' "$CONTENIDO"
-contiene "omite commit Enterprise" '"enterprise_commit": null' "$CONTENIDO"
-contiene "registra inventario Enterprise vacío" '"enterprise_modules": []' "$CONTENIDO"
-CE_BUILD="$(find runtime/addons/builds/desarrollo -mindepth 2 -maxdepth 2 -name image.json -type f -print | while IFS= read -r metadata; do grep -q '"edition": "community"' "$metadata" && dirname "$metadata" && break; done)"
-igual "Community no exporta código Enterprise" '' "$(find "$CE_BUILD/enterprise" -name __manifest__.py -type f -print)"
-no_contiene "Community no registra código Enterprise" 'enterprise/__manifest__.py' "$CONTENIDO"
-
-# Aislamiento entre runtimes
-# El tag y el selector de cada entorno deben conservar su propia identidad.
-mkdir -p runtime/staging runtime/addons/custom/staging/ventas
-cp "$REPO_ROOT/runtime/staging/compose.env.example" runtime/staging/compose.env
-printf 'services: {}\n' > runtime/staging/compose.yaml
-printf '%s\n' "$COMMIT" > runtime/addons/custom/staging/ventas/.candidate-commit
-export ENTORNO=staging ADDONS_REF=19.0-stag
-salida=$(scripts/build-odoo-image.sh 2>&1); codigo=$?
-igual "build staging exitoso" 0 "$codigo"
-IMAGEN_STAGING="$(sed -n 's/^ODOO_IMAGE=//p' runtime/staging/compose.env)"
-contiene "selector de staging usa su entorno" 'local/odoo:19.0-staging-' "$IMAGEN_STAGING"
-no_contiene "los selectores de entornos no se pisan" "$IMAGEN_STAGING" "$IMAGEN_DESARROLLO"
-
-RUNTIME_TEMPLATE_AFTER="$(shasum -a 256 "$REPO_ROOT/runtime/desarrollo/compose.env.example")"
-igual "el test no modifica runtime preexistente" "$RUNTIME_TEMPLATE_BEFORE" "$RUNTIME_TEMPLATE_AFTER"
+igual "build fallido conserva el selector" "$IMAGEN_ANTERIOR" \
+  "$(sed -n 's/^ODOO_IMAGE=//p' runtime/desarrollo/compose.env | tail -1)"
 
 resumen
